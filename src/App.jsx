@@ -20,8 +20,38 @@ const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
   { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
   { text: "Qui va marquer le prochain but ?", options: ["Haaland", "Salah", "Kane", "De Bruyne"] },
-  { text: "Quelle équipe aura le prochain corner ?", options: ["Équipe A", "Équipe B", "Aucune", "Les deux"] },
-  { text: "Qui va avoir le prochain carton ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] }
+  { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Lautaro", "Rashford"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Saka", "Foden", "Palmer", "Watkins"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Aubameyang", "Thuram", "David", "Barcola"] },
+  { text: "Quelle équipe aura le prochain corner ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
+  { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] },
+  { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "Peut-être", "VAR"] },
+  { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
+  { text: "Qui va faire la prochaine passe décisive ?", options: ["Milieu offensif", "Ailier", "Défenseur", "Attaquant"] },
+  { text: "Quelle équipe dominera les 10 prochaines minutes ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] },
+  { text: "Y aura-t-il un carton rouge ?", options: ["Oui", "Non", "Deux cartons", "VAR annule"] },
+  { text: "Qui va gagner le plus de duels ?", options: ["Attaquant A", "Milieu B", "Défenseur C", "Gardien"] },
+  { text: "Combien de temps additionnel en 1ère mi-temps ?", options: ["0-1 min", "2-3 min", "4-5 min", "6+ min"] },
+  { text: "Qui va faire le prochain arrêt décisif ?", options: ["Gardien domicile", "Gardien extérieur", "Défenseur", "Poteau"] },
+  { text: "Quelle sera la prochaine action ?", options: ["Corner", "Coup franc", "Penalty", "But"] },
+  { text: "Qui va sortir sur blessure en premier ?", options: ["Personne", "Attaquant", "Défenseur", "Milieu"] },
+  { text: "Combien de fautes au total dans les 10 prochaines minutes ?", options: ["0-3", "4-6", "7-9", "10+"] },
+  { text: "Y aura-t-il un but dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Peut-être", "Deux buts"] },
+  { text: "Quelle équipe tirera le plus ?", options: ["Domicile", "Extérieur", "Égalité", "Aucune"] },
+  { text: "Qui va rater le prochain tir cadré ?", options: ["Attaquant A", "Attaquant B", "Milieu", "Personne"] },
+  { text: "Y aura-t-il un hors-jeu dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Plusieurs", "Avec but refusé"] },
+  { text: "Combien de remplacements en 1ère mi-temps ?", options: ["0", "1", "2", "3+"] },
+  { text: "Qui va toucher le plus de ballons ?", options: ["Milieu A", "Défenseur B", "Attaquant C", "Gardien"] },
+  { text: "Quelle équipe aura le plus de possession ?", options: ["Domicile", "Extérieur", "50-50", "Incertain"] },
+  { text: "Y aura-t-il un but contre son camp ?", options: ["Oui", "Non", "Peut-être", "Deux CSC"] },
+  { text: "Qui va tenter le prochain dribble réussi ?", options: ["Ailier", "Milieu", "Attaquant", "Défenseur"] },
+  { text: "Combien de tirs cadrés dans les 10 prochaines minutes ?", options: ["0-1", "2-3", "4-5", "6+"] },
+  { text: "Quelle équipe commettra le plus de fautes ?", options: ["Domicile", "Extérieur", "Égalité", "Aucune"] },
+  { text: "Y aura-t-il une intervention de la VAR ?", options: ["Oui", "Non", "Plusieurs", "But refusé"] },
+  { text: "Qui va gagner le prochain duel aérien ?", options: ["Attaquant A", "Défenseur B", "Milieu C", "Gardien"] },
+  { text: "Combien de corners dans les 10 prochaines minutes ?", options: ["0-1", "2-3", "4-5", "6+"] },
+  { text: "Quelle équipe va presser le plus haut ?", options: ["Domicile", "Extérieur", "Les deux", "Aucune"] }
 ];
 
 export default function App() {
@@ -126,20 +156,34 @@ export default function App() {
 
   const startMatch = async () => {
     try {
-      await set(ref(db, 'matchState'), { isActive: true, startTime: Date.now() });
+      await set(ref(db, 'matchState'), { 
+        isActive: true, 
+        startTime: Date.now(),
+        intervalId: Date.now()
+      });
+      
+      // Première question après 3 secondes
       setTimeout(() => createQuestion(), 3000);
-      // Questions automatiques toutes les 30 secondes
-      const interval = setInterval(async () => {
-        const match = await get(ref(db, 'matchState'));
-        if (!match.exists() || !match.val()?.isActive) {
-          clearInterval(interval);
-          return;
+      
+      // Vérifier toutes les 5 secondes s'il faut créer une nouvelle question
+      const checkInterval = setInterval(async () => {
+        try {
+          const match = await get(ref(db, 'matchState'));
+          if (!match.exists() || !match.val()?.isActive) {
+            clearInterval(checkInterval);
+            return;
+          }
+          
+          // Ne créer une question QUE si aucune n'existe déjà
+          const currentQ = await get(ref(db, 'currentQuestion'));
+          if (!currentQ.exists()) {
+            createQuestion();
+          }
+        } catch (err) {
+          console.error('Error in interval:', err);
         }
-        const currentQ = await get(ref(db, 'currentQuestion'));
-        if (!currentQ.exists()) {
-          createQuestion();
-        }
-      }, 30000);
+      }, 5000);
+      
     } catch (e) {
       alert('Erreur');
     }
@@ -186,7 +230,7 @@ export default function App() {
       await remove(ref(db, 'currentQuestion'));
       await remove(ref(db, 'answers'));
       
-      // La prochaine question sera créée automatiquement par l'intervalle
+      // La prochaine question sera créée automatiquement par l'intervalle après 5-10 secondes
     } catch (e) {
       console.error(e);
     }
