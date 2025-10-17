@@ -101,9 +101,9 @@ export default function App() {
   const [showEventPopup, setShowEventPopup] = useState(false);
   const [showNewQuestionAlert, setShowNewQuestionAlert] = useState(false);
   const [newPlayerAlert, setNewPlayerAlert] = useState(null);
-  const [previousRankings, setPreviousRankings] = useState({});
 
-  // Timer du match
+  const appUrl = window.location.origin;
+
   useEffect(() => {
     if (matchStatus === 'live') {
       const matchTimer = setInterval(() => {
@@ -119,7 +119,6 @@ export default function App() {
     }
   }, [matchStatus]);
 
-  // Timer de la question
   useEffect(() => {
     if (activeQuestion && questionTimer > 0) {
       const timer = setTimeout(() => {
@@ -133,7 +132,6 @@ export default function App() {
     }
   }, [questionTimer, activeQuestion]);
 
-  // Envoyer des questions aléatoirement
   useEffect(() => {
     if (matchStatus === 'live' && matchTime > 0 && !activeQuestion) {
       const chance = Math.random();
@@ -161,18 +159,15 @@ export default function App() {
     setShowNewQuestionAlert(true);
     setTimeout(() => setShowNewQuestionAlert(false), 3000);
 
-    // Les joueurs IA répondent automatiquement
     setTimeout(() => {
       simulateAIAnswers(newQuestion);
     }, 2000);
   };
 
-  // Simuler les réponses des IA
   const simulateAIAnswers = (question) => {
     const aiAnswers = players
       .filter(p => p.isAI)
       .map(player => {
-        // 70% des IA répondent, 30% ne répondent pas
         if (Math.random() < 0.7) {
           return {
             id: `${player.id}_${Date.now()}`,
@@ -180,7 +175,7 @@ export default function App() {
             playerName: player.name,
             questionId: question.id,
             answer: question.options[Math.floor(Math.random() * question.options.length)],
-            timestamp: matchTime + Math.random() * 30 // Répondent dans les 30 premières secondes
+            timestamp: matchTime + Math.random() * 30
           };
         }
         return null;
@@ -250,7 +245,6 @@ export default function App() {
       setPlayers(prev => [...prev, newPlayer]);
       setCurrentPlayer(newPlayer);
       
-      // Afficher l'alerte sur l'écran TV - plus longtemps
       setNewPlayerAlert(name.trim());
       setTimeout(() => setNewPlayerAlert(null), 8000);
       
@@ -274,9 +268,6 @@ export default function App() {
     setMyAnswer(answer);
   };
 
-  const appUrl = window.location.origin;
-
-  // ========== ÉCRAN HOME ==========
   if (view === 'home') {
     return (
       <div style={{
@@ -361,7 +352,6 @@ export default function App() {
     );
   }
 
-  // ========== ÉCRAN MOBILE - CONNEXION ==========
   if (view === 'mobile') {
     return (
       <div style={{
@@ -455,7 +445,6 @@ export default function App() {
     );
   }
 
-  // ========== ÉCRAN DE JEU ==========
   if (view === 'game') {
     return (
       <div style={{
@@ -723,166 +712,135 @@ export default function App() {
     );
   }
 
-  // ========== ÉCRAN TV (SANS QUESTIONS) ==========
-  const sortedPlayers = players.sort((a, b) => b.score - a.score).slice(0, 50);
-  
-  // Calculer les changements de position
-  const getRankChange = (playerId, currentIndex) => {
-    const previousRank = previousRankings[playerId];
-    if (previousRank === undefined) return null;
-    const rankChange = previousRank - currentIndex;
-    return rankChange;
-  };
+  if (view === 'tv') {
+    const sortedPlayers = players.sort((a, b) => b.score - a.score).slice(0, 50);
 
-  // Mettre à jour les positions précédentes
-  useEffect(() => {
-    const newRankings = {};
-    sortedPlayers.forEach((player, index) => {
-      newRankings[player.id] = index;
-    });
-    
-    // Attendre un peu avant de mettre à jour pour voir les changements
-    const timer = setTimeout(() => {
-      setPreviousRankings(newRankings);
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, [players.map(p => p.score).join(',')]);
-
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
-      padding: '30px',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      position: 'relative',
-      overflow: 'hidden'
-    }}>
-      {/* Alerte nouveau joueur - PLUS VISIBLE */}
-      {newPlayerAlert && (
-        <div style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-          padding: '40px 80px',
-          borderRadius: '30px',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-          zIndex: 2000,
-          textAlign: 'center',
-          border: '4px solid white'
-        }}>
-          <div style={{ fontSize: '80px', marginBottom: '15px' }}>🎉</div>
-          <div style={{ color: 'white', fontSize: '36px', fontWeight: 'bold', marginBottom: '10px' }}>
-            Nouveau joueur !
-          </div>
-          <div style={{ color: 'white', fontSize: '48px', fontWeight: 'bold' }}>
-            {newPlayerAlert}
-          </div>
-        </div>
-      )}
-
-      {/* Popup événement */}
-      {showEventPopup && lastEvent && (
-        <div style={{
-          position: 'fixed',
-          top: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-          padding: '25px 40px',
-          borderRadius: '20px',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-          zIndex: 1000,
-          textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '40px', marginBottom: '8px' }}>🎉</div>
-          <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
-            {lastEvent.question}
-          </div>
-          <div style={{ color: 'white', fontSize: '18px', marginBottom: '5px' }}>
-            Réponse : {lastEvent.answer}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '16px' }}>
-            🏆 {lastEvent.winnersCount} joueur{lastEvent.winnersCount > 1 ? 's' : ''} ont gagné !
-          </div>
-        </div>
-      )}
-
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        marginBottom: '15px',
-        paddingBottom: '10px',
-        borderBottom: '2px solid rgba(255,255,255,0.2)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '32px' }}>🏆</span>
-          <h1 style={{ 
-            color: 'white', 
-            fontSize: '28px', 
-            fontWeight: 'bold',
-            margin: 0
-          }}>
-            QUIZ BUTEUR LIVE
-          </h1>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold' }}>
-            ⚽ {matchTime}' • PSG vs Bayern
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
-            {matchStatus === 'live' ? '🔴 EN DIRECT' : '⏸️ PAUSE'} • {players.length} joueurs
-          </div>
-        </div>
-      </div>
-
+    return (
       <div style={{
-        background: 'rgba(255,255,255,0.05)',
-        backdropFilter: 'blur(10px)',
-        borderRadius: '16px',
-        padding: '15px 20px',
-        border: '1px solid rgba(255,255,255,0.1)',
-        height: 'calc(100vh - 180px)',
-        overflowY: 'hidden'
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+        padding: '30px',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        position: 'relative',
+        overflow: 'hidden'
       }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '50px 1fr 80px 100px',
-          padding: '6px 15px',
-          borderBottom: '2px solid rgba(255,255,255,0.2)',
-          marginBottom: '8px'
-        }}>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600' }}>
-            #
+        {newPlayerAlert && (
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            padding: '40px 80px',
+            borderRadius: '30px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            zIndex: 2000,
+            textAlign: 'center',
+            border: '4px solid white'
+          }}>
+            <div style={{ fontSize: '80px', marginBottom: '15px' }}>🎉</div>
+            <div style={{ color: 'white', fontSize: '36px', fontWeight: 'bold', marginBottom: '10px' }}>
+              Nouveau joueur !
+            </div>
+            <div style={{ color: 'white', fontSize: '48px', fontWeight: 'bold' }}>
+              {newPlayerAlert}
+            </div>
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600' }}>
-            JOUEUR
+        )}
+
+        {showEventPopup && lastEvent && (
+          <div style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            padding: '25px 40px',
+            borderRadius: '20px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+            zIndex: 1000,
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '40px', marginBottom: '8px' }}>🎉</div>
+            <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
+              {lastEvent.question}
+            </div>
+            <div style={{ color: 'white', fontSize: '18px', marginBottom: '5px' }}>
+              Réponse : {lastEvent.answer}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '16px' }}>
+              🏆 {lastEvent.winnersCount} joueur{lastEvent.winnersCount > 1 ? 's' : ''} ont gagné !
+            </div>
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600', textAlign: 'center' }}>
-            ÉVOL.
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600', textAlign: 'right' }}>
-            SCORE
-          </div>
-        </div>
+        )}
 
         <div style={{ 
           display: 'flex', 
-          flexDirection: 'column',
-          gap: '2px'
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          marginBottom: '15px',
+          paddingBottom: '10px',
+          borderBottom: '2px solid rgba(255,255,255,0.2)'
         }}>
-          {sortedPlayers.map((player, idx) => {
-            const rankChange = getRankChange(player.id, idx);
-            
-            return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '32px' }}>🏆</span>
+            <h1 style={{ 
+              color: 'white', 
+              fontSize: '28px', 
+              fontWeight: 'bold',
+              margin: 0
+            }}>
+              QUIZ BUTEUR LIVE
+            </h1>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold' }}>
+              ⚽ {matchTime}' • PSG vs Bayern
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
+              {matchStatus === 'live' ? '🔴 EN DIRECT' : '⏸️ PAUSE'} • {players.length} joueurs
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          background: 'rgba(255,255,255,0.05)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '16px',
+          padding: '15px 20px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          height: 'calc(100vh - 180px)',
+          overflowY: 'hidden'
+        }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '50px 1fr 100px',
+            padding: '6px 15px',
+            borderBottom: '2px solid rgba(255,255,255,0.2)',
+            marginBottom: '8px'
+          }}>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600' }}>
+              #
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600' }}>
+              JOUEUR
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600', textAlign: 'right' }}>
+              SCORE
+            </div>
+          </div>
+
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column',
+            gap: '2px'
+          }}>
+            {sortedPlayers.map((player, idx) => (
               <div
                 key={player.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '50px 1fr 80px 100px',
+                  gridTemplateColumns: '50px 1fr 100px',
                   alignItems: 'center',
                   padding: '4px 15px',
                   background: !player.isAI ? 'rgba(34, 197, 94, 0.3)' : idx < 3 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
@@ -907,28 +865,6 @@ export default function App() {
                   {player.name} {!player.isAI && '👤'}
                 </div>
 
-                {/* Flèches de changement */}
-                <div style={{ textAlign: 'center' }}>
-                  {rankChange !== null && rankChange > 0 && (
-                    <span style={{ 
-                      color: '#10b981', 
-                      fontSize: '16px',
-                      fontWeight: 'bold'
-                    }}>
-                      ⬆ +{rankChange}
-                    </span>
-                  )}
-                  {rankChange !== null && rankChange < 0 && (
-                    <span style={{ 
-                      color: '#ef4444', 
-                      fontSize: '16px',
-                      fontWeight: 'bold'
-                    }}>
-                      ⬇ {rankChange}
-                    </span>
-                  )}
-                </div>
-
                 <div style={{ 
                   color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'white',
                   fontSize: idx < 3 ? '16px' : '15px',
@@ -938,68 +874,70 @@ export default function App() {
                   {player.score}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div style={{
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        background: 'white',
-        borderRadius: '16px',
-        padding: '15px',
-        boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
-        textAlign: 'center',
-        border: '3px solid rgba(255,255,255,0.9)'
-      }}>
-        <img 
-          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(appUrl)}`}
-          alt="QR Code"
-          style={{
-            width: '150px',
-            height: '150px',
-            marginBottom: '10px',
-            borderRadius: '8px'
-          }}
-        />
-        <div style={{ 
-          color: '#1e3c72', 
-          fontSize: '13px', 
-          fontWeight: 'bold',
-          marginBottom: '4px'
-        }}>
-          Scanne pour jouer
-        </div>
-        <div style={{ 
-          color: '#667eea', 
-          fontSize: '11px',
-          fontWeight: '600'
-        }}>
-          Le Penalty - Paris 11e
-        </div>
-      </div>
-
-      <button
-        onClick={() => setView('home')}
-        style={{
+        <div style={{
           position: 'fixed',
-          top: '20px',
-          left: '20px',
-          background: 'rgba(255,255,255,0.15)',
-          border: 'none',
-          borderRadius: '10px',
-          padding: '10px 20px',
-          color: 'white',
-          fontSize: '14px',
-          fontWeight: '600',
-          cursor: 'pointer',
-          opacity: 0.5
-        }}
-      >
-        ← Menu
-      </button>
-    </div>
-  );
+          bottom: '20px',
+          right: '20px',
+          background: 'white',
+          borderRadius: '16px',
+          padding: '15px',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
+          textAlign: 'center',
+          border: '3px solid rgba(255,255,255,0.9)'
+        }}>
+          <img 
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(appUrl)}`}
+            alt="QR Code"
+            style={{
+              width: '150px',
+              height: '150px',
+              marginBottom: '10px',
+              borderRadius: '8px'
+            }}
+          />
+          <div style={{ 
+            color: '#1e3c72', 
+            fontSize: '13px', 
+            fontWeight: 'bold',
+            marginBottom: '4px'
+          }}>
+            Scanne pour jouer
+          </div>
+          <div style={{ 
+            color: '#667eea', 
+            fontSize: '11px',
+            fontWeight: '600'
+          }}>
+            Le Penalty - Paris 11e
+          </div>
+        </div>
+
+        <button
+          onClick={() => setView('home')}
+          style={{
+            position: 'fixed',
+            top: '20px',
+            left: '20px',
+            background: 'rgba(255,255,255,0.15)',
+            border: 'none',
+            borderRadius: '10px',
+            padding: '10px 20px',
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            opacity: 0.5
+          }}
+        >
+          ← Menu
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }
