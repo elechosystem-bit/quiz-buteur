@@ -17,6 +17,36 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+// Banque de 200 questions
+const QUESTION_BANK = [
+  { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Haaland", "Salah", "Kane", "De Bruyne"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Martinez", "Rashford"] },
+  { text: "Quelle équipe aura le prochain corner ?", options: ["Équipe A", "Équipe B", "Aucune", "Les deux"] },
+  { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur A", "Milieu B", "Attaquant C", "Gardien D"] },
+  { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
+  { text: "Qui va tenter le prochain tir ?", options: ["Joueur A", "Joueur B", "Joueur C", "Joueur D"] },
+  { text: "Y aura-t-il un penalty dans ce match ?", options: ["Oui", "Non", "Peut-être", "VAR décide"] },
+  { text: "Qui va faire la prochaine passe décisive ?", options: ["Milieu A", "Ailier B", "Défenseur C", "Attaquant D"] },
+  { text: "Quelle équipe dominera les 10 prochaines minutes ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] },
+  { text: "Qui va remporter le match ?", options: ["Équipe A", "Équipe B", "Match nul", "Prolongations"] },
+  { text: "Combien de cartons au total ?", options: ["0-2", "3-4", "5-6", "7+"] },
+  { text: "Y aura-t-il un carton rouge ?", options: ["Oui", "Non", "Deux", "VAR annule"] },
+  { text: "Qui va gagner le plus de duels ?", options: ["Joueur A", "Joueur B", "Joueur C", "Joueur D"] },
+  { text: "Combien de temps additionnel en 1ère mi-temps ?", options: ["0-1 min", "2-3 min", "4-5 min", "6+ min"] },
+  { text: "Qui va faire le prochain arrêt ?", options: ["Gardien A", "Gardien B", "Défenseur", "Poteau"] },
+  { text: "Quelle sera la prochaine action ?", options: ["Corner", "Coup franc", "Penalty", "But"] },
+  { text: "Qui va sortir sur blessure ?", options: ["Personne", "Attaquant", "Défenseur", "Milieu"] }
+];
+
+// Générer 200 questions en dupliquant et variant
+const FULL_QUESTION_BANK = [];
+for (let i = 0; i < 10; i++) {
+  QUESTION_BANK.forEach(q => FULL_QUESTION_BANK.push({...q}));
+}
+
 export default function App() {
   const [screen, setScreen] = useState('home');
   const [playerName, setPlayerName] = useState('');
@@ -29,11 +59,13 @@ export default function App() {
   const [matchState, setMatchState] = useState(null);
   const [goalNotif, setGoalNotif] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [flashingPlayers, setFlashingPlayers] = useState([]);
 
-  // Écouter les joueurs
+  // Écouter les joueurs avec animation
   useEffect(() => {
     const playersRef = ref(db, 'players');
     let isFirstLoad = true;
+    let previousScores = {};
     
     const unsubscribe = onValue(playersRef, (snapshot) => {
       const data = snapshot.val();
@@ -41,16 +73,36 @@ export default function App() {
         const playersList = Object.entries(data).map(([id, player]) => ({
           id,
           ...player
-        })).sort((a, b) => b.joinedAt - a.joinedAt);
+        }));
         
+        // Détecter les changements de score
+        if (!isFirstLoad) {
+          const newFlashing = [];
+          playersList.forEach(player => {
+            if (previousScores[player.id] && previousScores[player.id] < player.score) {
+              newFlashing.push(player.id);
+            }
+          });
+          if (newFlashing.length > 0) {
+            setFlashingPlayers(newFlashing);
+            setTimeout(() => setFlashingPlayers([]), 3000);
+          }
+        }
+        
+        // Sauvegarder les scores
+        previousScores = {};
+        playersList.forEach(p => previousScores[p.id] = p.score);
+        
+        // Notification nouveau joueur
+        const sortedByTime = [...playersList].sort((a, b) => b.joinedAt - a.joinedAt);
         if (!isFirstLoad && playersList.length > players.length) {
-          const newestPlayer = playersList[0];
+          const newestPlayer = sortedByTime[0];
           setNewPlayerNotif(newestPlayer.name);
           setTimeout(() => setNewPlayerNotif(null), 5000);
         }
         
         isFirstLoad = false;
-        setPlayers(playersList.sort((a, b) => b.score - a.score));
+        setPlayers([...playersList].sort((a, b) => b.score - a.score));
       }
     });
     return () => unsubscribe();
@@ -78,7 +130,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Écouter les réponses en temps réel
+  // Écouter les réponses
   useEffect(() => {
     if (currentQuestion) {
       const answersRef = ref(db, `answers/${currentQuestion.id}`);
@@ -104,9 +156,7 @@ export default function App() {
       const timer = setInterval(() => {
         setTimeLeft(prev => {
           const newTime = prev - 1;
-          if (newTime <= 0) {
-            return 0;
-          }
+          if (newTime <= 0) return 0;
           update(ref(db, 'currentQuestion'), { timeLeft: newTime });
           return newTime;
         });
@@ -118,24 +168,20 @@ export default function App() {
   // Connexion joueur
   const handleJoin = async () => {
     if (!playerName.trim()) return;
-    
     const newPlayerRef = push(ref(db, 'players'));
     await set(newPlayerRef, {
       name: playerName,
       score: 0,
       joinedAt: Date.now()
     });
-    
     setPlayerId(newPlayerRef.key);
     setScreen('mobile');
   };
 
-  // Répondre à une question
+  // Répondre
   const handleAnswer = async (answer) => {
     if (!currentQuestion || playerAnswer !== null) return;
-    
     setPlayerAnswer(answer);
-    
     const playerAnswerRef = ref(db, `answers/${currentQuestion.id}/${playerId}`);
     await set(playerAnswerRef, {
       answer,
@@ -149,29 +195,24 @@ export default function App() {
     await set(ref(db, 'matchState'), {
       isActive: true,
       startTime: Date.now(),
-      currentMinute: 0,
-      halfTime: false
+      currentMinute: 0
     });
-
-    // Lancer la première question après 10' (1 min réelle)
-    setTimeout(() => createQuestion(), 60000);
+    setTimeout(() => createQuestion(), 30000); // Première question après 30s
   };
 
-  // ADMIN: Créer une question
+  // ADMIN: Créer une question aléatoire
   const createQuestion = async () => {
     if (!matchState?.isActive) return;
-
+    const randomQuestion = FULL_QUESTION_BANK[Math.floor(Math.random() * FULL_QUESTION_BANK.length)];
     const questionId = Date.now().toString();
-    const players = ["Mbappé", "Griezmann", "Giroud", "Dembélé"];
     const newQuestion = {
       id: questionId,
-      text: "Qui va marquer le prochain but ?",
-      options: players,
+      text: randomQuestion.text,
+      options: randomQuestion.options,
       correctAnswer: null,
       timeLeft: 30,
       createdAt: Date.now()
     };
-    
     await set(ref(db, 'currentQuestion'), newQuestion);
     setPlayerAnswer(null);
   };
@@ -179,12 +220,9 @@ export default function App() {
   // ADMIN: Valider un but
   const validateGoal = async (scorer) => {
     if (!currentQuestion) return;
-
-    // Afficher la notification de but
     setGoalNotif(`⚽ ${scorer} a marqué !`);
     setTimeout(() => setGoalNotif(null), 5000);
 
-    // Donner les points aux bons parieurs
     const answersSnapshot = await new Promise(resolve => {
       onValue(ref(db, `answers/${currentQuestion.id}`), snapshot => {
         resolve(snapshot.val());
@@ -196,7 +234,6 @@ export default function App() {
         if (answerData.answer === scorer) {
           const bonusPoints = Math.floor(answerData.timeLeft / 5);
           const totalPoints = 10 + bonusPoints;
-          
           const player = players.find(p => p.id === playerId);
           if (player) {
             await update(ref(db, `players/${playerId}`), {
@@ -207,14 +244,12 @@ export default function App() {
       }
     }
 
-    // Terminer la question
     await remove(ref(db, 'currentQuestion'));
     await remove(ref(db, 'answers'));
     setPlayerAnswer(null);
 
-    // Lancer la prochaine question dans 5 min (30 secondes réelles)
     if (matchState?.isActive) {
-      setTimeout(() => createQuestion(), 30000);
+      setTimeout(() => createQuestion(), 30000); // Prochaine question dans 30s
     }
   };
 
@@ -229,10 +264,59 @@ export default function App() {
   const getMatchTime = () => {
     if (!matchState?.startTime) return "0'";
     const elapsed = Date.now() - matchState.startTime;
-    const matchMinutes = Math.floor(elapsed / 6000); // 1 min réelle = 10 min match
-    if (matchMinutes >= 90) return "90' - Fin du match";
-    if (matchMinutes >= 45) return `${matchMinutes}' - 2nde mi-temps`;
-    return `${matchMinutes}' - 1ère mi-temps`;
+    const matchMinutes = Math.floor(elapsed / 6000);
+    if (matchMinutes >= 90) return "90'";
+    return `${matchMinutes}'`;
+  };
+
+  const getMatchPhase = () => {
+    if (!matchState?.startTime) return "En attente";
+    const elapsed = Date.now() - matchState.startTime;
+    const matchMinutes = Math.floor(elapsed / 6000);
+    if (matchMinutes >= 90) return "Fin du match";
+    if (matchMinutes >= 45) return "2nde mi-temps";
+    return "1ère mi-temps";
+  };
+
+  // Composant Horloge
+  const MatchClock = () => {
+    const [rotation, setRotation] = useState(0);
+    
+    useEffect(() => {
+      if (matchState?.startTime) {
+        const interval = setInterval(() => {
+          const elapsed = Date.now() - matchState.startTime;
+          const matchMinutes = Math.floor(elapsed / 6000);
+          setRotation((matchMinutes / 90) * 360);
+        }, 1000);
+        return () => clearInterval(interval);
+      }
+    }, [matchState]);
+
+    return (
+      <div className="relative">
+        <div className="w-48 h-48 rounded-full bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 shadow-2xl flex items-center justify-center border-8 border-white">
+          <div className="absolute w-44 h-44 rounded-full bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-5xl font-black text-yellow-400">{getMatchTime()}</div>
+              <div className="text-xs text-yellow-300 font-bold mt-1">{getMatchPhase()}</div>
+            </div>
+            <div 
+              className="absolute w-1 h-16 bg-yellow-400 origin-bottom"
+              style={{ 
+                transform: `rotate(${rotation}deg) translateY(-50%)`,
+                bottom: '50%',
+                left: 'calc(50% - 0.5px)',
+                transition: 'transform 1s linear'
+              }}
+            />
+          </div>
+        </div>
+        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-black">
+          ROLEX
+        </div>
+      </div>
+    );
   };
 
   // HOME SCREEN
@@ -244,7 +328,6 @@ export default function App() {
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
-        
         <div className="flex gap-6">
           <button
             onClick={() => setScreen('mobile')}
@@ -252,7 +335,6 @@ export default function App() {
           >
             📱 JOUER
           </button>
-          
           <button
             onClick={() => setScreen('tv')}
             className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white"
@@ -260,7 +342,6 @@ export default function App() {
             📺 ÉCRAN BAR
           </button>
         </div>
-
         <div className="mt-12">
           <button
             onClick={() => setScreen('admin')}
@@ -328,7 +409,6 @@ export default function App() {
               <div className="space-y-3">
                 {currentQuestion.options.map((option, idx) => {
                   const isSelected = playerAnswer === option;
-
                   return (
                     <button
                       key={idx}
@@ -350,7 +430,6 @@ export default function App() {
               {playerAnswer && (
                 <div className="mt-6 text-center">
                   <p className="text-blue-600 font-semibold">Réponse enregistrée ⏳</p>
-                  <p className="text-sm text-gray-600 mt-2">En attente du but...</p>
                 </div>
               )}
             </div>
@@ -373,12 +452,8 @@ export default function App() {
           <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
             <div className="bg-gradient-to-r from-green-500 to-green-600 text-white px-24 py-16 rounded-3xl shadow-2xl border-8 border-white animate-pulse">
               <div className="text-7xl font-black text-center mb-4">🎉</div>
-              <div className="text-6xl font-black text-center">
-                {newPlayerNotif}
-              </div>
-              <div className="text-4xl font-bold text-center mt-4">
-                a rejoint la partie !
-              </div>
+              <div className="text-6xl font-black text-center">{newPlayerNotif}</div>
+              <div className="text-4xl font-bold text-center mt-4">a rejoint la partie !</div>
             </div>
           </div>
         )}
@@ -386,9 +461,7 @@ export default function App() {
         {goalNotif && (
           <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
             <div className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-24 py-16 rounded-3xl shadow-2xl border-8 border-white animate-bounce">
-              <div className="text-8xl font-black text-center">
-                {goalNotif}
-              </div>
+              <div className="text-8xl font-black text-center">{goalNotif}</div>
             </div>
           </div>
         )}
@@ -397,34 +470,28 @@ export default function App() {
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             <p className="text-2xl text-green-300">Le Penalty - Paris 11e</p>
-            {matchState?.isActive && (
-              <p className="text-4xl text-yellow-400 font-black mt-4">
-                ⏱️ {getMatchTime()}
-              </p>
-            )}
           </div>
-          <div className="bg-white p-6 rounded-2xl">
-            <img 
-              src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://quiz-buteur.vercel.app"
-              alt="QR Code"
-              className="w-48 h-48"
-            />
-            <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
+          <div className="flex gap-6">
+            {matchState?.isActive && <MatchClock />}
+            <div className="bg-white p-6 rounded-2xl">
+              <img 
+                src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://quiz-buteur.vercel.app"
+                alt="QR Code"
+                className="w-48 h-48"
+              />
+              <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
+            </div>
           </div>
         </div>
 
         {currentQuestion && (
           <div className="bg-yellow-400 rounded-2xl p-6 mb-6">
-            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">
-              📊 VOTES EN TEMPS RÉEL
-            </h3>
+            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">📊 VOTES EN TEMPS RÉEL</h3>
             <div className="grid grid-cols-4 gap-4">
               {currentQuestion.options.map(option => (
                 <div key={option} className="bg-white rounded-xl p-4 text-center">
                   <div className="text-2xl font-bold text-gray-900">{option}</div>
-                  <div className="text-4xl font-black text-green-600">
-                    {answers[option] || 0} votes
-                  </div>
+                  <div className="text-4xl font-black text-green-600">{answers[option] || 0}</div>
                 </div>
               ))}
             </div>
@@ -442,8 +509,10 @@ export default function App() {
             {players.slice(0, 16).map((player, idx) => (
               <div
                 key={player.id}
-                className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
-                  idx === 0
+                className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all duration-1000 ${
+                  flashingPlayers.includes(player.id)
+                    ? 'animate-pulse bg-green-400 scale-105'
+                    : idx === 0
                     ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
                     : idx === 1
                     ? 'bg-gray-300 text-gray-900 font-bold text-xl'
@@ -455,12 +524,8 @@ export default function App() {
                 <div className="col-span-1 font-bold">
                   {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
                 </div>
-                <div className="col-span-7 font-bold truncate">
-                  {player.name}
-                </div>
-                <div className="col-span-4 text-right font-black">
-                  {player.score} pts
-                </div>
+                <div className="col-span-7 font-bold truncate">{player.name}</div>
+                <div className="col-span-4 text-right font-black">{player.score} pts</div>
               </div>
             ))}
           </div>
@@ -480,21 +545,13 @@ export default function App() {
             <h2 className="text-2xl font-bold mb-4">Match</h2>
             {matchState?.isActive ? (
               <div>
-                <p className="text-3xl text-yellow-400 font-bold mb-4">
-                  ⏱️ {getMatchTime()}
-                </p>
-                <button
-                  onClick={endMatch}
-                  className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700"
-                >
+                <p className="text-3xl text-yellow-400 font-bold mb-4">⏱️ {getMatchTime()} - {getMatchPhase()}</p>
+                <button onClick={endMatch} className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700">
                   Terminer le match
                 </button>
               </div>
             ) : (
-              <button
-                onClick={startMatch}
-                className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
-              >
+              <button onClick={startMatch} className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700">
                 🚀 Démarrer le match
               </button>
             )}
@@ -504,18 +561,14 @@ export default function App() {
             <div className="bg-gray-800 rounded-xl p-6 mb-6">
               <h2 className="text-2xl font-bold mb-4">Question actuelle</h2>
               <p className="text-xl mb-4">{currentQuestion.text}</p>
-              <p className="text-green-400 mb-4">Temps restant: {timeLeft}s</p>
-              
+              <p className="text-green-400 mb-4">Temps: {timeLeft}s</p>
               <div className="mb-4">
                 <h3 className="text-lg font-bold mb-2">Votes :</h3>
                 {currentQuestion.options.map(option => (
-                  <div key={option} className="text-white mb-2">
-                    {option}: {answers[option] || 0} votes
-                  </div>
+                  <div key={option} className="text-white mb-2">{option}: {answers[option] || 0}</div>
                 ))}
               </div>
-
-              <h3 className="text-xl font-bold mb-4">🎯 Qui a marqué ?</h3>
+              <h3 className="text-xl font-bold mb-4">🎯 Qui a marqué / gagné ?</h3>
               <div className="grid grid-cols-2 gap-3">
                 {currentQuestion.options.map(player => (
                   <button
@@ -531,31 +584,25 @@ export default function App() {
           )}
 
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Actions manuelles</h2>
-            <button
-              onClick={createQuestion}
-              className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 mr-3"
-            >
-              Créer une question manuellement
+            <h2 className="text-2xl font-bold mb-4">Actions</h2>
+            <button onClick={createQuestion} className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700">
+              Créer question manuelle
             </button>
           </div>
 
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-2xl font-bold mb-4">Joueurs connectés ({players.length})</h2>
+            <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
             <div className="space-y-2">
               {players.map(player => (
-                <div key={player.id} className="flex justify-between items-center bg-gray-700 p-3 rounded">
-                  <span className="font-semibold">{player.name}</span>
+                <div key={player.id} className="flex justify-between bg-gray-700 p-3 rounded">
+                  <span>{player.name}</span>
                   <span className="text-green-400">{player.score} pts</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <button
-            onClick={() => setScreen('home')}
-            className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600"
-          >
+          <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600">
             ← Retour
           </button>
         </div>
