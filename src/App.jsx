@@ -1,110 +1,106 @@
 import React, { useState, useEffect } from 'react';
 
-// Banque de questions possibles
 const QUESTION_BANK = [
   {
-    id: 'goal_1',
-    type: 'next_goal',
+    id: 'goal',
     question: '⚽ Qui va marquer le prochain but ?',
     options: ['Mbappé', 'Haaland', 'Lewandowski', 'Autre joueur'],
     points: 200,
     timer: 60
   },
   {
-    id: 'corner_1',
-    type: 'next_corner',
+    id: 'corner',
     question: '⛳ Quelle équipe aura le prochain corner ?',
-    options: ['Équipe A', 'Équipe B'],
+    options: ['PSG', 'Bayern'],
     points: 100,
     timer: 45
   },
   {
-    id: 'card_1',
-    type: 'next_card',
+    id: 'card',
     question: '🟨 Quelle équipe recevra le prochain carton ?',
-    options: ['Équipe A', 'Équipe B', 'Aucun carton'],
+    options: ['PSG', 'Bayern', 'Aucun'],
     points: 150,
     timer: 60
   },
   {
-    id: 'sub_1',
-    type: 'next_sub',
+    id: 'sub',
     question: '🔄 Quelle équipe fera le prochain changement ?',
-    options: ['Équipe A', 'Équipe B'],
+    options: ['PSG', 'Bayern'],
     points: 120,
     timer: 45
   }
 ];
 
+const AI_PLAYERS = [
+  { id: '1', name: 'Thomas', score: 450, isAI: true },
+  { id: '2', name: 'Marie', score: 380, isAI: true },
+  { id: '3', name: 'Alex', score: 320, isAI: true },
+  { id: '4', name: 'Lucas', score: 310, isAI: true },
+  { id: '5', name: 'Sophie', score: 290, isAI: true },
+  { id: '6', name: 'Hugo', score: 275, isAI: true },
+  { id: '7', name: 'Emma', score: 260, isAI: true },
+  { id: '8', name: 'Nathan', score: 245, isAI: true },
+  { id: '9', name: 'Léa', score: 230, isAI: true },
+  { id: '10', name: 'Louis', score: 215, isAI: true },
+  { id: '11', name: 'Chloé', score: 200, isAI: true },
+  { id: '12', name: 'Arthur', score: 190, isAI: true },
+  { id: '13', name: 'Camille', score: 180, isAI: true },
+  { id: '14', name: 'Tom', score: 170, isAI: true },
+  { id: '15', name: 'Julie', score: 160, isAI: true },
+  { id: '16', name: 'Gabriel', score: 155, isAI: true },
+  { id: '17', name: 'Zoé', score: 150, isAI: true },
+  { id: '18', name: 'Raphaël', score: 145, isAI: true },
+  { id: '19', name: 'Laura', score: 140, isAI: true },
+  { id: '20', name: 'Adam', score: 135, isAI: true },
+  { id: '21', name: 'Manon', score: 130, isAI: true },
+  { id: '22', name: 'Enzo', score: 125, isAI: true },
+  { id: '23', name: 'Alice', score: 120, isAI: true },
+  { id: '24', name: 'Victor', score: 115, isAI: true },
+  { id: '25', name: 'Inès', score: 110, isAI: true },
+  { id: '26', name: 'Paul', score: 105, isAI: true },
+  { id: '27', name: 'Charlotte', score: 100, isAI: true },
+  { id: '28', name: 'Jules', score: 95, isAI: true },
+  { id: '29', name: 'Lola', score: 90, isAI: true },
+  { id: '30', name: 'Mathis', score: 85, isAI: true },
+  { id: '31', name: 'Jade', score: 80, isAI: true },
+  { id: '32', name: 'Timéo', score: 75, isAI: true },
+  { id: '33', name: 'Lily', score: 70, isAI: true },
+  { id: '34', name: 'Maxime', score: 65, isAI: true },
+  { id: '35', name: 'Nina', score: 60, isAI: true },
+  { id: '36', name: 'Ethan', score: 55, isAI: true },
+  { id: '37', name: 'Rose', score: 50, isAI: true },
+  { id: '38', name: 'Nolan', score: 45, isAI: true },
+  { id: '39', name: 'Anna', score: 40, isAI: true },
+  { id: '40', name: 'Antoine', score: 35, isAI: true },
+  { id: '41', name: 'Eva', score: 30, isAI: true },
+  { id: '42', name: 'Sacha', score: 25, isAI: true },
+  { id: '43', name: 'Mila', score: 20, isAI: true },
+  { id: '44', name: 'Théo', score: 15, isAI: true },
+  { id: '45', name: 'Léna', score: 10, isAI: true },
+  { id: '46', name: 'Clément', score: 8, isAI: true },
+  { id: '47', name: 'Lisa', score: 6, isAI: true },
+  { id: '48', name: 'Dylan', score: 4, isAI: true },
+  { id: '49', name: 'Sarah', score: 2, isAI: true },
+  { id: '50', name: 'Léo', score: 0, isAI: true }
+];
+
 export default function App() {
   const [view, setView] = useState('home');
   const [name, setName] = useState('');
-  const [players, setPlayers] = useState([
-    { id: '1', name: 'Thomas', score: 450 },
-    { id: '2', name: 'Marie', score: 380 },
-    { id: '3', name: 'Alex', score: 320 },
-    { id: '4', name: 'Lucas', score: 310 },
-    { id: '5', name: 'Sophie', score: 290 },
-    { id: '6', name: 'Hugo', score: 275 },
-    { id: '7', name: 'Emma', score: 260 },
-    { id: '8', name: 'Nathan', score: 245 },
-    { id: '9', name: 'Léa', score: 230 },
-    { id: '10', name: 'Louis', score: 215 },
-    { id: '11', name: 'Chloé', score: 200 },
-    { id: '12', name: 'Arthur', score: 190 },
-    { id: '13', name: 'Camille', score: 180 },
-    { id: '14', name: 'Tom', score: 170 },
-    { id: '15', name: 'Julie', score: 160 },
-    { id: '16', name: 'Gabriel', score: 155 },
-    { id: '17', name: 'Zoé', score: 150 },
-    { id: '18', name: 'Raphaël', score: 145 },
-    { id: '19', name: 'Laura', score: 140 },
-    { id: '20', name: 'Adam', score: 135 },
-    { id: '21', name: 'Manon', score: 130 },
-    { id: '22', name: 'Enzo', score: 125 },
-    { id: '23', name: 'Alice', score: 120 },
-    { id: '24', name: 'Victor', score: 115 },
-    { id: '25', name: 'Inès', score: 110 },
-    { id: '26', name: 'Paul', score: 105 },
-    { id: '27', name: 'Charlotte', score: 100 },
-    { id: '28', name: 'Jules', score: 95 },
-    { id: '29', name: 'Lola', score: 90 },
-    { id: '30', name: 'Mathis', score: 85 },
-    { id: '31', name: 'Jade', score: 80 },
-    { id: '32', name: 'Timéo', score: 75 },
-    { id: '33', name: 'Lily', score: 70 },
-    { id: '34', name: 'Maxime', score: 65 },
-    { id: '35', name: 'Nina', score: 60 },
-    { id: '36', name: 'Ethan', score: 55 },
-    { id: '37', name: 'Rose', score: 50 },
-    { id: '38', name: 'Nolan', score: 45 },
-    { id: '39', name: 'Anna', score: 40 },
-    { id: '40', name: 'Antoine', score: 35 },
-    { id: '41', name: 'Eva', score: 30 },
-    { id: '42', name: 'Sacha', score: 25 },
-    { id: '43', name: 'Mila', score: 20 },
-    { id: '44', name: 'Théo', score: 15 },
-    { id: '45', name: 'Léna', score: 10 },
-    { id: '46', name: 'Clément', score: 8 },
-    { id: '47', name: 'Lisa', score: 6 },
-    { id: '48', name: 'Dylan', score: 4 },
-    { id: '49', name: 'Sarah', score: 2 },
-    { id: '50', name: 'Léo', score: 0 }
-  ]);
+  const [players, setPlayers] = useState(AI_PLAYERS);
   
-  // État du match
   const [matchTime, setMatchTime] = useState(0);
   const [matchStatus, setMatchStatus] = useState('live');
   const [currentPlayer, setCurrentPlayer] = useState(null);
   
-  // État des questions PUSH
-  const [activeQuestion, setActiveQuestion] = useState(null); // UNE SEULE question active
+  const [activeQuestion, setActiveQuestion] = useState(null);
   const [questionTimer, setQuestionTimer] = useState(0);
-  const [answers, setAnswers] = useState([]); // Toutes les réponses de tous les joueurs
-  const [myAnswer, setMyAnswer] = useState(null); // Ma réponse à la question active
+  const [answers, setAnswers] = useState([]);
+  const [myAnswer, setMyAnswer] = useState(null);
   const [lastEvent, setLastEvent] = useState(null);
   const [showEventPopup, setShowEventPopup] = useState(false);
   const [showNewQuestionAlert, setShowNewQuestionAlert] = useState(false);
+  const [newPlayerAlert, setNewPlayerAlert] = useState(null);
 
   // Timer du match
   useEffect(() => {
@@ -122,7 +118,7 @@ export default function App() {
     }
   }, [matchStatus]);
 
-  // Timer de la question active
+  // Timer de la question
   useEffect(() => {
     if (activeQuestion && questionTimer > 0) {
       const timer = setTimeout(() => {
@@ -130,20 +126,18 @@ export default function App() {
       }, 1000);
       return () => clearTimeout(timer);
     } else if (activeQuestion && questionTimer === 0) {
-      // Temps écoulé, fermer la question
       setTimeout(() => {
         setActiveQuestion(prev => ({...prev, status: 'closed'}));
       }, 1000);
     }
   }, [questionTimer, activeQuestion]);
 
-  // Simulateur: Envoyer une nouvelle question aléatoirement
+  // Envoyer des questions aléatoirement
   useEffect(() => {
     if (matchStatus === 'live' && matchTime > 0 && !activeQuestion) {
       const chance = Math.random();
       
-      // 8% de chance d'envoyer une question à chaque minute
-      if (chance < 0.08) {
+      if (chance < 0.1) {
         setTimeout(() => {
           pushNewQuestion();
         }, Math.random() * 3000);
@@ -151,7 +145,6 @@ export default function App() {
     }
   }, [matchTime, activeQuestion]);
 
-  // Fonction pour PUSH une nouvelle question
   const pushNewQuestion = () => {
     const randomQuestion = QUESTION_BANK[Math.floor(Math.random() * QUESTION_BANK.length)];
     const newQuestion = {
@@ -166,22 +159,46 @@ export default function App() {
     setMyAnswer(null);
     setShowNewQuestionAlert(true);
     setTimeout(() => setShowNewQuestionAlert(false), 3000);
+
+    // Les joueurs IA répondent automatiquement
+    setTimeout(() => {
+      simulateAIAnswers(newQuestion);
+    }, 2000);
   };
 
-  // Fonction pour déclencher un événement (simulé)
+  // Simuler les réponses des IA
+  const simulateAIAnswers = (question) => {
+    const aiAnswers = players
+      .filter(p => p.isAI)
+      .map(player => {
+        // 70% des IA répondent, 30% ne répondent pas
+        if (Math.random() < 0.7) {
+          return {
+            id: `${player.id}_${Date.now()}`,
+            playerId: player.id,
+            playerName: player.name,
+            questionId: question.id,
+            answer: question.options[Math.floor(Math.random() * question.options.length)],
+            timestamp: matchTime + Math.random() * 30 // Répondent dans les 30 premières secondes
+          };
+        }
+        return null;
+      })
+      .filter(a => a !== null);
+
+    setAnswers(prev => [...prev, ...aiAnswers]);
+  };
+
   const triggerEvent = (answer) => {
     if (!activeQuestion || activeQuestion.status === 'validated') return;
 
-    // Marquer la question comme validée
     setActiveQuestion(prev => ({...prev, status: 'validated', correctAnswer: answer}));
 
-    // Calculer les gagnants
     const winners = answers.filter(a => 
       a.questionId === activeQuestion.id && 
       a.answer === answer
     );
 
-    // Attribuer les points
     winners.forEach(winner => {
       const responseTime = winner.timestamp - activeQuestion.pushedAt;
       const speedBonus = Math.max(0, Math.floor((30 - responseTime) * 5));
@@ -196,7 +213,6 @@ export default function App() {
       );
     });
 
-    // Afficher l'événement
     setLastEvent({
       question: activeQuestion.question,
       answer: answer,
@@ -206,16 +222,13 @@ export default function App() {
     setShowEventPopup(true);
     setTimeout(() => setShowEventPopup(false), 5000);
 
-    // Fermer la question après 3 secondes
     setTimeout(() => {
       setActiveQuestion(null);
     }, 3000);
   };
 
-  // Simuler des événements aléatoires après fermeture de question
   useEffect(() => {
     if (activeQuestion && activeQuestion.status === 'closed' && activeQuestion.status !== 'validated') {
-      // Après 2-5 secondes, déclencher un événement
       const delay = 2000 + Math.random() * 3000;
       const timer = setTimeout(() => {
         const randomAnswer = activeQuestion.options[Math.floor(Math.random() * activeQuestion.options.length)];
@@ -230,10 +243,16 @@ export default function App() {
       const newPlayer = { 
         id: Date.now().toString(),
         name: name.trim(), 
-        score: 0
+        score: 0,
+        isAI: false
       };
       setPlayers([...players, newPlayer]);
       setCurrentPlayer(newPlayer);
+      
+      // Afficher l'alerte sur l'écran TV
+      setNewPlayerAlert(name.trim());
+      setTimeout(() => setNewPlayerAlert(null), 5000);
+      
       setView('game');
     }
   };
@@ -254,7 +273,6 @@ export default function App() {
     setMyAnswer(answer);
   };
 
-  // URL de l'app pour le QR code
   const appUrl = window.location.origin;
 
   // ========== ÉCRAN HOME ==========
@@ -389,7 +407,7 @@ export default function App() {
             Quiz Buteur
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '18px', marginBottom: '30px' }}>
-            ⚽ Match en cours : {matchTime}'
+            ⚽ Match en cours : {matchTime}' • PSG vs Bayern
           </p>
           
           <input
@@ -446,7 +464,6 @@ export default function App() {
         paddingBottom: '100px',
         fontFamily: 'system-ui, -apple-system, sans-serif'
       }}>
-        {/* Alert nouvelle question */}
         {showNewQuestionAlert && (
           <div style={{
             position: 'fixed',
@@ -458,7 +475,6 @@ export default function App() {
             borderRadius: '16px',
             boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
             zIndex: 1000,
-            animation: 'slideDown 0.5s ease-out',
             textAlign: 'center'
           }}>
             <div style={{ fontSize: '32px', marginBottom: '5px' }}>🔔</div>
@@ -468,7 +484,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Header */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -483,7 +498,7 @@ export default function App() {
               👤 {currentPlayer?.name}
             </div>
             <div style={{ fontSize: '14px', opacity: 0.8 }}>
-              ⚽ {matchTime}' • {matchStatus === 'live' ? '🔴 EN DIRECT' : '⏸️ PAUSE'}
+              ⚽ {matchTime}' • PSG vs Bayern
             </div>
           </div>
           <div style={{ 
@@ -496,7 +511,6 @@ export default function App() {
         </div>
 
         <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-          {/* Question active */}
           {activeQuestion ? (
             <div style={{
               background: activeQuestion.status === 'validated' 
@@ -511,7 +525,6 @@ export default function App() {
               }`,
               boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
             }}>
-              {/* Timer */}
               {activeQuestion.status === 'active' && (
                 <div style={{
                   textAlign: 'center',
@@ -542,7 +555,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Question */}
               <h2 style={{
                 color: 'white',
                 fontSize: '26px',
@@ -554,7 +566,6 @@ export default function App() {
                 {activeQuestion.question}
               </h2>
 
-              {/* Options ou statut */}
               {activeQuestion.status === 'validated' ? (
                 <div style={{
                   background: 'rgba(34, 197, 94, 0.3)',
@@ -641,7 +652,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Info points */}
               {activeQuestion.status === 'active' && !myAnswer && (
                 <div style={{
                   textAlign: 'center',
@@ -654,7 +664,6 @@ export default function App() {
               )}
             </div>
           ) : (
-            // Attente de la prochaine question
             <div style={{
               background: 'rgba(255,255,255,0.1)',
               backdropFilter: 'blur(10px)',
@@ -683,7 +692,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Bouton retour */}
         <div style={{
           position: 'fixed',
           bottom: '20px',
@@ -714,7 +722,7 @@ export default function App() {
     );
   }
 
-  // ========== ÉCRAN TV ==========
+  // ========== ÉCRAN TV (SANS QUESTIONS) ==========
   return (
     <div style={{
       minHeight: '100vh',
@@ -724,6 +732,27 @@ export default function App() {
       position: 'relative',
       overflow: 'hidden'
     }}>
+      {/* Alerte nouveau joueur */}
+      {newPlayerAlert && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+          padding: '25px 50px',
+          borderRadius: '20px',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+          zIndex: 1000,
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '40px', marginBottom: '8px' }}>🎉</div>
+          <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold' }}>
+            {newPlayerAlert} vient de rejoindre !
+          </div>
+        </div>
+      )}
+
       {/* Popup événement */}
       {showEventPopup && lastEvent && (
         <div style={{
@@ -751,7 +780,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Header */}
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
@@ -773,7 +801,7 @@ export default function App() {
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold' }}>
-            ⚽ {matchTime}'
+            ⚽ {matchTime}' • PSG vs Bayern
           </div>
           <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>
             {matchStatus === 'live' ? '🔴 EN DIRECT' : '⏸️ PAUSE'} • {players.length} joueurs
@@ -781,7 +809,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Classement compact */}
       <div style={{
         background: 'rgba(255,255,255,0.05)',
         backdropFilter: 'blur(10px)',
@@ -822,8 +849,8 @@ export default function App() {
                 gridTemplateColumns: '50px 1fr 100px',
                 alignItems: 'center',
                 padding: '4px 15px',
-                background: idx < 3 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
-                borderLeft: idx < 3 ? '3px solid #fbbf24' : '3px solid transparent',
+                background: !player.isAI ? 'rgba(34, 197, 94, 0.3)' : idx < 3 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
+                borderLeft: !player.isAI ? '3px solid #22c55e' : idx < 3 ? '3px solid #fbbf24' : '3px solid transparent',
                 borderRadius: '6px',
                 transition: 'all 0.2s'
               }}
@@ -831,7 +858,7 @@ export default function App() {
               <div style={{ 
                 fontSize: idx < 3 ? '16px' : '14px',
                 fontWeight: '600',
-                color: idx < 3 ? '#fbbf24' : 'rgba(255,255,255,0.5)'
+                color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'rgba(255,255,255,0.5)'
               }}>
                 {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
               </div>
@@ -839,13 +866,13 @@ export default function App() {
               <div style={{ 
                 color: 'white', 
                 fontSize: idx < 3 ? '15px' : '14px',
-                fontWeight: idx < 3 ? '700' : '500'
+                fontWeight: !player.isAI ? '700' : idx < 3 ? '700' : '500'
               }}>
-                {player.name}
+                {player.name} {!player.isAI && '👤'}
               </div>
 
               <div style={{ 
-                color: idx < 3 ? '#fbbf24' : 'white',
+                color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'white',
                 fontSize: idx < 3 ? '16px' : '15px',
                 fontWeight: 'bold',
                 textAlign: 'right'
@@ -857,7 +884,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* QR Code REEL avec API */}
       <div style={{
         position: 'fixed',
         bottom: '20px',
