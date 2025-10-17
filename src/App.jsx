@@ -118,15 +118,52 @@ export default function App() {
     return () => unsub();
   }, [currentQuestion?.id]);
 
-  // Timer
+  // Timer avec validation automatique
   useEffect(() => {
-    if (!currentQuestion || timeLeft <= 0) return;
+    if (!currentQuestion) return;
+    
+    if (timeLeft <= 0) {
+      // Timer à 0 → Validation automatique !
+      autoValidate();
+      return;
+    }
+    
     const timer = setTimeout(() => {
       setTimeLeft(timeLeft - 1);
       update(ref(db, 'currentQuestion'), { timeLeft: timeLeft - 1 }).catch(() => {});
     }, 1000);
     return () => clearTimeout(timer);
   }, [currentQuestion, timeLeft]);
+
+  const autoValidate = async () => {
+    if (!currentQuestion) return;
+    try {
+      // Choisir une réponse au hasard (simulation)
+      const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
+      
+      const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
+      
+      if (answersSnap.exists()) {
+        for (const [pId, data] of Object.entries(answersSnap.val())) {
+          if (data.answer === randomWinner) {
+            const playerSnap = await get(ref(db, `players/${pId}`));
+            if (playerSnap.exists()) {
+              const bonus = Math.floor((data.timeLeft || 0) / 5);
+              const total = 10 + bonus;
+              await update(ref(db, `players/${pId}`), {
+                score: (playerSnap.val().score || 0) + total
+              });
+            }
+          }
+        }
+      }
+
+      await remove(ref(db, 'currentQuestion'));
+      await remove(ref(db, 'answers'));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleJoin = async () => {
     if (!playerName.trim()) return;
@@ -472,14 +509,16 @@ export default function App() {
 
           {currentQuestion && (
             <div className="bg-gray-800 rounded-xl p-6 mb-6">
-              <h2 className="text-2xl font-bold mb-4">Question</h2>
+              <h2 className="text-2xl font-bold mb-4">Question en cours</h2>
               <p className="text-xl mb-4">{currentQuestion.text}</p>
+              <p className="text-yellow-400 mb-4">⏱️ Timer : {timeLeft}s (Validation auto à 0)</p>
               <div className="mb-4">
                 {currentQuestion.options.map(opt => (
-                  <div key={opt} className="mb-2">{opt}: {answers[opt] || 0}</div>
+                  <div key={opt} className="mb-2">{opt}: {answers[opt] || 0} votes</div>
                 ))}
               </div>
-              <h3 className="text-xl font-bold mb-4">Qui a gagné ?</h3>
+              <p className="text-sm text-gray-400 mb-4">💡 Le système valide automatiquement au hasard quand le timer arrive à 0</p>
+              <h3 className="text-xl font-bold mb-4">🎯 Validation manuelle (optionnel) :</h3>
               <div className="grid grid-cols-2 gap-3">
                 {currentQuestion.options.map(opt => (
                   <button key={opt} onClick={() => validateGoal(opt)} className="bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg font-bold hover:bg-yellow-400">
