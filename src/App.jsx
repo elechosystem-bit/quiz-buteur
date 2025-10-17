@@ -27,6 +27,7 @@ export default function App() {
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [newPlayerNotif, setNewPlayerNotif] = useState(null);
+  const prevPlayersCountRef = useRef(0);
 
   // Écouter les joueurs en temps réel
   useEffect(() => {
@@ -39,16 +40,15 @@ export default function App() {
           ...player
         })).sort((a, b) => b.score - a.score);
         
-        setPlayers(prevPlayers => {
-          if (prevPlayers.length < playersList.length) {
-            const newPlayer = playersList.find(p => !prevPlayers.some(prev => prev.id === p.id));
-            if (newPlayer) {
-              setNewPlayerNotif(newPlayer.name);
-              setTimeout(() => setNewPlayerNotif(null), 3000);
-            }
-          }
-          return playersList;
-        });
+        // Détecter nouveau joueur
+        if (prevPlayersCountRef.current > 0 && playersList.length > prevPlayersCountRef.current) {
+          const newPlayer = playersList[playersList.length - 1];
+          setNewPlayerNotif(newPlayer.name);
+          setTimeout(() => setNewPlayerNotif(null), 5000);
+        }
+        
+        prevPlayersCountRef.current = playersList.length;
+        setPlayers(playersList);
       }
     });
     return () => unsubscribe();
@@ -300,10 +300,12 @@ export default function App() {
   // TV SCREEN
   if (screen === 'tv') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8 relative">
         {newPlayerNotif && (
-          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-12 py-6 rounded-2xl text-4xl font-black shadow-2xl z-50 animate-bounce">
-            🎉 Nouveau joueur ! {newPlayerNotif}
+          <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+            <div className="bg-green-500 text-white px-20 py-12 rounded-3xl text-6xl font-black shadow-2xl animate-bounce border-8 border-white">
+              🎉 {newPlayerNotif} a rejoint la partie !
+            </div>
           </div>
         )}
 
