@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, push, update, remove } from 'firebase/database';
 
@@ -28,32 +28,31 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [newPlayerNotif, setNewPlayerNotif] = useState(null);
 
-  // Écouter les nouveaux joueurs pour la notification
+  // Écouter les joueurs en temps réel
   useEffect(() => {
     const playersRef = ref(db, 'players');
-    let isFirstLoad = true;
-    
     const unsubscribe = onValue(playersRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const playersList = Object.entries(data).map(([id, player]) => ({
           id,
           ...player
-        })).sort((a, b) => b.joinedAt - a.joinedAt);
+        })).sort((a, b) => b.score - a.score);
         
-        // Si c'est pas le premier chargement, afficher la notif du dernier joueur
-        if (!isFirstLoad && playersList.length > players.length) {
-          const newestPlayer = playersList[0];
-          setNewPlayerNotif(newestPlayer.name);
-          setTimeout(() => setNewPlayerNotif(null), 5000);
-        }
-        
-        isFirstLoad = false;
-        setPlayers(playersList.sort((a, b) => b.score - a.score));
+        setPlayers(prevPlayers => {
+          if (prevPlayers.length < playersList.length) {
+            const newPlayer = playersList.find(p => !prevPlayers.some(prev => prev.id === p.id));
+            if (newPlayer) {
+              setNewPlayerNotif(newPlayer.name);
+              setTimeout(() => setNewPlayerNotif(null), 3000);
+            }
+          }
+          return playersList;
+        });
       }
     });
     return () => unsubscribe();
-  }, [players.length]);
+  }, []);
 
   // Écouter la question active en temps réel
   useEffect(() => {
@@ -202,7 +201,7 @@ export default function App() {
               type="text"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="ZYNGA"
+              placeholder="Ton prénom..."
               className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
               onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
             />
@@ -301,18 +300,10 @@ export default function App() {
   // TV SCREEN
   if (screen === 'tv') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8 relative">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
         {newPlayerNotif && (
-          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
-            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white px-24 py-16 rounded-3xl shadow-2xl border-8 border-white animate-pulse">
-              <div className="text-7xl font-black text-center mb-4">🎉</div>
-              <div className="text-6xl font-black text-center">
-                {newPlayerNotif}
-              </div>
-              <div className="text-4xl font-bold text-center mt-4">
-                a rejoint la partie !
-              </div>
-            </div>
+          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-12 py-6 rounded-2xl text-4xl font-black shadow-2xl z-50 animate-bounce">
+            🎉 Nouveau joueur ! {newPlayerNotif}
           </div>
         )}
 
@@ -339,17 +330,17 @@ export default function App() {
           </div>
 
           <div className="space-y-1">
-            {players.slice(0, 16).map((player, idx) => (
+            {players.slice(0, 50).map((player, idx) => (
               <div
                 key={player.id}
-                className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
+                className={`grid grid-cols-12 gap-3 items-center py-2 px-3 rounded-lg transition-all ${
                   idx === 0
-                    ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                    ? 'bg-yellow-400 text-gray-900 font-black text-lg'
                     : idx === 1
-                    ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                    ? 'bg-gray-300 text-gray-900 font-bold text-base'
                     : idx === 2
-                    ? 'bg-orange-300 text-gray-900 font-bold text-xl'
-                    : 'bg-gray-50 hover:bg-gray-100 text-lg'
+                    ? 'bg-orange-300 text-gray-900 font-bold text-base'
+                    : 'bg-gray-50 hover:bg-gray-100 text-sm'
                 }`}
               >
                 <div className="col-span-1 font-bold">
