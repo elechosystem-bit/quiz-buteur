@@ -101,6 +101,7 @@ export default function App() {
   const [showEventPopup, setShowEventPopup] = useState(false);
   const [showNewQuestionAlert, setShowNewQuestionAlert] = useState(false);
   const [newPlayerAlert, setNewPlayerAlert] = useState(null);
+  const [previousRankings, setPreviousRankings] = useState({});
 
   // Timer du match
   useEffect(() => {
@@ -246,12 +247,12 @@ export default function App() {
         score: 0,
         isAI: false
       };
-      setPlayers([...players, newPlayer]);
+      setPlayers(prev => [...prev, newPlayer]);
       setCurrentPlayer(newPlayer);
       
-      // Afficher l'alerte sur l'écran TV
+      // Afficher l'alerte sur l'écran TV - plus longtemps
       setNewPlayerAlert(name.trim());
-      setTimeout(() => setNewPlayerAlert(null), 5000);
+      setTimeout(() => setNewPlayerAlert(null), 8000);
       
       setView('game');
     }
@@ -723,6 +724,31 @@ export default function App() {
   }
 
   // ========== ÉCRAN TV (SANS QUESTIONS) ==========
+  const sortedPlayers = players.sort((a, b) => b.score - a.score).slice(0, 50);
+  
+  // Calculer les changements de position
+  const getRankChange = (playerId, currentIndex) => {
+    const previousRank = previousRankings[playerId];
+    if (previousRank === undefined) return null;
+    const rankChange = previousRank - currentIndex;
+    return rankChange;
+  };
+
+  // Mettre à jour les positions précédentes
+  useEffect(() => {
+    const newRankings = {};
+    sortedPlayers.forEach((player, index) => {
+      newRankings[player.id] = index;
+    });
+    
+    // Attendre un peu avant de mettre à jour pour voir les changements
+    const timer = setTimeout(() => {
+      setPreviousRankings(newRankings);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [players.map(p => p.score).join(',')]);
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -732,23 +758,27 @@ export default function App() {
       position: 'relative',
       overflow: 'hidden'
     }}>
-      {/* Alerte nouveau joueur */}
+      {/* Alerte nouveau joueur - PLUS VISIBLE */}
       {newPlayerAlert && (
         <div style={{
           position: 'fixed',
-          top: '20px',
+          top: '50%',
           left: '50%',
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, -50%)',
           background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-          padding: '25px 50px',
-          borderRadius: '20px',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-          zIndex: 1000,
-          textAlign: 'center'
+          padding: '40px 80px',
+          borderRadius: '30px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          zIndex: 2000,
+          textAlign: 'center',
+          border: '4px solid white'
         }}>
-          <div style={{ fontSize: '40px', marginBottom: '8px' }}>🎉</div>
-          <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold' }}>
-            {newPlayerAlert} vient de rejoindre !
+          <div style={{ fontSize: '80px', marginBottom: '15px' }}>🎉</div>
+          <div style={{ color: 'white', fontSize: '36px', fontWeight: 'bold', marginBottom: '10px' }}>
+            Nouveau joueur !
+          </div>
+          <div style={{ color: 'white', fontSize: '48px', fontWeight: 'bold' }}>
+            {newPlayerAlert}
           </div>
         </div>
       )}
@@ -820,7 +850,7 @@ export default function App() {
       }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '50px 1fr 100px',
+          gridTemplateColumns: '50px 1fr 80px 100px',
           padding: '6px 15px',
           borderBottom: '2px solid rgba(255,255,255,0.2)',
           marginBottom: '8px'
@@ -830,6 +860,9 @@ export default function App() {
           </div>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600' }}>
             JOUEUR
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600', textAlign: 'center' }}>
+            ÉVOL.
           </div>
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: '600', textAlign: 'right' }}>
             SCORE
@@ -841,46 +874,72 @@ export default function App() {
           flexDirection: 'column',
           gap: '2px'
         }}>
-          {players.sort((a, b) => b.score - a.score).slice(0, 50).map((player, idx) => (
-            <div
-              key={player.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '50px 1fr 100px',
-                alignItems: 'center',
-                padding: '4px 15px',
-                background: !player.isAI ? 'rgba(34, 197, 94, 0.3)' : idx < 3 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
-                borderLeft: !player.isAI ? '3px solid #22c55e' : idx < 3 ? '3px solid #fbbf24' : '3px solid transparent',
-                borderRadius: '6px',
-                transition: 'all 0.2s'
-              }}
-            >
-              <div style={{ 
-                fontSize: idx < 3 ? '16px' : '14px',
-                fontWeight: '600',
-                color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'rgba(255,255,255,0.5)'
-              }}>
-                {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
-              </div>
+          {sortedPlayers.map((player, idx) => {
+            const rankChange = getRankChange(player.id, idx);
+            
+            return (
+              <div
+                key={player.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '50px 1fr 80px 100px',
+                  alignItems: 'center',
+                  padding: '4px 15px',
+                  background: !player.isAI ? 'rgba(34, 197, 94, 0.3)' : idx < 3 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
+                  borderLeft: !player.isAI ? '3px solid #22c55e' : idx < 3 ? '3px solid #fbbf24' : '3px solid transparent',
+                  borderRadius: '6px',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                <div style={{ 
+                  fontSize: idx < 3 ? '16px' : '14px',
+                  fontWeight: '600',
+                  color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'rgba(255,255,255,0.5)'
+                }}>
+                  {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                </div>
 
-              <div style={{ 
-                color: 'white', 
-                fontSize: idx < 3 ? '15px' : '14px',
-                fontWeight: !player.isAI ? '700' : idx < 3 ? '700' : '500'
-              }}>
-                {player.name} {!player.isAI && '👤'}
-              </div>
+                <div style={{ 
+                  color: 'white', 
+                  fontSize: idx < 3 ? '15px' : '14px',
+                  fontWeight: !player.isAI ? '700' : idx < 3 ? '700' : '500'
+                }}>
+                  {player.name} {!player.isAI && '👤'}
+                </div>
 
-              <div style={{ 
-                color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'white',
-                fontSize: idx < 3 ? '16px' : '15px',
-                fontWeight: 'bold',
-                textAlign: 'right'
-              }}>
-                {player.score}
+                {/* Flèches de changement */}
+                <div style={{ textAlign: 'center' }}>
+                  {rankChange !== null && rankChange > 0 && (
+                    <span style={{ 
+                      color: '#10b981', 
+                      fontSize: '16px',
+                      fontWeight: 'bold'
+                    }}>
+                      ⬆ +{rankChange}
+                    </span>
+                  )}
+                  {rankChange !== null && rankChange < 0 && (
+                    <span style={{ 
+                      color: '#ef4444', 
+                      fontSize: '16px',
+                      fontWeight: 'bold'
+                    }}>
+                      ⬇ {rankChange}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ 
+                  color: !player.isAI ? '#22c55e' : idx < 3 ? '#fbbf24' : 'white',
+                  fontSize: idx < 3 ? '16px' : '15px',
+                  fontWeight: 'bold',
+                  textAlign: 'right'
+                }}>
+                  {player.score}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
