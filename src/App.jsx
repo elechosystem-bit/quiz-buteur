@@ -64,6 +64,7 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState({});
   const [usedQuestions, setUsedQuestions] = useState([]);
+  const usedQuestionsRef = React.useRef([]);
 
   // Démarrage automatique du système
   useEffect(() => {
@@ -160,15 +161,23 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     try {
-      const availableQuestions = QUESTIONS.filter(q => !usedQuestions.includes(q.text));
+      // Filtrer les questions déjà utilisées
+      const availableQuestions = QUESTIONS.filter(q => 
+        !usedQuestionsRef.current.includes(q.text)
+      );
       
+      // Si toutes les questions ont été utilisées, réinitialiser
       if (availableQuestions.length === 0) {
-        setUsedQuestions([]);
+        usedQuestionsRef.current = [];
         return createRandomQuestion();
       }
       
+      // Choisir une question aléatoire parmi celles disponibles
       const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
       const qId = Date.now().toString();
+      
+      // Marquer cette question comme utilisée
+      usedQuestionsRef.current.push(randomQ.text);
       
       await set(ref(db, 'currentQuestion'), {
         id: qId,
@@ -178,7 +187,6 @@ export default function App() {
         createdAt: Date.now()
       });
       
-      setUsedQuestions([...usedQuestions, randomQ.text]);
     } catch (e) {
       console.error(e);
     }
@@ -398,12 +406,13 @@ export default function App() {
 
         {currentQuestion && (
           <div className="bg-yellow-400 rounded-2xl p-6 mb-6">
-            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">📊 RÉPONSES EN TEMPS RÉEL</h3>
+            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">📊 VOTES</h3>
             <div className="grid grid-cols-4 gap-4">
               {currentQuestion.options.map(opt => (
                 <div key={opt} className="bg-white rounded-xl p-4 text-center">
                   <div className="text-2xl font-bold text-gray-900">{opt}</div>
                   <div className="text-4xl font-black text-green-600">{answers[opt] || 0}</div>
+                  <div className="text-sm text-gray-500 mt-1">votes</div>
                 </div>
               ))}
             </div>
