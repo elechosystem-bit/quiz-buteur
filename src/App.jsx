@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, push, update, remove } from 'firebase/database';
 
@@ -27,32 +27,33 @@ export default function App() {
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [newPlayerNotif, setNewPlayerNotif] = useState(null);
-  const prevPlayersCountRef = useRef(0);
 
-  // Écouter les joueurs en temps réel
+  // Écouter les nouveaux joueurs pour la notification
   useEffect(() => {
     const playersRef = ref(db, 'players');
+    let isFirstLoad = true;
+    
     const unsubscribe = onValue(playersRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const playersList = Object.entries(data).map(([id, player]) => ({
           id,
           ...player
-        })).sort((a, b) => b.score - a.score);
+        })).sort((a, b) => b.joinedAt - a.joinedAt);
         
-        // Détecter nouveau joueur
-        if (prevPlayersCountRef.current > 0 && playersList.length > prevPlayersCountRef.current) {
-          const newPlayer = playersList[playersList.length - 1];
-          setNewPlayerNotif(newPlayer.name);
+        // Si c'est pas le premier chargement, afficher la notif du dernier joueur
+        if (!isFirstLoad && playersList.length > players.length) {
+          const newestPlayer = playersList[0];
+          setNewPlayerNotif(newestPlayer.name);
           setTimeout(() => setNewPlayerNotif(null), 5000);
         }
         
-        prevPlayersCountRef.current = playersList.length;
-        setPlayers(playersList);
+        isFirstLoad = false;
+        setPlayers(playersList.sort((a, b) => b.score - a.score));
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [players.length]);
 
   // Écouter la question active en temps réel
   useEffect(() => {
@@ -201,7 +202,7 @@ export default function App() {
               type="text"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="Ton prénom..."
+              placeholder="ZYNGA"
               className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
               onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
             />
@@ -302,9 +303,15 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8 relative">
         {newPlayerNotif && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
-            <div className="bg-green-500 text-white px-20 py-12 rounded-3xl text-6xl font-black shadow-2xl animate-bounce border-8 border-white">
-              🎉 {newPlayerNotif} a rejoint la partie !
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white px-24 py-16 rounded-3xl shadow-2xl border-8 border-white animate-pulse">
+              <div className="text-7xl font-black text-center mb-4">🎉</div>
+              <div className="text-6xl font-black text-center">
+                {newPlayerNotif}
+              </div>
+              <div className="text-4xl font-bold text-center mt-4">
+                a rejoint la partie !
+              </div>
             </div>
           </div>
         )}
@@ -332,17 +339,17 @@ export default function App() {
           </div>
 
           <div className="space-y-1">
-            {players.slice(0, 50).map((player, idx) => (
+            {players.slice(0, 16).map((player, idx) => (
               <div
                 key={player.id}
-                className={`grid grid-cols-12 gap-3 items-center py-2 px-3 rounded-lg transition-all ${
+                className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
                   idx === 0
-                    ? 'bg-yellow-400 text-gray-900 font-black text-lg'
+                    ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
                     : idx === 1
-                    ? 'bg-gray-300 text-gray-900 font-bold text-base'
+                    ? 'bg-gray-300 text-gray-900 font-bold text-xl'
                     : idx === 2
-                    ? 'bg-orange-300 text-gray-900 font-bold text-base'
-                    : 'bg-gray-50 hover:bg-gray-100 text-sm'
+                    ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : 'bg-gray-50 hover:bg-gray-100 text-lg'
                 }`}
               >
                 <div className="col-span-1 font-bold">
