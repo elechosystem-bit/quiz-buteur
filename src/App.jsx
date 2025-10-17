@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, push, update, remove } from 'firebase/database';
 
@@ -14,7 +14,6 @@ const firebaseConfig = {
   measurementId: "G-VMTQN2RT3C"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
@@ -27,34 +26,46 @@ export default function App() {
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [newPlayerNotif, setNewPlayerNotif] = useState(null);
+  const [matchState, setMatchState] = useState(null);
+  const [goalNotif, setGoalNotif] = useState(null);
+  const [answers, setAnswers] = useState({});
 
-  // Écouter les joueurs en temps réel
+  // Écouter les joueurs
   useEffect(() => {
     const playersRef = ref(db, 'players');
+    let isFirstLoad = true;
+    
     const unsubscribe = onValue(playersRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const playersList = Object.entries(data).map(([id, player]) => ({
           id,
           ...player
-        })).sort((a, b) => b.score - a.score);
+        })).sort((a, b) => b.joinedAt - a.joinedAt);
         
-        setPlayers(prevPlayers => {
-          if (prevPlayers.length < playersList.length) {
-            const newPlayer = playersList.find(p => !prevPlayers.some(prev => prev.id === p.id));
-            if (newPlayer) {
-              setNewPlayerNotif(newPlayer.name);
-              setTimeout(() => setNewPlayerNotif(null), 3000);
-            }
-          }
-          return playersList;
-        });
+        if (!isFirstLoad && playersList.length > players.length) {
+          const newestPlayer = playersList[0];
+          setNewPlayerNotif(newestPlayer.name);
+          setTimeout(() => setNewPlayerNotif(null), 5000);
+        }
+        
+        isFirstLoad = false;
+        setPlayers(playersList.sort((a, b) => b.score - a.score));
       }
+    });
+    return () => unsubscribe();
+  }, [players.length]);
+
+  // Écouter l'état du match
+  useEffect(() => {
+    const matchRef = ref(db, 'matchState');
+    const unsubscribe = onValue(matchRef, (snapshot) => {
+      setMatchState(snapshot.val());
     });
     return () => unsubscribe();
   }, []);
 
-  // Écouter la question active en temps réel
+  // Écouter la question active
   useEffect(() => {
     const questionRef = ref(db, 'currentQuestion');
     const unsubscribe = onValue(questionRef, (snapshot) => {
@@ -66,6 +77,26 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Écouter les réponses en temps réel
+  useEffect(() => {
+    if (currentQuestion) {
+      const answersRef = ref(db, `answers/${currentQuestion.id}`);
+      const unsubscribe = onValue(answersRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const answerCount = {};
+          Object.values(data).forEach(answer => {
+            answerCount[answer.answer] = (answerCount[answer.answer] || 0) + 1;
+          });
+          setAnswers(answerCount);
+        } else {
+          setAnswers({});
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [currentQuestion]);
 
   // Timer countdown
   useEffect(() => {
@@ -111,32 +142,32 @@ export default function App() {
       timestamp: Date.now(),
       timeLeft
     });
-
-    // Vérifier la réponse après un délai
-    setTimeout(async () => {
-      if (answer === currentQuestion.correctAnswer) {
-        const bonusPoints = Math.floor(timeLeft / 5);
-        const totalPoints = 10 + bonusPoints;
-        
-        const playerRef = ref(db, `players/${playerId}`);
-        const player = players.find(p => p.id === playerId);
-        if (player) {
-          await update(playerRef, {
-            score: player.score + totalPoints
-          });
-        }
-      }
-    }, 2000);
   };
 
-  // ADMIN: Créer une nouvelle question
+  // ADMIN: Démarrer le match
+  const startMatch = async () => {
+    await set(ref(db, 'matchState'), {
+      isActive: true,
+      startTime: Date.now(),
+      currentMinute: 0,
+      halfTime: false
+    });
+
+    // Lancer la première question après 10' (1 min réelle)
+    setTimeout(() => createQuestion(), 60000);
+  };
+
+  // ADMIN: Créer une question
   const createQuestion = async () => {
+    if (!matchState?.isActive) return;
+
     const questionId = Date.now().toString();
+    const players = ["Mbappé", "Griezmann", "Giroud", "Dembélé"];
     const newQuestion = {
       id: questionId,
       text: "Qui va marquer le prochain but ?",
-      options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"],
-      correctAnswer: "Mbappé",
+      options: players,
+      correctAnswer: null,
       timeLeft: 30,
       createdAt: Date.now()
     };
@@ -145,11 +176,63 @@ export default function App() {
     setPlayerAnswer(null);
   };
 
-  // ADMIN: Terminer la question
-  const endQuestion = async () => {
+  // ADMIN: Valider un but
+  const validateGoal = async (scorer) => {
+    if (!currentQuestion) return;
+
+    // Afficher la notification de but
+    setGoalNotif(`⚽ ${scorer} a marqué !`);
+    setTimeout(() => setGoalNotif(null), 5000);
+
+    // Donner les points aux bons parieurs
+    const answersSnapshot = await new Promise(resolve => {
+      onValue(ref(db, `answers/${currentQuestion.id}`), snapshot => {
+        resolve(snapshot.val());
+      }, { onlyOnce: true });
+    });
+
+    if (answersSnapshot) {
+      for (const [playerId, answerData] of Object.entries(answersSnapshot)) {
+        if (answerData.answer === scorer) {
+          const bonusPoints = Math.floor(answerData.timeLeft / 5);
+          const totalPoints = 10 + bonusPoints;
+          
+          const player = players.find(p => p.id === playerId);
+          if (player) {
+            await update(ref(db, `players/${playerId}`), {
+              score: player.score + totalPoints
+            });
+          }
+        }
+      }
+    }
+
+    // Terminer la question
     await remove(ref(db, 'currentQuestion'));
     await remove(ref(db, 'answers'));
     setPlayerAnswer(null);
+
+    // Lancer la prochaine question dans 5 min (30 secondes réelles)
+    if (matchState?.isActive) {
+      setTimeout(() => createQuestion(), 30000);
+    }
+  };
+
+  // ADMIN: Terminer le match
+  const endMatch = async () => {
+    await remove(ref(db, 'matchState'));
+    await remove(ref(db, 'currentQuestion'));
+    await remove(ref(db, 'answers'));
+  };
+
+  // Calculer le temps du match
+  const getMatchTime = () => {
+    if (!matchState?.startTime) return "0'";
+    const elapsed = Date.now() - matchState.startTime;
+    const matchMinutes = Math.floor(elapsed / 6000); // 1 min réelle = 10 min match
+    if (matchMinutes >= 90) return "90' - Fin du match";
+    if (matchMinutes >= 45) return `${matchMinutes}' - 2nde mi-temps`;
+    return `${matchMinutes}' - 1ère mi-temps`;
   };
 
   // HOME SCREEN
@@ -201,7 +284,7 @@ export default function App() {
               type="text"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="Ton prénom..."
+              placeholder="ZYNGA"
               className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
               onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
             />
@@ -245,8 +328,6 @@ export default function App() {
               <div className="space-y-3">
                 {currentQuestion.options.map((option, idx) => {
                   const isSelected = playerAnswer === option;
-                  const isCorrect = option === currentQuestion.correctAnswer;
-                  const showResult = playerAnswer !== null && timeLeft === 0;
 
                   return (
                     <button
@@ -255,20 +336,12 @@ export default function App() {
                       disabled={playerAnswer !== null}
                       className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
                         isSelected
-                          ? showResult
-                            ? isCorrect
-                              ? 'bg-green-600 text-white'
-                              : 'bg-red-600 text-white'
-                            : 'bg-blue-600 text-white'
-                          : showResult && isCorrect
-                          ? 'bg-green-200 text-green-900'
+                          ? 'bg-blue-600 text-white'
                           : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                       }`}
                     >
                       {option}
-                      {isSelected && !showResult && ' ⏳'}
-                      {showResult && isCorrect && ' ✅'}
-                      {showResult && isSelected && !isCorrect && ' ❌'}
+                      {isSelected && ' ⏳'}
                     </button>
                   );
                 })}
@@ -276,13 +349,8 @@ export default function App() {
 
               {playerAnswer && (
                 <div className="mt-6 text-center">
-                  {timeLeft > 0 ? (
-                    <p className="text-blue-600 font-semibold">Réponse enregistrée ⏳</p>
-                  ) : playerAnswer === currentQuestion.correctAnswer ? (
-                    <p className="text-green-600 text-xl font-bold">Bien joué ! +{10 + Math.floor(timeLeft / 5)} pts 🎉</p>
-                  ) : (
-                    <p className="text-red-600 text-xl font-bold">Raté ! La bonne réponse était {currentQuestion.correctAnswer} 😢</p>
-                  )}
+                  <p className="text-blue-600 font-semibold">Réponse enregistrée ⏳</p>
+                  <p className="text-sm text-gray-600 mt-2">En attente du but...</p>
                 </div>
               )}
             </div>
@@ -300,10 +368,28 @@ export default function App() {
   // TV SCREEN
   if (screen === 'tv') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8 relative">
         {newPlayerNotif && (
-          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-12 py-6 rounded-2xl text-4xl font-black shadow-2xl z-50 animate-bounce">
-            🎉 Nouveau joueur ! {newPlayerNotif}
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white px-24 py-16 rounded-3xl shadow-2xl border-8 border-white animate-pulse">
+              <div className="text-7xl font-black text-center mb-4">🎉</div>
+              <div className="text-6xl font-black text-center">
+                {newPlayerNotif}
+              </div>
+              <div className="text-4xl font-bold text-center mt-4">
+                a rejoint la partie !
+              </div>
+            </div>
+          </div>
+        )}
+
+        {goalNotif && (
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+            <div className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-24 py-16 rounded-3xl shadow-2xl border-8 border-white animate-bounce">
+              <div className="text-8xl font-black text-center">
+                {goalNotif}
+              </div>
+            </div>
           </div>
         )}
 
@@ -311,6 +397,11 @@ export default function App() {
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             <p className="text-2xl text-green-300">Le Penalty - Paris 11e</p>
+            {matchState?.isActive && (
+              <p className="text-4xl text-yellow-400 font-black mt-4">
+                ⏱️ {getMatchTime()}
+              </p>
+            )}
           </div>
           <div className="bg-white p-6 rounded-2xl">
             <img 
@@ -322,6 +413,24 @@ export default function App() {
           </div>
         </div>
 
+        {currentQuestion && (
+          <div className="bg-yellow-400 rounded-2xl p-6 mb-6">
+            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">
+              📊 VOTES EN TEMPS RÉEL
+            </h3>
+            <div className="grid grid-cols-4 gap-4">
+              {currentQuestion.options.map(option => (
+                <div key={option} className="bg-white rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-gray-900">{option}</div>
+                  <div className="text-4xl font-black text-green-600">
+                    {answers[option] || 0} votes
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
           <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
             <div className="col-span-1">#</div>
@@ -330,17 +439,17 @@ export default function App() {
           </div>
 
           <div className="space-y-1">
-            {players.slice(0, 50).map((player, idx) => (
+            {players.slice(0, 16).map((player, idx) => (
               <div
                 key={player.id}
-                className={`grid grid-cols-12 gap-3 items-center py-2 px-3 rounded-lg transition-all ${
+                className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
                   idx === 0
-                    ? 'bg-yellow-400 text-gray-900 font-black text-lg'
+                    ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
                     : idx === 1
-                    ? 'bg-gray-300 text-gray-900 font-bold text-base'
+                    ? 'bg-gray-300 text-gray-900 font-bold text-xl'
                     : idx === 2
-                    ? 'bg-orange-300 text-gray-900 font-bold text-base'
-                    : 'bg-gray-50 hover:bg-gray-100 text-sm'
+                    ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : 'bg-gray-50 hover:bg-gray-100 text-lg'
                 }`}
               >
                 <div className="col-span-1 font-bold">
@@ -368,29 +477,67 @@ export default function App() {
           <h1 className="text-4xl font-bold mb-8">🎮 Admin Panel</h1>
           
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Question actuelle</h2>
-            {currentQuestion ? (
+            <h2 className="text-2xl font-bold mb-4">Match</h2>
+            {matchState?.isActive ? (
               <div>
-                <p className="text-xl mb-4">{currentQuestion.text}</p>
-                <p className="text-green-400 mb-4">Temps restant: {timeLeft}s</p>
+                <p className="text-3xl text-yellow-400 font-bold mb-4">
+                  ⏱️ {getMatchTime()}
+                </p>
                 <button
-                  onClick={endQuestion}
+                  onClick={endMatch}
                   className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700"
                 >
-                  Terminer la question
+                  Terminer le match
                 </button>
               </div>
             ) : (
-              <div>
-                <p className="text-gray-400 mb-4">Aucune question active</p>
-                <button
-                  onClick={createQuestion}
-                  className="bg-green-600 px-6 py-3 rounded-lg font-bold hover:bg-green-700"
-                >
-                  Créer une question
-                </button>
-              </div>
+              <button
+                onClick={startMatch}
+                className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+              >
+                🚀 Démarrer le match
+              </button>
             )}
+          </div>
+
+          {currentQuestion && (
+            <div className="bg-gray-800 rounded-xl p-6 mb-6">
+              <h2 className="text-2xl font-bold mb-4">Question actuelle</h2>
+              <p className="text-xl mb-4">{currentQuestion.text}</p>
+              <p className="text-green-400 mb-4">Temps restant: {timeLeft}s</p>
+              
+              <div className="mb-4">
+                <h3 className="text-lg font-bold mb-2">Votes :</h3>
+                {currentQuestion.options.map(option => (
+                  <div key={option} className="text-white mb-2">
+                    {option}: {answers[option] || 0} votes
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="text-xl font-bold mb-4">🎯 Qui a marqué ?</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {currentQuestion.options.map(player => (
+                  <button
+                    key={player}
+                    onClick={() => validateGoal(player)}
+                    className="bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg font-bold hover:bg-yellow-400"
+                  >
+                    ⚽ {player}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Actions manuelles</h2>
+            <button
+              onClick={createQuestion}
+              className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 mr-3"
+            >
+              Créer une question manuellement
+            </button>
           </div>
 
           <div className="bg-gray-800 rounded-xl p-6">
