@@ -128,6 +128,18 @@ export default function App() {
     try {
       await set(ref(db, 'matchState'), { isActive: true, startTime: Date.now() });
       setTimeout(() => createQuestion(), 3000);
+      // Questions automatiques toutes les 30 secondes
+      const interval = setInterval(async () => {
+        const match = await get(ref(db, 'matchState'));
+        if (!match.exists() || !match.val()?.isActive) {
+          clearInterval(interval);
+          return;
+        }
+        const currentQ = await get(ref(db, 'currentQuestion'));
+        if (!currentQ.exists()) {
+          createQuestion();
+        }
+      }, 30000);
     } catch (e) {
       alert('Erreur');
     }
@@ -174,10 +186,7 @@ export default function App() {
       await remove(ref(db, 'currentQuestion'));
       await remove(ref(db, 'answers'));
       
-      const match = await get(ref(db, 'matchState'));
-      if (match.exists() && match.val()?.isActive) {
-        setTimeout(() => createQuestion(), 30000);
-      }
+      // La prochaine question sera créée automatiquement par l'intervalle
     } catch (e) {
       console.error(e);
     }
@@ -355,7 +364,7 @@ export default function App() {
 
         {currentQuestion && (
           <div className="bg-yellow-400 rounded-2xl p-6 mb-6">
-            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">📊 VOTES</h3>
+            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">📊 RÉPONSES EN TEMPS RÉEL</h3>
             <div className="grid grid-cols-4 gap-4">
               {currentQuestion.options.map(opt => (
                 <div key={opt} className="bg-white rounded-xl p-4 text-center">
