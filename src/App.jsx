@@ -1,34 +1,38 @@
 import React, { useState, useEffect } from 'react';
 
-// Types de pronostics disponibles
-const PREDICTION_TYPES = [
+// Banque de questions possibles
+const QUESTION_BANK = [
   {
-    id: 'next_goal',
-    title: '⚽ Prochain buteur',
+    id: 'goal_1',
+    type: 'next_goal',
+    question: '⚽ Qui va marquer le prochain but ?',
     options: ['Mbappé', 'Haaland', 'Lewandowski', 'Autre joueur'],
     points: 200,
-    status: 'open'
+    timer: 60
   },
   {
-    id: 'next_card',
-    title: '🟨 Prochain carton',
+    id: 'corner_1',
+    type: 'next_corner',
+    question: '⛳ Quelle équipe aura le prochain corner ?',
+    options: ['Équipe A', 'Équipe B'],
+    points: 100,
+    timer: 45
+  },
+  {
+    id: 'card_1',
+    type: 'next_card',
+    question: '🟨 Quelle équipe recevra le prochain carton ?',
     options: ['Équipe A', 'Équipe B', 'Aucun carton'],
     points: 150,
-    status: 'open'
+    timer: 60
   },
   {
-    id: 'corners_count',
-    title: '⛳ Nombre de corners (Mi-temps)',
-    options: ['0-2', '3-5', '6-8', '9+'],
+    id: 'sub_1',
+    type: 'next_sub',
+    question: '🔄 Quelle équipe fera le prochain changement ?',
+    options: ['Équipe A', 'Équipe B'],
     points: 120,
-    status: 'open'
-  },
-  {
-    id: 'final_score',
-    title: '🏆 Score final',
-    options: ['1-0', '2-1', '2-2', '3-1', '0-0'],
-    points: 300,
-    status: 'open'
+    timer: 45
   }
 ];
 
@@ -36,68 +40,73 @@ export default function App() {
   const [view, setView] = useState('home');
   const [name, setName] = useState('');
   const [players, setPlayers] = useState([
-    { id: '1', name: 'Thomas', score: 450, avatar: '👨' },
-    { id: '2', name: 'Marie', score: 380, avatar: '👩' },
-    { id: '3', name: 'Alex', score: 320, avatar: '🧑' },
-    { id: '4', name: 'Lucas', score: 310, avatar: '👨' },
-    { id: '5', name: 'Sophie', score: 290, avatar: '👩' },
-    { id: '6', name: 'Hugo', score: 275, avatar: '👨' },
-    { id: '7', name: 'Emma', score: 260, avatar: '👩' },
-    { id: '8', name: 'Nathan', score: 245, avatar: '👨' },
-    { id: '9', name: 'Léa', score: 230, avatar: '👩' },
-    { id: '10', name: 'Louis', score: 215, avatar: '👨' },
-    { id: '11', name: 'Chloé', score: 200, avatar: '👩' },
-    { id: '12', name: 'Arthur', score: 190, avatar: '👨' },
-    { id: '13', name: 'Camille', score: 180, avatar: '👩' },
-    { id: '14', name: 'Tom', score: 170, avatar: '👨' },
-    { id: '15', name: 'Julie', score: 160, avatar: '👩' },
-    { id: '16', name: 'Gabriel', score: 155, avatar: '👨' },
-    { id: '17', name: 'Zoé', score: 150, avatar: '👩' },
-    { id: '18', name: 'Raphaël', score: 145, avatar: '👨' },
-    { id: '19', name: 'Laura', score: 140, avatar: '👩' },
-    { id: '20', name: 'Adam', score: 135, avatar: '👨' },
-    { id: '21', name: 'Manon', score: 130, avatar: '👩' },
-    { id: '22', name: 'Enzo', score: 125, avatar: '👨' },
-    { id: '23', name: 'Alice', score: 120, avatar: '👩' },
-    { id: '24', name: 'Victor', score: 115, avatar: '👨' },
-    { id: '25', name: 'Inès', score: 110, avatar: '👩' },
-    { id: '26', name: 'Paul', score: 105, avatar: '👨' },
-    { id: '27', name: 'Charlotte', score: 100, avatar: '👩' },
-    { id: '28', name: 'Jules', score: 95, avatar: '👨' },
-    { id: '29', name: 'Lola', score: 90, avatar: '👩' },
-    { id: '30', name: 'Mathis', score: 85, avatar: '👨' },
-    { id: '31', name: 'Jade', score: 80, avatar: '👩' },
-    { id: '32', name: 'Timéo', score: 75, avatar: '👨' },
-    { id: '33', name: 'Lily', score: 70, avatar: '👩' },
-    { id: '34', name: 'Maxime', score: 65, avatar: '👨' },
-    { id: '35', name: 'Nina', score: 60, avatar: '👩' },
-    { id: '36', name: 'Ethan', score: 55, avatar: '👨' },
-    { id: '37', name: 'Rose', score: 50, avatar: '👩' },
-    { id: '38', name: 'Nolan', score: 45, avatar: '👨' },
-    { id: '39', name: 'Anna', score: 40, avatar: '👩' },
-    { id: '40', name: 'Antoine', score: 35, avatar: '👨' },
-    { id: '41', name: 'Eva', score: 30, avatar: '👩' },
-    { id: '42', name: 'Sacha', score: 25, avatar: '👨' },
-    { id: '43', name: 'Mila', score: 20, avatar: '👩' },
-    { id: '44', name: 'Théo', score: 15, avatar: '👨' },
-    { id: '45', name: 'Léna', score: 10, avatar: '👩' },
-    { id: '46', name: 'Clément', score: 8, avatar: '👨' },
-    { id: '47', name: 'Lisa', score: 6, avatar: '👩' },
-    { id: '48', name: 'Dylan', score: 4, avatar: '👨' },
-    { id: '49', name: 'Sarah', score: 2, avatar: '👩' },
-    { id: '50', name: 'Léo', score: 0, avatar: '👨' }
+    { id: '1', name: 'Thomas', score: 450 },
+    { id: '2', name: 'Marie', score: 380 },
+    { id: '3', name: 'Alex', score: 320 },
+    { id: '4', name: 'Lucas', score: 310 },
+    { id: '5', name: 'Sophie', score: 290 },
+    { id: '6', name: 'Hugo', score: 275 },
+    { id: '7', name: 'Emma', score: 260 },
+    { id: '8', name: 'Nathan', score: 245 },
+    { id: '9', name: 'Léa', score: 230 },
+    { id: '10', name: 'Louis', score: 215 },
+    { id: '11', name: 'Chloé', score: 200 },
+    { id: '12', name: 'Arthur', score: 190 },
+    { id: '13', name: 'Camille', score: 180 },
+    { id: '14', name: 'Tom', score: 170 },
+    { id: '15', name: 'Julie', score: 160 },
+    { id: '16', name: 'Gabriel', score: 155 },
+    { id: '17', name: 'Zoé', score: 150 },
+    { id: '18', name: 'Raphaël', score: 145 },
+    { id: '19', name: 'Laura', score: 140 },
+    { id: '20', name: 'Adam', score: 135 },
+    { id: '21', name: 'Manon', score: 130 },
+    { id: '22', name: 'Enzo', score: 125 },
+    { id: '23', name: 'Alice', score: 120 },
+    { id: '24', name: 'Victor', score: 115 },
+    { id: '25', name: 'Inès', score: 110 },
+    { id: '26', name: 'Paul', score: 105 },
+    { id: '27', name: 'Charlotte', score: 100 },
+    { id: '28', name: 'Jules', score: 95 },
+    { id: '29', name: 'Lola', score: 90 },
+    { id: '30', name: 'Mathis', score: 85 },
+    { id: '31', name: 'Jade', score: 80 },
+    { id: '32', name: 'Timéo', score: 75 },
+    { id: '33', name: 'Lily', score: 70 },
+    { id: '34', name: 'Maxime', score: 65 },
+    { id: '35', name: 'Nina', score: 60 },
+    { id: '36', name: 'Ethan', score: 55 },
+    { id: '37', name: 'Rose', score: 50 },
+    { id: '38', name: 'Nolan', score: 45 },
+    { id: '39', name: 'Anna', score: 40 },
+    { id: '40', name: 'Antoine', score: 35 },
+    { id: '41', name: 'Eva', score: 30 },
+    { id: '42', name: 'Sacha', score: 25 },
+    { id: '43', name: 'Mila', score: 20 },
+    { id: '44', name: 'Théo', score: 15 },
+    { id: '45', name: 'Léna', score: 10 },
+    { id: '46', name: 'Clément', score: 8 },
+    { id: '47', name: 'Lisa', score: 6 },
+    { id: '48', name: 'Dylan', score: 4 },
+    { id: '49', name: 'Sarah', score: 2 },
+    { id: '50', name: 'Léo', score: 0 }
   ]);
   
   // État du match
   const [matchTime, setMatchTime] = useState(0);
   const [matchStatus, setMatchStatus] = useState('live');
   const [currentPlayer, setCurrentPlayer] = useState(null);
-  const [predictions, setPredictions] = useState([]);
-  const [predictionTypes, setPredictionTypes] = useState(PREDICTION_TYPES);
+  
+  // État des questions PUSH
+  const [activeQuestion, setActiveQuestion] = useState(null); // UNE SEULE question active
+  const [questionTimer, setQuestionTimer] = useState(0);
+  const [answers, setAnswers] = useState([]); // Toutes les réponses de tous les joueurs
+  const [myAnswer, setMyAnswer] = useState(null); // Ma réponse à la question active
   const [lastEvent, setLastEvent] = useState(null);
   const [showEventPopup, setShowEventPopup] = useState(false);
+  const [showNewQuestionAlert, setShowNewQuestionAlert] = useState(false);
 
-  // Simulateur d'événements match
+  // Timer du match
   useEffect(() => {
     if (matchStatus === 'live') {
       const matchTimer = setInterval(() => {
@@ -109,47 +118,74 @@ export default function App() {
           return prev + 1;
         });
       }, 2000);
-
       return () => clearInterval(matchTimer);
     }
   }, [matchStatus]);
 
-  // Simulateur d'événements aléatoires
+  // Timer de la question active
   useEffect(() => {
-    if (matchStatus === 'live' && matchTime > 0) {
-      const eventChance = Math.random();
+    if (activeQuestion && questionTimer > 0) {
+      const timer = setTimeout(() => {
+        setQuestionTimer(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (activeQuestion && questionTimer === 0) {
+      // Temps écoulé, fermer la question
+      setTimeout(() => {
+        setActiveQuestion(prev => ({...prev, status: 'closed'}));
+      }, 1000);
+    }
+  }, [questionTimer, activeQuestion]);
+
+  // Simulateur: Envoyer une nouvelle question aléatoirement
+  useEffect(() => {
+    if (matchStatus === 'live' && matchTime > 0 && !activeQuestion) {
+      const chance = Math.random();
       
-      if (eventChance < 0.05) {
-        const eventTypes = ['next_goal', 'next_card'];
-        const randomEvent = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-        
+      // 8% de chance d'envoyer une question à chaque minute
+      if (chance < 0.08) {
         setTimeout(() => {
-          triggerEvent(randomEvent);
-        }, Math.random() * 2000);
+          pushNewQuestion();
+        }, Math.random() * 3000);
       }
     }
-  }, [matchTime]);
+  }, [matchTime, activeQuestion]);
 
-  const triggerEvent = (eventType) => {
-    const predType = predictionTypes.find(p => p.id === eventType);
-    if (!predType || predType.status === 'closed') return;
-
-    const winningAnswer = predType.options[Math.floor(Math.random() * predType.options.length)];
+  // Fonction pour PUSH une nouvelle question
+  const pushNewQuestion = () => {
+    const randomQuestion = QUESTION_BANK[Math.floor(Math.random() * QUESTION_BANK.length)];
+    const newQuestion = {
+      ...randomQuestion,
+      id: `${randomQuestion.id}_${Date.now()}`,
+      pushedAt: matchTime,
+      status: 'active'
+    };
     
-    setPredictionTypes(prev => 
-      prev.map(p => p.id === eventType ? {...p, status: 'closed', winningAnswer} : p)
+    setActiveQuestion(newQuestion);
+    setQuestionTimer(newQuestion.timer);
+    setMyAnswer(null);
+    setShowNewQuestionAlert(true);
+    setTimeout(() => setShowNewQuestionAlert(false), 3000);
+  };
+
+  // Fonction pour déclencher un événement (simulé)
+  const triggerEvent = (answer) => {
+    if (!activeQuestion || activeQuestion.status === 'validated') return;
+
+    // Marquer la question comme validée
+    setActiveQuestion(prev => ({...prev, status: 'validated', correctAnswer: answer}));
+
+    // Calculer les gagnants
+    const winners = answers.filter(a => 
+      a.questionId === activeQuestion.id && 
+      a.answer === answer
     );
 
-    const winners = predictions.filter(pred => 
-      pred.type === eventType && 
-      pred.answer === winningAnswer &&
-      pred.status === 'pending'
-    );
-
+    // Attribuer les points
     winners.forEach(winner => {
-      const timeDiff = matchTime - winner.matchTime;
-      const anticipationBonus = Math.max(0, Math.floor((10 - timeDiff) * 10));
-      const totalPoints = predType.points + anticipationBonus;
+      const responseTime = winner.timestamp - activeQuestion.pushedAt;
+      const speedBonus = Math.max(0, Math.floor((30 - responseTime) * 5));
+      const totalPoints = activeQuestion.points + speedBonus;
 
       setPlayers(prev => 
         prev.map(p => 
@@ -158,42 +194,43 @@ export default function App() {
             : p
         )
       );
-
-      setPredictions(prev =>
-        prev.map(p => 
-          p.id === winner.id 
-            ? {...p, status: 'won', pointsWon: totalPoints}
-            : p
-        )
-      );
     });
 
-    setPredictions(prev =>
-      prev.map(p => 
-        p.type === eventType && p.answer !== winningAnswer && p.status === 'pending'
-          ? {...p, status: 'lost'}
-          : p
-      )
-    );
-
+    // Afficher l'événement
     setLastEvent({
-      type: eventType,
-      title: predType.title,
-      answer: winningAnswer,
+      question: activeQuestion.question,
+      answer: answer,
       winnersCount: winners.length,
       time: matchTime
     });
     setShowEventPopup(true);
     setTimeout(() => setShowEventPopup(false), 5000);
+
+    // Fermer la question après 3 secondes
+    setTimeout(() => {
+      setActiveQuestion(null);
+    }, 3000);
   };
+
+  // Simuler des événements aléatoires après fermeture de question
+  useEffect(() => {
+    if (activeQuestion && activeQuestion.status === 'closed' && activeQuestion.status !== 'validated') {
+      // Après 2-5 secondes, déclencher un événement
+      const delay = 2000 + Math.random() * 3000;
+      const timer = setTimeout(() => {
+        const randomAnswer = activeQuestion.options[Math.floor(Math.random() * activeQuestion.options.length)];
+        triggerEvent(randomAnswer);
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+  }, [activeQuestion?.status]);
 
   const handleJoinGame = () => {
     if (name.trim()) {
       const newPlayer = { 
         id: Date.now().toString(),
         name: name.trim(), 
-        score: 0,
-        avatar: ['👨', '👩', '🧑', '👤'][Math.floor(Math.random() * 4)]
+        score: 0
       };
       setPlayers([...players, newPlayer]);
       setCurrentPlayer(newPlayer);
@@ -201,28 +238,24 @@ export default function App() {
     }
   };
 
-  const handleMakePrediction = (predictionType, answer) => {
-    if (!currentPlayer) return;
+  const handleAnswer = (answer) => {
+    if (!currentPlayer || !activeQuestion || myAnswer || activeQuestion.status !== 'active') return;
 
-    const newPrediction = {
+    const newAnswer = {
       id: Date.now().toString(),
       playerId: currentPlayer.id,
       playerName: currentPlayer.name,
-      type: predictionType.id,
+      questionId: activeQuestion.id,
       answer,
-      matchTime,
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      points: predictionType.points
+      timestamp: matchTime
     };
 
-    setPredictions([...predictions, newPrediction]);
+    setAnswers([...answers, newAnswer]);
+    setMyAnswer(answer);
   };
 
-  const getPlayerPredictions = () => {
-    if (!currentPlayer) return [];
-    return predictions.filter(p => p.playerId === currentPlayer.id);
-  };
+  // URL de l'app pour le QR code
+  const appUrl = window.location.origin;
 
   // ========== ÉCRAN HOME ==========
   if (view === 'home') {
@@ -405,8 +438,6 @@ export default function App() {
 
   // ========== ÉCRAN DE JEU ==========
   if (view === 'game') {
-    const playerPredictions = getPlayerPredictions();
-
     return (
       <div style={{
         minHeight: '100vh',
@@ -415,6 +446,29 @@ export default function App() {
         paddingBottom: '100px',
         fontFamily: 'system-ui, -apple-system, sans-serif'
       }}>
+        {/* Alert nouvelle question */}
+        {showNewQuestionAlert && (
+          <div style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            padding: '20px 40px',
+            borderRadius: '16px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+            zIndex: 1000,
+            animation: 'slideDown 0.5s ease-out',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '32px', marginBottom: '5px' }}>🔔</div>
+            <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
+              Nouvelle question !
+            </div>
+          </div>
+        )}
+
+        {/* Header */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -426,7 +480,7 @@ export default function App() {
         }}>
           <div style={{ color: 'white' }}>
             <div style={{ fontSize: '18px', fontWeight: '600' }}>
-              {currentPlayer?.avatar} {currentPlayer?.name}
+              👤 {currentPlayer?.name}
             </div>
             <div style={{ fontSize: '14px', opacity: 0.8 }}>
               ⚽ {matchTime}' • {matchStatus === 'live' ? '🔴 EN DIRECT' : '⏸️ PAUSE'}
@@ -442,121 +496,194 @@ export default function App() {
         </div>
 
         <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-          <h2 style={{ 
-            color: 'white', 
-            fontSize: '24px', 
-            marginBottom: '20px',
-            textAlign: 'center'
-          }}>
-            📊 Pronostics disponibles
-          </h2>
-
-          {predictionTypes.map(predType => {
-            const myPrediction = playerPredictions.find(p => p.type === predType.id);
-            const isLocked = predType.status === 'closed';
-
-            return (
-              <div
-                key={predType.id}
-                style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: '20px',
-                  padding: '20px',
-                  marginBottom: '20px',
-                  border: `2px solid ${
-                    myPrediction?.status === 'won' ? '#22c55e' :
-                    myPrediction?.status === 'lost' ? '#ef4444' :
-                    isLocked ? '#94a3b8' :
-                    'rgba(255,255,255,0.2)'
-                  }`
-                }}
-              >
+          {/* Question active */}
+          {activeQuestion ? (
+            <div style={{
+              background: activeQuestion.status === 'validated' 
+                ? 'rgba(34, 197, 94, 0.2)' 
+                : 'rgba(255,255,255,0.15)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '24px',
+              padding: '30px',
+              marginBottom: '20px',
+              border: `2px solid ${
+                activeQuestion.status === 'validated' ? '#22c55e' : 'rgba(255,255,255,0.3)'
+              }`,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+            }}>
+              {/* Timer */}
+              {activeQuestion.status === 'active' && (
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '15px'
+                  textAlign: 'center',
+                  marginBottom: '20px'
                 }}>
-                  <h3 style={{ 
-                    color: 'white', 
-                    fontSize: '20px',
-                    margin: 0,
-                    opacity: isLocked ? 0.6 : 1
+                  <div style={{
+                    fontSize: '40px',
+                    color: questionTimer <= 10 ? '#f87171' : 'white',
+                    fontWeight: 'bold',
+                    marginBottom: '10px'
                   }}>
-                    {predType.title}
-                  </h3>
-                  <span style={{
-                    background: isLocked ? '#94a3b8' : '#fbbf24',
-                    color: 'white',
-                    padding: '5px 12px',
-                    borderRadius: '12px',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
+                    {questionTimer}s
+                  </div>
+                  <div style={{
+                    height: '6px',
+                    background: 'rgba(255,255,255,0.2)',
+                    borderRadius: '10px',
+                    overflow: 'hidden'
                   }}>
-                    {isLocked ? '🔒 Fermé' : `${predType.points} pts`}
-                  </span>
+                    <div style={{
+                      height: '100%',
+                      background: questionTimer <= 10 ? '#f87171' : '#10b981',
+                      width: `${(questionTimer / activeQuestion.timer) * 100}%`,
+                      transition: 'width 1s linear',
+                      borderRadius: '10px'
+                    }} />
+                  </div>
                 </div>
+              )}
 
-                {myPrediction ? (
-                  <div style={{
-                    background: myPrediction.status === 'won' ? 'rgba(34, 197, 94, 0.2)' :
-                               myPrediction.status === 'lost' ? 'rgba(239, 68, 68, 0.2)' :
-                               'rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    padding: '15px',
-                    color: 'white'
-                  }}>
-                    <div style={{ fontWeight: '600', marginBottom: '5px' }}>
-                      Ton pronostic : {myPrediction.answer}
+              {/* Question */}
+              <h2 style={{
+                color: 'white',
+                fontSize: '26px',
+                fontWeight: 'bold',
+                textAlign: 'center',
+                marginBottom: '25px',
+                lineHeight: '1.4'
+              }}>
+                {activeQuestion.question}
+              </h2>
+
+              {/* Options ou statut */}
+              {activeQuestion.status === 'validated' ? (
+                <div style={{
+                  background: 'rgba(34, 197, 94, 0.3)',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: 'white'
+                }}>
+                  <div style={{ fontSize: '32px', marginBottom: '10px' }}>✅</div>
+                  <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>
+                    Réponse : {activeQuestion.correctAnswer}
+                  </div>
+                  {myAnswer === activeQuestion.correctAnswer ? (
+                    <div style={{ fontSize: '18px', color: '#22c55e' }}>
+                      🎉 Tu as gagné des points !
                     </div>
-                    <div style={{ fontSize: '14px', opacity: 0.8 }}>
-                      {myPrediction.status === 'pending' && `⏳ En attente (parié à ${myPrediction.matchTime}')`}
-                      {myPrediction.status === 'won' && `✅ Gagné ! +${myPrediction.pointsWon} pts`}
-                      {myPrediction.status === 'lost' && `❌ Perdu (réponse: ${predType.winningAnswer})`}
+                  ) : myAnswer ? (
+                    <div style={{ fontSize: '18px', opacity: 0.8 }}>
+                      ❌ Ta réponse : {myAnswer}
                     </div>
+                  ) : (
+                    <div style={{ fontSize: '16px', opacity: 0.7 }}>
+                      Tu n'as pas répondu à temps
+                    </div>
+                  )}
+                </div>
+              ) : myAnswer ? (
+                <div style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: 'white'
+                }}>
+                  <div style={{ fontSize: '20px', marginBottom: '10px' }}>
+                    ✓ Réponse envoyée
                   </div>
-                ) : isLocked ? (
-                  <div style={{
-                    color: 'rgba(255,255,255,0.6)',
-                    textAlign: 'center',
-                    padding: '10px',
-                    fontSize: '14px'
-                  }}>
-                    🔒 Trop tard ! Résultat : {predType.winningAnswer}
+                  <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                    {myAnswer}
                   </div>
-                ) : (
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: predType.options.length > 3 ? '1fr 1fr' : '1fr',
-                    gap: '10px' 
-                  }}>
-                    {predType.options.map((option, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleMakePrediction(predType, option)}
-                        style={{
-                          background: 'rgba(255,255,255,0.2)',
-                          border: '1px solid rgba(255,255,255,0.3)',
-                          borderRadius: '12px',
-                          padding: '12px',
-                          color: 'white',
-                          fontSize: '16px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        {option}
-                      </button>
-                    ))}
+                  <div style={{ fontSize: '14px', opacity: 0.7, marginTop: '10px' }}>
+                    ⏳ En attente du résultat...
                   </div>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              ) : activeQuestion.status === 'closed' ? (
+                <div style={{
+                  background: 'rgba(148, 163, 184, 0.3)',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: 'white'
+                }}>
+                  <div style={{ fontSize: '20px', marginBottom: '5px' }}>⏱️ Temps écoulé</div>
+                  <div style={{ fontSize: '14px', opacity: 0.7 }}>
+                    En attente du résultat...
+                  </div>
+                </div>
+              ) : (
+                <div style={{ 
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  {activeQuestion.options.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleAnswer(option)}
+                      style={{
+                        background: 'rgba(255,255,255,0.2)',
+                        border: '2px solid rgba(255,255,255,0.3)',
+                        borderRadius: '16px',
+                        padding: '18px',
+                        color: 'white',
+                        fontSize: '18px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Info points */}
+              {activeQuestion.status === 'active' && !myAnswer && (
+                <div style={{
+                  textAlign: 'center',
+                  marginTop: '20px',
+                  color: 'rgba(255,255,255,0.8)',
+                  fontSize: '14px'
+                }}>
+                  💰 {activeQuestion.points} pts + bonus vitesse
+                </div>
+              )}
+            </div>
+          ) : (
+            // Attente de la prochaine question
+            <div style={{
+              background: 'rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '24px',
+              padding: '50px 30px',
+              textAlign: 'center',
+              border: '1px solid rgba(255,255,255,0.2)'
+            }}>
+              <div style={{ fontSize: '64px', marginBottom: '20px' }}>⏳</div>
+              <h2 style={{ 
+                color: 'white', 
+                fontSize: '24px',
+                marginBottom: '10px'
+              }}>
+                En attente...
+              </h2>
+              <p style={{ 
+                color: 'rgba(255,255,255,0.7)', 
+                fontSize: '16px',
+                lineHeight: '1.6'
+              }}>
+                La prochaine question arrive bientôt !<br/>
+                Reste connecté pendant le match 🔥
+              </p>
+            </div>
+          )}
         </div>
 
+        {/* Bouton retour */}
         <div style={{
           position: 'fixed',
           bottom: '20px',
@@ -597,6 +724,7 @@ export default function App() {
       position: 'relative',
       overflow: 'hidden'
     }}>
+      {/* Popup événement */}
       {showEventPopup && lastEvent && (
         <div style={{
           position: 'fixed',
@@ -612,7 +740,7 @@ export default function App() {
         }}>
           <div style={{ fontSize: '40px', marginBottom: '8px' }}>🎉</div>
           <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
-            {lastEvent.title}
+            {lastEvent.question}
           </div>
           <div style={{ color: 'white', fontSize: '18px', marginBottom: '5px' }}>
             Réponse : {lastEvent.answer}
@@ -623,6 +751,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Header */}
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
@@ -652,6 +781,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* Classement compact */}
       <div style={{
         background: 'rgba(255,255,255,0.05)',
         backdropFilter: 'blur(10px)',
@@ -727,6 +857,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* QR Code REEL avec API */}
       <div style={{
         position: 'fixed',
         bottom: '20px',
@@ -738,12 +869,16 @@ export default function App() {
         textAlign: 'center',
         border: '3px solid rgba(255,255,255,0.9)'
       }}>
-        <div style={{
-          fontSize: '70px',
-          marginBottom: '8px'
-        }}>
-          📲
-        </div>
+        <img 
+          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(appUrl)}`}
+          alt="QR Code"
+          style={{
+            width: '150px',
+            height: '150px',
+            marginBottom: '10px',
+            borderRadius: '8px'
+          }}
+        />
         <div style={{ 
           color: '#1e3c72', 
           fontSize: '13px', 
