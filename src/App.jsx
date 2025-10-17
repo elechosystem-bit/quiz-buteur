@@ -138,10 +138,12 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     try {
+      console.log('📝 Tentative de création de question...');
+      
       // Vérifier qu'aucune question n'existe déjà
       const existingQ = await get(ref(db, 'currentQuestion'));
       if (existingQ.exists()) {
-        console.log('Question déjà existante, skip');
+        console.log('⚠️ Une question existe déjà, annulation');
         return;
       }
 
@@ -149,8 +151,10 @@ export default function App() {
         !usedQuestionsRef.current.includes(q.text)
       );
       
+      console.log(`📚 ${availableQuestions.length} questions disponibles`);
+      
       if (availableQuestions.length === 0) {
-        console.log('Reset des questions utilisées');
+        console.log('🔄 Reset des questions utilisées');
         usedQuestionsRef.current = [];
         return createRandomQuestion();
       }
@@ -159,7 +163,8 @@ export default function App() {
       const qId = Date.now().toString();
       
       usedQuestionsRef.current.push(randomQ.text);
-      console.log('Création question:', randomQ.text);
+      console.log('✨ Nouvelle question:', randomQ.text);
+      console.log(`📊 ${usedQuestionsRef.current.length} questions déjà utilisées`);
       
       await set(ref(db, 'currentQuestion'), {
         id: qId,
@@ -169,24 +174,31 @@ export default function App() {
         createdAt: Date.now()
       });
       
+      console.log('✅ Question créée avec succès !');
+      
     } catch (e) {
-      console.error('Erreur création question:', e);
+      console.error('❌ Erreur création question:', e);
     }
   };
 
   const autoValidate = async () => {
-    if (isValidatingRef.current || !currentQuestion) return;
+    if (isValidatingRef.current || !currentQuestion) {
+      console.log('⚠️ Validation déjà en cours ou pas de question');
+      return;
+    }
     
     isValidatingRef.current = true;
-    console.log('Validation automatique...');
+    console.log('🎯 DÉBUT VALIDATION AUTO');
+    console.log('Question actuelle:', currentQuestion.text);
     
     try {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
-      console.log('Gagnant:', randomWinner);
+      console.log('✅ Gagnant choisi:', randomWinner);
       
       const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
       
       if (answersSnap.exists()) {
+        console.log('📊 Distribution des points...');
         for (const [pId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
             const playerSnap = await get(ref(db, `players/${pId}`));
@@ -196,25 +208,37 @@ export default function App() {
               await update(ref(db, `players/${pId}`), {
                 score: (playerSnap.val().score || 0) + total
               });
+              console.log(`💰 +${total} points pour joueur ${pId}`);
             }
           }
         }
       }
 
-      console.log('Suppression question et réponses...');
+      console.log('🗑️ Suppression question...');
       await remove(ref(db, 'currentQuestion'));
+      console.log('✅ Question supprimée !');
+      
+      console.log('🗑️ Suppression réponses...');
       await remove(ref(db, 'answers'));
+      console.log('✅ Réponses supprimées !');
+      
+      // Attendre un peu avant de libérer le verrou
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       isValidatingRef.current = false;
+      console.log('🔓 Verrou libéré');
       
-      console.log('Attente 10 secondes avant nouvelle question...');
-      setTimeout(() => {
-        console.log('Création nouvelle question');
-        createRandomQuestion();
-      }, 10000);
+      // Attendre aléatoirement entre 5 et 15 secondes
+      const waitTime = 5000 + Math.floor(Math.random() * 10000);
+      console.log(`⏳ Attente de ${waitTime/1000}s avant nouvelle question...`);
+      
+      setTimeout(async () => {
+        console.log('🚀 Création de la nouvelle question...');
+        await createRandomQuestion();
+      }, waitTime);
       
     } catch (e) {
-      console.error('Erreur validation:', e);
+      console.error('❌ ERREUR lors de la validation:', e);
       isValidatingRef.current = false;
     }
   };
