@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, push, update, remove, get } from 'firebase/database';
+import { getDatabase, ref, onValue, set, push, update, remove } from 'firebase/database';
 
 // Configuration Firebase
 const firebaseConfig = {
@@ -17,23 +17,33 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Banque de questions variées
+// Banque de 200 questions
 const QUESTION_BANK = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
   { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
   { text: "Qui va marquer le prochain but ?", options: ["Haaland", "Salah", "Kane", "De Bruyne"] },
   { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Martinez", "Rashford"] },
   { text: "Quelle équipe aura le prochain corner ?", options: ["Équipe A", "Équipe B", "Aucune", "Les deux"] },
-  { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] },
+  { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur A", "Milieu B", "Attaquant C", "Gardien D"] },
   { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
-  { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "Peut-être", "VAR"] },
-  { text: "Qui va faire la prochaine passe décisive ?", options: ["Milieu A", "Ailier B", "Défenseur", "Attaquant"] },
-  { text: "Quelle équipe dominera les 10 prochaines minutes ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] }
+  { text: "Qui va tenter le prochain tir ?", options: ["Joueur A", "Joueur B", "Joueur C", "Joueur D"] },
+  { text: "Y aura-t-il un penalty dans ce match ?", options: ["Oui", "Non", "Peut-être", "VAR décide"] },
+  { text: "Qui va faire la prochaine passe décisive ?", options: ["Milieu A", "Ailier B", "Défenseur C", "Attaquant D"] },
+  { text: "Quelle équipe dominera les 10 prochaines minutes ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] },
+  { text: "Qui va remporter le match ?", options: ["Équipe A", "Équipe B", "Match nul", "Prolongations"] },
+  { text: "Combien de cartons au total ?", options: ["0-2", "3-4", "5-6", "7+"] },
+  { text: "Y aura-t-il un carton rouge ?", options: ["Oui", "Non", "Deux", "VAR annule"] },
+  { text: "Qui va gagner le plus de duels ?", options: ["Joueur A", "Joueur B", "Joueur C", "Joueur D"] },
+  { text: "Combien de temps additionnel en 1ère mi-temps ?", options: ["0-1 min", "2-3 min", "4-5 min", "6+ min"] },
+  { text: "Qui va faire le prochain arrêt ?", options: ["Gardien A", "Gardien B", "Défenseur", "Poteau"] },
+  { text: "Quelle sera la prochaine action ?", options: ["Corner", "Coup franc", "Penalty", "But"] },
+  { text: "Qui va sortir sur blessure ?", options: ["Personne", "Attaquant", "Défenseur", "Milieu"] }
 ];
 
-// Générer plus de questions
+// Générer 200 questions en dupliquant et variant
 const FULL_QUESTION_BANK = [];
-for (let i = 0; i < 20; i++) {
+for (let i = 0; i < 10; i++) {
   QUESTION_BANK.forEach(q => FULL_QUESTION_BANK.push({...q}));
 }
 
@@ -51,9 +61,10 @@ export default function App() {
   const [answers, setAnswers] = useState({});
   const [flashingPlayers, setFlashingPlayers] = useState([]);
 
-  // Écouter les joueurs
+  // Écouter les joueurs avec animation
   useEffect(() => {
     const playersRef = ref(db, 'players');
+    let isFirstLoad = true;
     let previousScores = {};
     
     const unsubscribe = onValue(playersRef, (snapshot) => {
@@ -64,29 +75,40 @@ export default function App() {
           ...player
         }));
         
-        // Détecter changements de score
-        const newFlashing = [];
-        playersList.forEach(player => {
-          if (previousScores[player.id] && previousScores[player.id] < player.score) {
-            newFlashing.push(player.id);
+        // Détecter les changements de score
+        if (!isFirstLoad) {
+          const newFlashing = [];
+          playersList.forEach(player => {
+            if (previousScores[player.id] && previousScores[player.id] < player.score) {
+              newFlashing.push(player.id);
+            }
+          });
+          if (newFlashing.length > 0) {
+            setFlashingPlayers(newFlashing);
+            setTimeout(() => setFlashingPlayers([]), 3000);
           }
-          previousScores[player.id] = player.score;
-        });
-        
-        if (newFlashing.length > 0) {
-          setFlashingPlayers(newFlashing);
-          setTimeout(() => setFlashingPlayers([]), 3000);
         }
         
+        // Sauvegarder les scores
+        previousScores = {};
+        playersList.forEach(p => previousScores[p.id] = p.score);
+        
+        // Notification nouveau joueur
+        const sortedByTime = [...playersList].sort((a, b) => b.joinedAt - a.joinedAt);
+        if (!isFirstLoad && playersList.length > players.length) {
+          const newestPlayer = sortedByTime[0];
+          setNewPlayerNotif(newestPlayer.name);
+          setTimeout(() => setNewPlayerNotif(null), 5000);
+        }
+        
+        isFirstLoad = false;
         setPlayers([...playersList].sort((a, b) => b.score - a.score));
-      } else {
-        setPlayers([]);
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [players.length]);
 
-  // Écouter le match
+  // Écouter l'état du match
   useEffect(() => {
     const matchRef = ref(db, 'matchState');
     const unsubscribe = onValue(matchRef, (snapshot) => {
@@ -95,7 +117,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Écouter la question
+  // Écouter la question active
   useEffect(() => {
     const questionRef = ref(db, 'currentQuestion');
     const unsubscribe = onValue(questionRef, (snapshot) => {
@@ -103,8 +125,6 @@ export default function App() {
       setCurrentQuestion(data);
       if (data) {
         setTimeLeft(data.timeLeft || 30);
-      } else {
-        setPlayerAnswer(null);
       }
     });
     return () => unsubscribe();
@@ -116,28 +136,28 @@ export default function App() {
       const answersRef = ref(db, `answers/${currentQuestion.id}`);
       const unsubscribe = onValue(answersRef, (snapshot) => {
         const data = snapshot.val();
-        const answerCount = {};
         if (data) {
+          const answerCount = {};
           Object.values(data).forEach(answer => {
             answerCount[answer.answer] = (answerCount[answer.answer] || 0) + 1;
           });
+          setAnswers(answerCount);
+        } else {
+          setAnswers({});
         }
-        setAnswers(answerCount);
       });
       return () => unsubscribe();
-    } else {
-      setAnswers({});
     }
   }, [currentQuestion]);
 
-  // Timer
+  // Timer countdown
   useEffect(() => {
     if (currentQuestion && timeLeft > 0) {
       const timer = setInterval(() => {
         setTimeLeft(prev => {
           const newTime = prev - 1;
           if (newTime <= 0) return 0;
-          update(ref(db, 'currentQuestion'), { timeLeft: newTime }).catch(() => {});
+          update(ref(db, 'currentQuestion'), { timeLeft: newTime });
           return newTime;
         });
       }, 1000);
@@ -145,135 +165,120 @@ export default function App() {
     }
   }, [currentQuestion, timeLeft]);
 
+  // Connexion joueur
   const handleJoin = async () => {
     if (!playerName.trim()) return;
-    try {
-      const newPlayerRef = push(ref(db, 'players'));
-      await set(newPlayerRef, {
-        name: playerName,
-        score: 0,
-        joinedAt: Date.now()
-      });
-      setPlayerId(newPlayerRef.key);
-      setScreen('mobile');
-    } catch (error) {
-      console.error('Error joining:', error);
-    }
+    const newPlayerRef = push(ref(db, 'players'));
+    await set(newPlayerRef, {
+      name: playerName,
+      score: 0,
+      joinedAt: Date.now()
+    });
+    setPlayerId(newPlayerRef.key);
+    setScreen('mobile');
   };
 
+  // Répondre
   const handleAnswer = async (answer) => {
-    if (!currentQuestion || playerAnswer !== null || !playerId) return;
-    try {
-      setPlayerAnswer(answer);
-      const playerAnswerRef = ref(db, `answers/${currentQuestion.id}/${playerId}`);
-      await set(playerAnswerRef, {
-        answer,
-        timestamp: Date.now(),
-        timeLeft
-      });
-    } catch (error) {
-      console.error('Error answering:', error);
-    }
+    if (!currentQuestion || playerAnswer !== null) return;
+    setPlayerAnswer(answer);
+    const playerAnswerRef = ref(db, `answers/${currentQuestion.id}/${playerId}`);
+    await set(playerAnswerRef, {
+      answer,
+      timestamp: Date.now(),
+      timeLeft
+    });
   };
 
+  // ADMIN: Démarrer le match
   const startMatch = async () => {
-    try {
-      await set(ref(db, 'matchState'), {
-        isActive: true,
-        startTime: Date.now()
-      });
-      // Première question immédiatement
-      setTimeout(() => createQuestion(), 2000);
-    } catch (error) {
-      console.error('Error starting match:', error);
-    }
+    await set(ref(db, 'matchState'), {
+      isActive: true,
+      startTime: Date.now(),
+      currentMinute: 0
+    });
+    setTimeout(() => createQuestion(), 30000); // Première question après 30s
   };
 
+  // ADMIN: Créer une question aléatoire
   const createQuestion = async () => {
-    try {
-      const matchSnapshot = await get(ref(db, 'matchState'));
-      if (!matchSnapshot.exists() || !matchSnapshot.val()?.isActive) return;
-
-      const randomQuestion = FULL_QUESTION_BANK[Math.floor(Math.random() * FULL_QUESTION_BANK.length)];
-      const questionId = Date.now().toString();
-      
-      await set(ref(db, 'currentQuestion'), {
-        id: questionId,
-        text: randomQuestion.text,
-        options: randomQuestion.options,
-        timeLeft: 30,
-        createdAt: Date.now()
-      });
-    } catch (error) {
-      console.error('Error creating question:', error);
-    }
+    if (!matchState?.isActive) return;
+    const randomQuestion = FULL_QUESTION_BANK[Math.floor(Math.random() * FULL_QUESTION_BANK.length)];
+    const questionId = Date.now().toString();
+    const newQuestion = {
+      id: questionId,
+      text: randomQuestion.text,
+      options: randomQuestion.options,
+      correctAnswer: null,
+      timeLeft: 30,
+      createdAt: Date.now()
+    };
+    await set(ref(db, 'currentQuestion'), newQuestion);
+    setPlayerAnswer(null);
   };
 
+  // ADMIN: Valider un but
   const validateGoal = async (scorer) => {
     if (!currentQuestion) return;
-    try {
-      setGoalNotif(`⚽ ${scorer} a marqué !`);
-      setTimeout(() => setGoalNotif(null), 5000);
+    setGoalNotif(`⚽ ${scorer} a marqué !`);
+    setTimeout(() => setGoalNotif(null), 5000);
 
-      const answersSnapshot = await get(ref(db, `answers/${currentQuestion.id}`));
-      
-      if (answersSnapshot.exists()) {
-        const answersData = answersSnapshot.val();
-        for (const [pId, answerData] of Object.entries(answersData)) {
-          if (answerData.answer === scorer) {
-            const bonusPoints = Math.floor((answerData.timeLeft || 0) / 5);
-            const totalPoints = 10 + bonusPoints;
-            
-            const playerSnapshot = await get(ref(db, `players/${pId}`));
-            if (playerSnapshot.exists()) {
-              const player = playerSnapshot.val();
-              await update(ref(db, `players/${pId}`), {
-                score: (player.score || 0) + totalPoints
-              });
-            }
+    const answersSnapshot = await new Promise(resolve => {
+      onValue(ref(db, `answers/${currentQuestion.id}`), snapshot => {
+        resolve(snapshot.val());
+      }, { onlyOnce: true });
+    });
+
+    if (answersSnapshot) {
+      for (const [playerId, answerData] of Object.entries(answersSnapshot)) {
+        if (answerData.answer === scorer) {
+          const bonusPoints = Math.floor(answerData.timeLeft / 5);
+          const totalPoints = 10 + bonusPoints;
+          const player = players.find(p => p.id === playerId);
+          if (player) {
+            await update(ref(db, `players/${playerId}`), {
+              score: player.score + totalPoints
+            });
           }
         }
       }
+    }
 
-      await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, 'answers'));
-      setPlayerAnswer(null);
+    await remove(ref(db, 'currentQuestion'));
+    await remove(ref(db, 'answers'));
+    setPlayerAnswer(null);
 
-      const matchSnapshot = await get(ref(db, 'matchState'));
-      if (matchSnapshot.exists() && matchSnapshot.val()?.isActive) {
-        setTimeout(() => createQuestion(), 30000);
-      }
-    } catch (error) {
-      console.error('Error validating goal:', error);
+    if (matchState?.isActive) {
+      setTimeout(() => createQuestion(), 30000); // Prochaine question dans 30s
     }
   };
 
+  // ADMIN: Terminer le match
   const endMatch = async () => {
-    try {
-      await remove(ref(db, 'matchState'));
-      await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, 'answers'));
-    } catch (error) {
-      console.error('Error ending match:', error);
-    }
+    await remove(ref(db, 'matchState'));
+    await remove(ref(db, 'currentQuestion'));
+    await remove(ref(db, 'answers'));
   };
 
+  // Calculer le temps du match
   const getMatchTime = () => {
     if (!matchState?.startTime) return "0'";
     const elapsed = Date.now() - matchState.startTime;
     const matchMinutes = Math.floor(elapsed / 6000);
-    return matchMinutes >= 90 ? "90'" : `${matchMinutes}'`;
+    if (matchMinutes >= 90) return "90'";
+    return `${matchMinutes}'`;
   };
 
   const getMatchPhase = () => {
     if (!matchState?.startTime) return "En attente";
     const elapsed = Date.now() - matchState.startTime;
     const matchMinutes = Math.floor(elapsed / 6000);
-    if (matchMinutes >= 90) return "Fin";
-    if (matchMinutes >= 45) return "2nde MT";
-    return "1ère MT";
+    if (matchMinutes >= 90) return "Fin du match";
+    if (matchMinutes >= 45) return "2nde mi-temps";
+    return "1ère mi-temps";
   };
 
+  // Composant Horloge
   const MatchClock = () => {
     const [rotation, setRotation] = useState(0);
     
@@ -286,7 +291,7 @@ export default function App() {
         }, 1000);
         return () => clearInterval(interval);
       }
-    }, []);
+    }, [matchState]);
 
     return (
       <div className="relative">
@@ -314,6 +319,7 @@ export default function App() {
     );
   };
 
+  // HOME SCREEN
   if (screen === 'home') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-green-900 flex flex-col items-center justify-center p-8">
@@ -323,15 +329,24 @@ export default function App() {
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
         <div className="flex gap-6">
-          <button onClick={() => setScreen('mobile')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
+          <button
+            onClick={() => setScreen('mobile')}
+            className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
+          >
             📱 JOUER
           </button>
-          <button onClick={() => setScreen('tv')} className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white">
+          <button
+            onClick={() => setScreen('tv')}
+            className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white"
+          >
             📺 ÉCRAN BAR
           </button>
         </div>
         <div className="mt-12">
-          <button onClick={() => setScreen('admin')} className="text-white opacity-50 hover:opacity-100 text-sm">
+          <button
+            onClick={() => setScreen('admin')}
+            className="text-white opacity-50 hover:opacity-100 text-sm"
+          >
             Admin
           </button>
         </div>
@@ -339,6 +354,7 @@ export default function App() {
     );
   }
 
+  // MOBILE SCREEN
   if (screen === 'mobile') {
     if (!playerId) {
       return (
@@ -353,7 +369,10 @@ export default function App() {
               className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
               onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
             />
-            <button onClick={handleJoin} className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 transition-all">
+            <button
+              onClick={handleJoin}
+              className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 transition-all"
+            >
               JOUER ! ⚽
             </button>
           </div>
@@ -376,25 +395,36 @@ export default function App() {
               <div className="text-center mb-6">
                 <div className="text-6xl font-black text-green-900 mb-2">{timeLeft}s</div>
                 <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-600 transition-all duration-1000" style={{ width: `${(timeLeft / 30) * 100}%` }} />
+                  <div 
+                    className="h-full bg-green-600 transition-all duration-1000"
+                    style={{ width: `${(timeLeft / 30) * 100}%` }}
+                  />
                 </div>
               </div>
 
-              <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
+              <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+                {currentQuestion.text}
+              </h3>
 
               <div className="space-y-3">
-                {currentQuestion.options.map((option, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleAnswer(option)}
-                    disabled={playerAnswer !== null}
-                    className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
-                      playerAnswer === option ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option} {playerAnswer === option && ' ⏳'}
-                  </button>
-                ))}
+                {currentQuestion.options.map((option, idx) => {
+                  const isSelected = playerAnswer === option;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => handleAnswer(option)}
+                      disabled={playerAnswer !== null}
+                      className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
+                        isSelected
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                      }`}
+                    >
+                      {option}
+                      {isSelected && ' ⏳'}
+                    </button>
+                  );
+                })}
               </div>
 
               {playerAnswer && (
@@ -414,6 +444,7 @@ export default function App() {
     );
   }
 
+  // TV SCREEN
   if (screen === 'tv') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8 relative">
@@ -443,7 +474,11 @@ export default function App() {
           <div className="flex gap-6">
             {matchState?.isActive && <MatchClock />}
             <div className="bg-white p-6 rounded-2xl">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://quiz-buteur.vercel.app" alt="QR" className="w-48 h-48" />
+              <img 
+                src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://quiz-buteur.vercel.app"
+                alt="QR Code"
+                className="w-48 h-48"
+              />
               <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
             </div>
           </div>
@@ -477,9 +512,12 @@ export default function App() {
                 className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all duration-1000 ${
                   flashingPlayers.includes(player.id)
                     ? 'animate-pulse bg-green-400 scale-105'
-                    : idx === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
-                    : idx === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
-                    : idx === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : idx === 0
+                    ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                    : idx === 1
+                    ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                    : idx === 2
+                    ? 'bg-orange-300 text-gray-900 font-bold text-xl'
                     : 'bg-gray-50 hover:bg-gray-100 text-lg'
                 }`}
               >
@@ -496,6 +534,7 @@ export default function App() {
     );
   }
 
+  // ADMIN SCREEN
   if (screen === 'admin') {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -522,6 +561,7 @@ export default function App() {
             <div className="bg-gray-800 rounded-xl p-6 mb-6">
               <h2 className="text-2xl font-bold mb-4">Question actuelle</h2>
               <p className="text-xl mb-4">{currentQuestion.text}</p>
+              <p className="text-green-400 mb-4">Temps: {timeLeft}s</p>
               <div className="mb-4">
                 <h3 className="text-lg font-bold mb-2">Votes :</h3>
                 {currentQuestion.options.map(option => (
@@ -531,7 +571,11 @@ export default function App() {
               <h3 className="text-xl font-bold mb-4">🎯 Qui a marqué / gagné ?</h3>
               <div className="grid grid-cols-2 gap-3">
                 {currentQuestion.options.map(player => (
-                  <button key={player} onClick={() => validateGoal(player)} className="bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg font-bold hover:bg-yellow-400">
+                  <button
+                    key={player}
+                    onClick={() => validateGoal(player)}
+                    className="bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg font-bold hover:bg-yellow-400"
+                  >
                     ⚽ {player}
                   </button>
                 ))}
@@ -540,6 +584,7 @@ export default function App() {
           )}
 
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Actions</h2>
             <button onClick={createQuestion} className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700">
               Créer question manuelle
             </button>
