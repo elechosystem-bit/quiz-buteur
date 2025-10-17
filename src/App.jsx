@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, push, update, remove, get } from 'firebase/database';
 
@@ -23,34 +23,32 @@ const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
   { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Lautaro", "Rashford"] },
   { text: "Qui va marquer le prochain but ?", options: ["Saka", "Foden", "Palmer", "Watkins"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Aubameyang", "Thuram", "David", "Barcola"] },
   { text: "Quelle équipe aura le prochain corner ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
   { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] },
   { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "Peut-être", "VAR"] },
   { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
   { text: "Qui va faire la prochaine passe décisive ?", options: ["Milieu offensif", "Ailier", "Défenseur", "Attaquant"] },
-  { text: "Quelle équipe dominera les 10 prochaines minutes ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] },
+  { text: "Quelle équipe dominera ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] },
   { text: "Y aura-t-il un carton rouge ?", options: ["Oui", "Non", "Deux cartons", "VAR annule"] },
   { text: "Qui va gagner le plus de duels ?", options: ["Attaquant A", "Milieu B", "Défenseur C", "Gardien"] },
-  { text: "Combien de temps additionnel en 1ère mi-temps ?", options: ["0-1 min", "2-3 min", "4-5 min", "6+ min"] },
-  { text: "Qui va faire le prochain arrêt décisif ?", options: ["Gardien domicile", "Gardien extérieur", "Défenseur", "Poteau"] },
+  { text: "Combien de temps additionnel ?", options: ["0-1 min", "2-3 min", "4-5 min", "6+ min"] },
+  { text: "Qui va faire le prochain arrêt ?", options: ["Gardien domicile", "Gardien extérieur", "Défenseur", "Poteau"] },
   { text: "Quelle sera la prochaine action ?", options: ["Corner", "Coup franc", "Penalty", "But"] },
-  { text: "Qui va sortir sur blessure en premier ?", options: ["Personne", "Attaquant", "Défenseur", "Milieu"] },
-  { text: "Combien de fautes au total dans les 10 prochaines minutes ?", options: ["0-3", "4-6", "7-9", "10+"] },
-  { text: "Y aura-t-il un but dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Peut-être", "Deux buts"] },
+  { text: "Qui va sortir sur blessure ?", options: ["Personne", "Attaquant", "Défenseur", "Milieu"] },
+  { text: "Combien de fautes au total ?", options: ["0-3", "4-6", "7-9", "10+"] },
+  { text: "But dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Peut-être", "Deux buts"] },
   { text: "Quelle équipe tirera le plus ?", options: ["Domicile", "Extérieur", "Égalité", "Aucune"] },
-  { text: "Qui va rater le prochain tir cadré ?", options: ["Attaquant A", "Attaquant B", "Milieu", "Personne"] },
-  { text: "Y aura-t-il un hors-jeu dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Plusieurs", "Avec but refusé"] },
-  { text: "Combien de remplacements en 1ère mi-temps ?", options: ["0", "1", "2", "3+"] },
+  { text: "Y aura-t-il un hors-jeu ?", options: ["Oui", "Non", "Plusieurs", "Avec but refusé"] },
+  { text: "Combien de remplacements ?", options: ["0", "1", "2", "3+"] },
   { text: "Qui va toucher le plus de ballons ?", options: ["Milieu A", "Défenseur B", "Attaquant C", "Gardien"] },
   { text: "Quelle équipe aura le plus de possession ?", options: ["Domicile", "Extérieur", "50-50", "Incertain"] },
   { text: "Y aura-t-il un but contre son camp ?", options: ["Oui", "Non", "Peut-être", "Deux CSC"] },
-  { text: "Qui va tenter le prochain dribble réussi ?", options: ["Ailier", "Milieu", "Attaquant", "Défenseur"] },
-  { text: "Combien de tirs cadrés dans les 10 prochaines minutes ?", options: ["0-1", "2-3", "4-5", "6+"] },
+  { text: "Qui va tenter le prochain dribble ?", options: ["Ailier", "Milieu", "Attaquant", "Défenseur"] },
+  { text: "Combien de tirs cadrés ?", options: ["0-1", "2-3", "4-5", "6+"] },
   { text: "Quelle équipe commettra le plus de fautes ?", options: ["Domicile", "Extérieur", "Égalité", "Aucune"] },
-  { text: "Y aura-t-il une intervention de la VAR ?", options: ["Oui", "Non", "Plusieurs", "But refusé"] },
+  { text: "Y aura-t-il une intervention VAR ?", options: ["Oui", "Non", "Plusieurs", "But refusé"] },
   { text: "Qui va gagner le prochain duel aérien ?", options: ["Attaquant A", "Défenseur B", "Milieu C", "Gardien"] },
-  { text: "Combien de corners dans les 10 prochaines minutes ?", options: ["0-1", "2-3", "4-5", "6+"] },
+  { text: "Combien de corners ?", options: ["0-1", "2-3", "4-5", "6+"] },
   { text: "Quelle équipe va presser le plus haut ?", options: ["Domicile", "Extérieur", "Les deux", "Aucune"] }
 ];
 
@@ -63,39 +61,18 @@ export default function App() {
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [usedQuestions, setUsedQuestions] = useState([]);
-  const usedQuestionsRef = React.useRef([]);
+  const usedQuestionsRef = useRef([]);
+  const isValidatingRef = useRef(false);
 
-  // Démarrage automatique du système
+  // Démarrage automatique
   useEffect(() => {
-    const initSystem = async () => {
-      const matchRef = ref(db, 'matchState');
-      const matchSnap = await get(matchRef);
-      
-      if (!matchSnap.exists()) {
-        await set(matchRef, { 
-          isActive: true, 
-          startTime: Date.now(),
-          autoMode: true
-        });
+    const init = async () => {
+      const qSnap = await get(ref(db, 'currentQuestion'));
+      if (!qSnap.exists()) {
+        setTimeout(() => createRandomQuestion(), 2000);
       }
     };
-    
-    initSystem();
-    
-    // Vérifier toutes les 5 secondes s'il faut créer une question
-    const interval = setInterval(async () => {
-      try {
-        const qSnap = await get(ref(db, 'currentQuestion'));
-        if (!qSnap.exists()) {
-          createRandomQuestion();
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }, 5000);
-    
-    return () => clearInterval(interval);
+    init();
   }, []);
 
   // Écouter les joueurs
@@ -145,7 +122,7 @@ export default function App() {
 
   // Timer avec validation automatique
   useEffect(() => {
-    if (!currentQuestion) return;
+    if (!currentQuestion || isValidatingRef.current) return;
     
     if (timeLeft <= 0) {
       autoValidate();
@@ -161,23 +138,28 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     try {
-      // Filtrer les questions déjà utilisées
+      // Vérifier qu'aucune question n'existe déjà
+      const existingQ = await get(ref(db, 'currentQuestion'));
+      if (existingQ.exists()) {
+        console.log('Question déjà existante, skip');
+        return;
+      }
+
       const availableQuestions = QUESTIONS.filter(q => 
         !usedQuestionsRef.current.includes(q.text)
       );
       
-      // Si toutes les questions ont été utilisées, réinitialiser
       if (availableQuestions.length === 0) {
+        console.log('Reset des questions utilisées');
         usedQuestionsRef.current = [];
         return createRandomQuestion();
       }
       
-      // Choisir une question aléatoire parmi celles disponibles
       const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
       const qId = Date.now().toString();
       
-      // Marquer cette question comme utilisée
       usedQuestionsRef.current.push(randomQ.text);
+      console.log('Création question:', randomQ.text);
       
       await set(ref(db, 'currentQuestion'), {
         id: qId,
@@ -188,14 +170,19 @@ export default function App() {
       });
       
     } catch (e) {
-      console.error(e);
+      console.error('Erreur création question:', e);
     }
   };
 
   const autoValidate = async () => {
-    if (!currentQuestion) return;
+    if (isValidatingRef.current || !currentQuestion) return;
+    
+    isValidatingRef.current = true;
+    console.log('Validation automatique...');
+    
     try {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
+      console.log('Gagnant:', randomWinner);
       
       const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
       
@@ -214,12 +201,21 @@ export default function App() {
         }
       }
 
+      console.log('Suppression question et réponses...');
       await remove(ref(db, 'currentQuestion'));
       await remove(ref(db, 'answers'));
       
-      setTimeout(() => createRandomQuestion(), 10000);
+      isValidatingRef.current = false;
+      
+      console.log('Attente 10 secondes avant nouvelle question...');
+      setTimeout(() => {
+        console.log('Création nouvelle question');
+        createRandomQuestion();
+      }, 10000);
+      
     } catch (e) {
-      console.error(e);
+      console.error('Erreur validation:', e);
+      isValidatingRef.current = false;
     }
   };
 
@@ -304,7 +300,7 @@ export default function App() {
           <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
-          <p className="text-lg text-yellow-300 mt-4">🤖 Mode automatique activé</p>
+          <p className="text-lg text-yellow-300 mt-4">🤖 Mode automatique</p>
         </div>
         <div className="flex gap-6">
           <button onClick={() => setScreen('mobile')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
@@ -378,7 +374,7 @@ export default function App() {
           ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
               <div className="text-6xl mb-4">⏳</div>
-              <p className="text-2xl text-gray-600 font-semibold">Prochaine question dans 10 secondes...</p>
+              <p className="text-2xl text-gray-600 font-semibold">Prochaine question dans 10s...</p>
             </div>
           )}
         </div>
@@ -393,7 +389,6 @@ export default function App() {
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             <p className="text-2xl text-green-300">Le Penalty - Paris 11e</p>
-            <p className="text-lg text-yellow-300 mt-2">🤖 Mode automatique</p>
           </div>
           <div className="flex gap-6">
             <MatchClock />
@@ -403,21 +398,6 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        {currentQuestion && (
-          <div className="bg-yellow-400 rounded-2xl p-6 mb-6">
-            <h3 className="text-3xl font-black text-gray-900 mb-4 text-center">📊 VOTES</h3>
-            <div className="grid grid-cols-4 gap-4">
-              {currentQuestion.options.map(opt => (
-                <div key={opt} className="bg-white rounded-xl p-4 text-center">
-                  <div className="text-2xl font-bold text-gray-900">{opt}</div>
-                  <div className="text-4xl font-black text-green-600">{answers[opt] || 0}</div>
-                  <div className="text-sm text-gray-500 mt-1">votes</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
           <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
