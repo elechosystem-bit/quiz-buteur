@@ -62,8 +62,40 @@ export default function App() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [matchState, setMatchState] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [usedQuestions, setUsedQuestions] = useState([]);
+
+  // Démarrage automatique du système
+  useEffect(() => {
+    const initSystem = async () => {
+      const matchRef = ref(db, 'matchState');
+      const matchSnap = await get(matchRef);
+      
+      if (!matchSnap.exists()) {
+        await set(matchRef, { 
+          isActive: true, 
+          startTime: Date.now(),
+          autoMode: true
+        });
+      }
+    };
+    
+    initSystem();
+    
+    // Vérifier toutes les 5 secondes s'il faut créer une question
+    const interval = setInterval(async () => {
+      try {
+        const qSnap = await get(ref(db, 'currentQuestion'));
+        if (!qSnap.exists()) {
+          createRandomQuestion();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Écouter les joueurs
   useEffect(() => {
@@ -74,14 +106,6 @@ export default function App() {
       } else {
         setPlayers([]);
       }
-    });
-    return () => unsub();
-  }, []);
-
-  // Écouter le match
-  useEffect(() => {
-    const unsub = onValue(ref(db, 'matchState'), (snap) => {
-      setMatchState(snap.val());
     });
     return () => unsub();
   }, []);
@@ -123,7 +147,6 @@ export default function App() {
     if (!currentQuestion) return;
     
     if (timeLeft <= 0) {
-      // Timer à 0 → Validation automatique !
       autoValidate();
       return;
     }
@@ -135,10 +158,35 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentQuestion, timeLeft]);
 
+  const createRandomQuestion = async () => {
+    try {
+      const availableQuestions = QUESTIONS.filter(q => !usedQuestions.includes(q.text));
+      
+      if (availableQuestions.length === 0) {
+        setUsedQuestions([]);
+        return createRandomQuestion();
+      }
+      
+      const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+      const qId = Date.now().toString();
+      
+      await set(ref(db, 'currentQuestion'), {
+        id: qId,
+        text: randomQ.text,
+        options: randomQ.options,
+        timeLeft: 30,
+        createdAt: Date.now()
+      });
+      
+      setUsedQuestions([...usedQuestions, randomQ.text]);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const autoValidate = async () => {
     if (!currentQuestion) return;
     try {
-      // Choisir une réponse au hasard (simulation)
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
       
       const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
@@ -160,6 +208,8 @@ export default function App() {
 
       await remove(ref(db, 'currentQuestion'));
       await remove(ref(db, 'answers'));
+      
+      setTimeout(() => createRandomQuestion(), 10000);
     } catch (e) {
       console.error(e);
     }
@@ -191,108 +241,13 @@ export default function App() {
     }
   };
 
-  const startMatch = async () => {
-    try {
-      await set(ref(db, 'matchState'), { 
-        isActive: true, 
-        startTime: Date.now(),
-        intervalId: Date.now()
-      });
-      
-      // Première question après 3 secondes
-      setTimeout(() => createQuestion(), 3000);
-      
-      // Vérifier toutes les 5 secondes s'il faut créer une nouvelle question
-      const checkInterval = setInterval(async () => {
-        try {
-          const match = await get(ref(db, 'matchState'));
-          if (!match.exists() || !match.val()?.isActive) {
-            clearInterval(checkInterval);
-            return;
-          }
-          
-          // Ne créer une question QUE si aucune n'existe déjà
-          const currentQ = await get(ref(db, 'currentQuestion'));
-          if (!currentQ.exists()) {
-            createQuestion();
-          }
-        } catch (err) {
-          console.error('Error in interval:', err);
-        }
-      }, 5000);
-      
-    } catch (e) {
-      alert('Erreur');
-    }
-  };
-
-  const createQuestion = async () => {
-    try {
-      const match = await get(ref(db, 'matchState'));
-      if (!match.exists() || !match.val()?.isActive) return;
-      
-      const q = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
-      await set(ref(db, 'currentQuestion'), {
-        id: Date.now().toString(),
-        text: q.text,
-        options: q.options,
-        timeLeft: 30,
-        createdAt: Date.now()
-      });
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const validateGoal = async (scorer) => {
-    if (!currentQuestion) return;
-    try {
-      const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
-      
-      if (answersSnap.exists()) {
-        for (const [pId, data] of Object.entries(answersSnap.val())) {
-          if (data.answer === scorer) {
-            const playerSnap = await get(ref(db, `players/${pId}`));
-            if (playerSnap.exists()) {
-              const bonus = Math.floor((data.timeLeft || 0) / 5);
-              const total = 10 + bonus;
-              await update(ref(db, `players/${pId}`), {
-                score: (playerSnap.val().score || 0) + total
-              });
-            }
-          }
-        }
-      }
-
-      await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, 'answers'));
-      
-      // La prochaine question sera créée automatiquement par l'intervalle après 5-10 secondes
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const endMatch = async () => {
-    try {
-      await remove(ref(db, 'matchState'));
-      await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, 'answers'));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   const getMatchTime = () => {
-    if (!matchState?.startTime) return "0'";
-    const mins = Math.floor((Date.now() - matchState.startTime) / 6000);
-    return mins >= 90 ? "90'" : `${mins}'`;
+    const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
+    return `${mins}'`;
   };
 
   const getMatchPhase = () => {
-    if (!matchState?.startTime) return "Attente";
-    const mins = Math.floor((Date.now() - matchState.startTime) / 6000);
-    if (mins >= 90) return "Fin";
+    const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
     if (mins >= 45) return "2MT";
     return "1MT";
   };
@@ -301,13 +256,12 @@ export default function App() {
     const [rot, setRot] = useState(0);
     
     useEffect(() => {
-      if (!matchState?.startTime) return;
       const iv = setInterval(() => {
-        const mins = Math.floor((Date.now() - matchState.startTime) / 6000);
+        const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
         setRot((mins / 90) * 360);
       }, 1000);
       return () => clearInterval(iv);
-    }, [matchState?.startTime]);
+    }, []);
 
     return (
       <div className="relative">
@@ -342,6 +296,7 @@ export default function App() {
           <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
+          <p className="text-lg text-yellow-300 mt-4">🤖 Mode automatique activé</p>
         </div>
         <div className="flex gap-6">
           <button onClick={() => setScreen('mobile')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
@@ -350,9 +305,6 @@ export default function App() {
           <button onClick={() => setScreen('tv')} className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white">
             📺 ÉCRAN BAR
           </button>
-        </div>
-        <div className="mt-12">
-          <button onClick={() => setScreen('admin')} className="text-white opacity-50 hover:opacity-100 text-sm">Admin</button>
         </div>
       </div>
     );
@@ -418,7 +370,7 @@ export default function App() {
           ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
               <div className="text-6xl mb-4">⏳</div>
-              <p className="text-2xl text-gray-600 font-semibold">En attente...</p>
+              <p className="text-2xl text-gray-600 font-semibold">Prochaine question dans 10 secondes...</p>
             </div>
           )}
         </div>
@@ -433,9 +385,10 @@ export default function App() {
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             <p className="text-2xl text-green-300">Le Penalty - Paris 11e</p>
+            <p className="text-lg text-yellow-300 mt-2">🤖 Mode automatique</p>
           </div>
           <div className="flex gap-6">
-            {matchState?.isActive && <MatchClock />}
+            <MatchClock />
             <div className="bg-white p-6 rounded-2xl">
               <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://quiz-buteur.vercel.app" alt="QR" className="w-48 h-48" />
               <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
@@ -480,74 +433,6 @@ export default function App() {
               </div>
             ))}
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (screen === 'admin') {
-    return (
-      <div className="min-h-screen bg-gray-900 text-white p-8">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin</h1>
-          
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Match</h2>
-            {matchState?.isActive ? (
-              <div>
-                <p className="text-3xl text-yellow-400 font-bold mb-4">⏱️ {getMatchTime()} - {getMatchPhase()}</p>
-                <button onClick={endMatch} className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700">
-                  Terminer
-                </button>
-              </div>
-            ) : (
-              <button onClick={startMatch} className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700">
-                🚀 Démarrer le match
-              </button>
-            )}
-          </div>
-
-          {currentQuestion && (
-            <div className="bg-gray-800 rounded-xl p-6 mb-6">
-              <h2 className="text-2xl font-bold mb-4">Question en cours</h2>
-              <p className="text-xl mb-4">{currentQuestion.text}</p>
-              <p className="text-yellow-400 mb-4">⏱️ Timer : {timeLeft}s (Validation auto à 0)</p>
-              <div className="mb-4">
-                {currentQuestion.options.map(opt => (
-                  <div key={opt} className="mb-2">{opt}: {answers[opt] || 0} votes</div>
-                ))}
-              </div>
-              <p className="text-sm text-gray-400 mb-4">💡 Le système valide automatiquement au hasard quand le timer arrive à 0</p>
-              <h3 className="text-xl font-bold mb-4">🎯 Validation manuelle (optionnel) :</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {currentQuestion.options.map(opt => (
-                  <button key={opt} onClick={() => validateGoal(opt)} className="bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg font-bold hover:bg-yellow-400">
-                    ⚽ {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <button onClick={createQuestion} className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700">
-              Question manuelle
-            </button>
-          </div>
-
-          <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
-            <div className="space-y-2">
-              {players.map(p => (
-                <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
-                  <span>{p.name}</span>
-                  <span className="text-green-400">{p.score} pts</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg">← Retour</button>
         </div>
       </div>
     );
