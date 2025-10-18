@@ -62,6 +62,7 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState({});
   const usedQuestionsRef = useRef([]);
+  const isProcessingRef = useRef(false);
 
   // Écouter les joueurs
   useEffect(() => {
@@ -129,17 +130,21 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     try {
+      // Vérifier qu'aucune question n'existe déjà
       const existingQ = await get(ref(db, 'currentQuestion'));
       if (existingQ.exists()) {
-        alert('Une question est déjà active !');
+        console.log('Question déjà active, annulation');
         return;
       }
 
+      // Sélectionner une question non utilisée
       const availableQuestions = QUESTIONS.filter(q => 
         !usedQuestionsRef.current.includes(q.text)
       );
       
+      // Si toutes les questions ont été utilisées, réinitialiser
       if (availableQuestions.length === 0) {
+        console.log('🔄 Toutes les questions ont été utilisées, reset !');
         usedQuestionsRef.current = [];
         return createRandomQuestion();
       }
@@ -157,24 +162,31 @@ export default function App() {
         createdAt: Date.now()
       });
       
-      alert('Question créée !');
+      console.log('✅ Question créée:', randomQ.text);
       
     } catch (e) {
-      alert('Erreur : ' + e.message);
+      console.error('Erreur création question:', e);
     }
   };
 
   const autoValidate = async () => {
-    if (!currentQuestion) return;
+    if (!currentQuestion || isProcessingRef.current) return;
     
+    isProcessingRef.current = true;
     const questionId = currentQuestion.id;
     
     try {
-      const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
+      console.log('🎯 Validation automatique de la question...');
       
+      // Choisir un gagnant aléatoire
+      const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
+      console.log('🏆 Gagnant choisi:', randomWinner);
+      
+      // Distribuer les points
       const answersSnap = await get(ref(db, `answers/${questionId}`));
       
       if (answersSnap.exists()) {
+        let winnersCount = 0;
         for (const [pId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
             const playerSnap = await get(ref(db, `players/${pId}`));
@@ -184,17 +196,30 @@ export default function App() {
               await update(ref(db, `players/${pId}`), {
                 score: (playerSnap.val().score || 0) + total
               });
+              winnersCount++;
             }
           }
         }
+        console.log(`✅ ${winnersCount} joueur(s) ont gagné des points`);
       }
 
       // Supprimer la question et les réponses
       await remove(ref(db, 'currentQuestion'));
       await remove(ref(db, `answers/${questionId}`));
+      console.log('🗑️ Question et réponses supprimées');
+      
+      // NOUVEAU : Pause aléatoire puis créer une nouvelle question
+      const pauseTime = Math.floor(Math.random() * 10000) + 5000; // 5-15 secondes
+      console.log(`⏸️ Pause de ${pauseTime/1000}s avant la prochaine question...`);
+      
+      setTimeout(() => {
+        isProcessingRef.current = false;
+        createRandomQuestion();
+      }, pauseTime);
       
     } catch (e) {
-      console.error('Erreur validation:', e);
+      console.error('❌ Erreur validation:', e);
+      isProcessingRef.current = false;
     }
   };
 
@@ -414,7 +439,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Mode Manuel</h1>
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Mode Auto</h1>
           
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Contrôles</h2>
@@ -423,7 +448,7 @@ export default function App() {
                 <p className="text-xl mb-4 text-green-400">✅ Question active</p>
                 <p className="text-lg mb-2">{currentQuestion.text}</p>
                 <p className="text-yellow-400 mb-4">⏱️ {timeLeft}s restantes</p>
-                <p className="text-sm text-gray-400">La question se terminera automatiquement à 0s</p>
+                <p className="text-sm text-gray-400">La question se terminera automatiquement à 0s et une nouvelle apparaîtra après 5-15s de pause</p>
               </div>
             ) : (
               <div>
@@ -432,8 +457,9 @@ export default function App() {
                   onClick={createRandomQuestion}
                   className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
                 >
-                  🎲 Créer une question aléatoire
+                  🎲 Lancer le système auto
                 </button>
+                <p className="text-sm text-gray-400 mt-2">Une fois lancé, les questions tourneront automatiquement !</p>
               </div>
             )}
           </div>
