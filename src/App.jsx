@@ -119,22 +119,23 @@ export default function App() {
   }, [currentQuestion?.id]);
 
   useEffect(() => {
-    if (!currentQuestion?.id) return;
+    if (!currentQuestion?.id || !currentQuestion?.createdAt) return;
     
-    if (timeLeft <= 0) {
-      autoValidate();
-      return;
-    }
-    
-    const timer = setTimeout(() => {
-      const newTime = timeLeft - 1;
-      setTimeLeft(newTime);
-      if (newTime > 0) {
-        update(ref(db, 'currentQuestion'), { timeLeft: newTime }).catch(() => {});
+    const calculateTimeLeft = () => {
+      const elapsed = Math.floor((Date.now() - currentQuestion.createdAt) / 1000);
+      const remaining = Math.max(0, 30 - elapsed);
+      setTimeLeft(remaining);
+      
+      if (remaining === 0 && !isProcessingRef.current) {
+        autoValidate();
       }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [currentQuestion?.id, timeLeft]);
+    };
+    
+    calculateTimeLeft();
+    const interval = setInterval(calculateTimeLeft, 100);
+    
+    return () => clearInterval(interval);
+  }, [currentQuestion?.id, currentQuestion?.createdAt]);
 
   useEffect(() => {
     if (!matchState?.active) {
