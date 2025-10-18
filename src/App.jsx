@@ -340,37 +340,25 @@ export default function App() {
   };
 
   const MatchClock = () => {
-    const [rot, setRot] = useState(0);
+    const [time, setTime] = useState('');
     
     useEffect(() => {
-      const iv = setInterval(() => {
+      const updateTime = () => {
         const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
-        setRot((mins / 90) * 360);
-      }, 1000);
+        const secs = Math.floor((Date.now() / 1000) % 60);
+        const phase = mins >= 45 ? "2ème MT" : "1ère MT";
+        setTime(`${mins}'${secs.toString().padStart(2, '0')} - ${phase}`);
+      };
+      
+      updateTime();
+      const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
     }, []);
 
     return (
-      <div className="relative">
-        <div className="w-48 h-48 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 shadow-2xl flex items-center justify-center border-8 border-white">
-          <div className="absolute w-44 h-44 rounded-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-5xl font-black text-yellow-400">{getMatchTime()}</div>
-              <div className="text-xs text-yellow-300 font-bold mt-1">{getMatchPhase()}</div>
-            </div>
-            <div 
-              className="absolute w-1 h-16 bg-yellow-400 origin-bottom"
-              style={{ 
-                transform: `rotate(${rot}deg) translateY(-50%)`,
-                bottom: '50%',
-                left: 'calc(50% - 0.5px)',
-                transition: 'transform 1s linear'
-              }}
-            />
-          </div>
-        </div>
-        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-black">
-          ROLEX
+      <div className="bg-black border-4 border-yellow-400 rounded-lg px-8 py-4">
+        <div className="text-5xl font-mono font-black text-yellow-400 text-center">
+          {time}
         </div>
       </div>
     );
