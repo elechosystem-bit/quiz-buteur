@@ -1,26 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, push, update, remove, get } from 'firebase/database';
+git add .
+git commit -m "Fix: Rotation automatique des questions"
+git push
+```
+4. Vercel va automatiquement redéployer
 
-const firebaseConfig = {
-  apiKey: "AIzaSyATw6VYnsTtPQnJXtHJWvx8FxC6__q3ulk",
-  authDomain: "quiz-buteur.firebaseapp.com",
-  databaseURL: "https://quiz-buteur-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "quiz-buteur",
-  storageBucket: "quiz-buteur.firebasestorage.app",
-  messagingSenderId: "963474612609",
-  appId: "1:963474612609:web:ffc84fb130b9f561c74880",
-  measurementId: "G-VMTQN2RT3C"
-};
+### **Étape 3 : Tester**
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-const QUESTIONS = [
-  { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Haaland", "Salah", "Kane", "De Bruyne"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Lautaro", "Rashford"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Saka", "Foden", "Palmer", "Watkins"] },
-  { text: "Quelle équipe aura le prochain corner ?", op
+Une fois le code déployé et Firebase nettoyé :
+1. Allez sur https://quiz-buteur.vercel.app
+2. Cliquez sur **Admin**
+3. Cliquez sur **"Lancer le système auto"**
+4. Retournez dans Firebase et vous devriez voir `currentQuestion` avec TOUTES les données :
+```
+currentQuestion:
+  id: "1729285678901"
+  text: "Qui va marquer le prochain but ?"
+  options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"]
+  timeLeft: 30
+  createdAt: 1729285678901
