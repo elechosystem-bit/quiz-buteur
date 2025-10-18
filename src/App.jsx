@@ -62,6 +62,7 @@ export default function App() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [, forceUpdate] = useState({});
   const [answers, setAnswers] = useState({});
   const [matchState, setMatchState] = useState(null);
   const usedQuestionsRef = useRef([]);
@@ -124,7 +125,9 @@ export default function App() {
     const calculateTimeLeft = () => {
       const elapsed = Math.floor((Date.now() - currentQuestion.createdAt) / 1000);
       const remaining = Math.max(0, 30 - elapsed);
+      
       setTimeLeft(remaining);
+      forceUpdate({});
       
       if (remaining === 0 && !isProcessingRef.current) {
         autoValidate();
@@ -132,7 +135,7 @@ export default function App() {
     };
     
     calculateTimeLeft();
-    const interval = setInterval(calculateTimeLeft, 100);
+    const interval = setInterval(calculateTimeLeft, 1000);
     
     return () => clearInterval(interval);
   }, [currentQuestion?.id, currentQuestion?.createdAt]);
