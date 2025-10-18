@@ -16,6 +16,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+const QUESTION_INTERVAL = 600000; // 10 minutes en millisecondes (600000ms = 10min)
+
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
   { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
@@ -61,6 +63,7 @@ export default function App() {
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [matchState, setMatchState] = useState(null);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
 
@@ -85,6 +88,13 @@ export default function App() {
       } else {
         setPlayerAnswer(null);
       }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'matchState'), (snap) => {
+      setMatchState(snap.val());
     });
     return () => unsub();
   }, []);
@@ -124,11 +134,51 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentQuestion?.id, timeLeft]);
 
+  useEffect(() => {
+    if (!matchState?.active || currentQuestion) return;
+
+    const checkNextQuestion = setInterval(async () => {
+      const now = Date.now();
+      const nextQuestionTime = matchState.nextQuestionTime;
+
+      if (nextQuestionTime && now >= nextQuestionTime) {
+        await createRandomQuestion();
+      }
+    }, 5000);
+
+    return () => clearInterval(checkNextQuestion);
+  }, [matchState, currentQuestion]);
+
+  const startMatch = async () => {
+    try {
+      const now = Date.now();
+      await set(ref(db, 'matchState'), {
+        active: true,
+        startTime: now,
+        nextQuestionTime: now + 60000,
+        questionCount: 0
+      });
+      console.log('Match démarré ! Première question dans 1 minute');
+    } catch (e) {
+      console.error('Erreur démarrage match:', e);
+    }
+  };
+
+  const stopMatch = async () => {
+    try {
+      await remove(ref(db, 'matchState'));
+      await remove(ref(db, 'currentQuestion'));
+      console.log('Match arrêté');
+    } catch (e) {
+      console.error('Erreur arrêt match:', e);
+    }
+  };
+
   const createRandomQuestion = async () => {
     try {
       const existingQ = await get(ref(db, 'currentQuestion'));
       if (existingQ.exists()) {
-        console.log('Question déjà active, annulation');
+        console.log('Question déjà active');
         return;
       }
 
@@ -137,7 +187,7 @@ export default function App() {
       );
       
       if (availableQuestions.length === 0) {
-        console.log('Toutes les questions ont été utilisées, reset !');
+        console.log('Reset des questions');
         usedQuestionsRef.current = [];
         return createRandomQuestion();
       }
@@ -154,6 +204,12 @@ export default function App() {
         timeLeft: 30,
         createdAt: Date.now()
       });
+
+      if (matchState) {
+        await update(ref(db, 'matchState'), {
+          questionCount: (matchState.questionCount || 0) + 1
+        });
+      }
       
       console.log('Question créée:', randomQ.text);
       
@@ -169,10 +225,10 @@ export default function App() {
     const questionId = currentQuestion.id;
     
     try {
-      console.log('Validation automatique de la question...');
+      console.log('Validation automatique...');
       
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
-      console.log('Gagnant choisi:', randomWinner);
+      console.log('Gagnant:', randomWinner);
       
       const answersSnap = await get(ref(db, `answers/${questionId}`));
       
@@ -191,20 +247,21 @@ export default function App() {
             }
           }
         }
-        console.log(`${winnersCount} joueur(s) ont gagné des points`);
+        console.log(`${winnersCount} gagnants`);
       }
 
       await remove(ref(db, 'currentQuestion'));
       await remove(ref(db, `answers/${questionId}`));
-      console.log('Question et réponses supprimées');
       
-      const pauseTime = Math.floor(Math.random() * 10000) + 5000;
-      console.log(`Pause de ${pauseTime/1000}s avant la prochaine question...`);
+      if (matchState?.active) {
+        const nextTime = Date.now() + QUESTION_INTERVAL;
+        await update(ref(db, 'matchState'), {
+          nextQuestionTime: nextTime
+        });
+        console.log(`Prochaine question dans ${QUESTION_INTERVAL/60000} minutes`);
+      }
       
-      setTimeout(() => {
-        isProcessingRef.current = false;
-        createRandomQuestion();
-      }, pauseTime);
+      isProcessingRef.current = false;
       
     } catch (e) {
       console.error('Erreur validation:', e);
@@ -247,6 +304,15 @@ export default function App() {
     const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
     if (mins >= 45) return "2MT";
     return "1MT";
+  };
+
+  const getTimeUntilNextQuestion = () => {
+    if (!matchState?.nextQuestionTime) return null;
+    const diff = matchState.nextQuestionTime - Date.now();
+    if (diff <= 0) return "Bientôt...";
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    return `${mins}m ${secs}s`;
   };
 
   const MatchClock = () => {
@@ -370,8 +436,11 @@ export default function App() {
             </div>
           ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
-              <div className="text-6xl mb-4">⏳</div>
-              <p className="text-2xl text-gray-600 font-semibold">En attente de la prochaine question...</p>
+              <div className="text-6xl mb-4">⚽</div>
+              <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
+              {matchState?.active && (
+                <p className="text-lg text-gray-500">Prochaine question dans {getTimeUntilNextQuestion()}</p>
+              )}
             </div>
           )}
         </div>
@@ -386,6 +455,9 @@ export default function App() {
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             <p className="text-2xl text-green-300">Le Penalty - Paris 11e</p>
+            {matchState?.active && !currentQuestion && (
+              <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {getTimeUntilNextQuestion()}</p>
+            )}
           </div>
           <div className="flex gap-6">
             <MatchClock />
@@ -428,27 +500,49 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Mode Auto</h1>
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Mode Match</h1>
           
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Contrôles</h2>
-            {currentQuestion ? (
+            <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
+            
+            {!matchState?.active ? (
               <div>
-                <p className="text-xl mb-4 text-green-400">✅ Question active</p>
-                <p className="text-lg mb-2">{currentQuestion.text}</p>
-                <p className="text-yellow-400 mb-4">⏱️ {timeLeft}s restantes</p>
-                <p className="text-sm text-gray-400">La question se terminera automatiquement à 0s et une nouvelle apparaîtra après 5-15s de pause</p>
+                <p className="text-gray-400 mb-4">Aucun match en cours</p>
+                <button
+                  onClick={startMatch}
+                  className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+                >
+                  ⚽ Démarrer le match
+                </button>
+                <p className="text-sm text-gray-400 mt-3">Questions toutes les 10 minutes</p>
               </div>
             ) : (
               <div>
-                <p className="text-gray-400 mb-4">Aucune question active</p>
-                <button
-                  onClick={createRandomQuestion}
-                  className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
-                >
-                  🎲 Lancer le système auto
-                </button>
-                <p className="text-sm text-gray-400 mt-2">Une fois lancé, les questions tourneront automatiquement !</p>
+                <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
+                <p className="text-lg mb-2">Questions posées: {matchState.questionCount || 0}</p>
+                {currentQuestion ? (
+                  <div className="mb-4">
+                    <p className="text-yellow-400 mb-2">📢 Question active: {currentQuestion.text}</p>
+                    <p className="text-gray-400">⏱️ {timeLeft}s restantes</p>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 mb-4">⏱️ Prochaine question dans: {getTimeUntilNextQuestion()}</p>
+                )}
+                <div className="flex gap-4">
+                  <button
+                    onClick={stopMatch}
+                    className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700"
+                  >
+                    ⏹️ Arrêter le match
+                  </button>
+                  <button
+                    onClick={createRandomQuestion}
+                    className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
+                    disabled={currentQuestion !== null}
+                  >
+                    🎲 Question manuelle
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -469,7 +563,7 @@ export default function App() {
 
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-96 overflow-y-auto">
               {players.map(p => (
                 <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
                   <span>{p.name}</span>
