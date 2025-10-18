@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, push, update, remove, get } from 'firebase/database';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyATw6VYnsTtPQnJXtHJWvx8FxC6__q3ulk",
@@ -15,6 +16,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
 
 const QUESTION_INTERVAL = 300000;
 
@@ -56,8 +58,9 @@ const QUESTIONS = [
 
 export default function App() {
   const [screen, setScreen] = useState('home');
-  const [playerName, setPlayerName] = useState('');
-  const [playerId, setPlayerId] = useState(null);
+  const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [currentMatchId, setCurrentMatchId] = useState(null);
   const [players, setPlayers] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [playerAnswer, setPlayerAnswer] = useState(null);
@@ -65,12 +68,44 @@ export default function App() {
   const [answers, setAnswers] = useState({});
   const [matchState, setMatchState] = useState(null);
   const [countdown, setCountdown] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [pseudo, setPseudo] = useState('');
+  const [authMode, setAuthMode] = useState('login');
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'players'), (snap) => {
+    const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        const userRef = ref(db, `users/${currentUser.uid}`);
+        const snap = await get(userRef);
+        if (snap.exists()) {
+          setUserProfile(snap.val());
+        }
+      } else {
+        setUserProfile(null);
+      }
+    });
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'matchState'), (snap) => {
+      const state = snap.val();
+      setMatchState(state);
+      if (state?.currentMatchId) {
+        setCurrentMatchId(state.currentMatchId);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!currentMatchId) return;
+    const unsub = onValue(ref(db, `matches/${currentMatchId}/players`), (snap) => {
       if (snap.exists()) {
         const list = Object.entries(snap.val()).map(([id, p]) => ({ id, ...p }));
         setPlayers(list.sort((a, b) => b.score - a.score));
@@ -79,7 +114,7 @@ export default function App() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [currentMatchId]);
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'currentQuestion'), (snap) => {
@@ -91,13 +126,6 @@ export default function App() {
         setCurrentQuestion(null);
         setPlayerAnswer(null);
       }
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onValue(ref(db, 'matchState'), (snap) => {
-      setMatchState(snap.val());
     });
     return () => unsub();
   }, []);
@@ -188,14 +216,54 @@ export default function App() {
     };
   }, [matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
 
+  const handleSignup = async () => {
+    if (!email || !password || !pseudo) {
+      alert('Remplissez tous les champs');
+      return;
+    }
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await set(ref(db, `users/${userCredential.user.uid}`), {
+        email,
+        pseudo,
+        totalPoints: 0,
+        matchesPlayed: 0,
+        createdAt: Date.now()
+      });
+      setScreen('mobile');
+    } catch (e) {
+      alert('Erreur: ' + e.message);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      alert('Email et mot de passe requis');
+      return;
+    }
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setScreen('mobile');
+    } catch (e) {
+      alert('Erreur: ' + e.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setScreen('home');
+  };
+
   const startMatch = async () => {
     try {
       const now = Date.now();
+      const matchId = `match_${now}`;
       await set(ref(db, 'matchState'), {
         active: true,
         startTime: now,
         nextQuestionTime: now + 60000,
-        questionCount: 0
+        questionCount: 0,
+        currentMatchId: matchId
       });
     } catch (e) {
       console.error('Erreur:', e);
@@ -204,6 +272,21 @@ export default function App() {
 
   const stopMatch = async () => {
     try {
+      if (currentMatchId && matchState?.active) {
+        const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
+        if (playersSnap.exists()) {
+          for (const [userId, playerData] of Object.entries(playersSnap.val())) {
+            const userSnap = await get(ref(db, `users/${userId}`));
+            if (userSnap.exists()) {
+              const userData = userSnap.val();
+              await update(ref(db, `users/${userId}`), {
+                totalPoints: (userData.totalPoints || 0) + (playerData.score || 0),
+                matchesPlayed: (userData.matchesPlayed || 0) + 1
+              });
+            }
+          }
+        }
+      }
       await remove(ref(db, 'matchState'));
       await remove(ref(db, 'currentQuestion'));
     } catch (e) {
@@ -268,16 +351,26 @@ export default function App() {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
       const answersSnap = await get(ref(db, `answers/${questionId}`));
       
-      if (answersSnap.exists()) {
-        for (const [pId, data] of Object.entries(answersSnap.val())) {
+      if (answersSnap.exists() && currentMatchId) {
+        for (const [userId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
-            const playerSnap = await get(ref(db, `players/${pId}`));
+            const playerRef = ref(db, `matches/${currentMatchId}/players/${userId}`);
+            const playerSnap = await get(playerRef);
+            const bonus = Math.floor((data.timeLeft || 0) / 5);
+            const total = 10 + bonus;
+            
             if (playerSnap.exists()) {
-              const bonus = Math.floor((data.timeLeft || 0) / 5);
-              const total = 10 + bonus;
-              await update(ref(db, `players/${pId}`), {
+              await update(playerRef, {
                 score: (playerSnap.val().score || 0) + total
               });
+            } else {
+              const userSnap = await get(ref(db, `users/${userId}`));
+              if (userSnap.exists()) {
+                await set(playerRef, {
+                  pseudo: userSnap.val().pseudo,
+                  score: total
+                });
+              }
             }
           }
         }
@@ -302,23 +395,11 @@ export default function App() {
     }
   };
 
-  const handleJoin = async () => {
-    if (!playerName.trim()) return;
-    try {
-      const newRef = push(ref(db, 'players'));
-      await set(newRef, { name: playerName, score: 0, joinedAt: Date.now() });
-      setPlayerId(newRef.key);
-      setScreen('mobile');
-    } catch (e) {
-      alert('Erreur');
-    }
-  };
-
   const handleAnswer = async (answer) => {
-    if (!currentQuestion || playerAnswer || !playerId) return;
+    if (!currentQuestion || playerAnswer || !user) return;
     try {
       setPlayerAnswer(answer);
-      await set(ref(db, `answers/${currentQuestion.id}/${playerId}`), {
+      await set(ref(db, `answers/${currentQuestion.id}/${user.uid}`), {
         answer,
         timestamp: Date.now(),
         timeLeft
@@ -379,7 +460,7 @@ export default function App() {
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
         <div className="flex gap-6">
-          <button onClick={() => setScreen('mobile')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
+          <button onClick={() => setScreen('auth')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
             📱 JOUER
           </button>
           <button onClick={() => setScreen('tv')} className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white">
@@ -395,36 +476,83 @@ export default function App() {
     );
   }
 
-  if (screen === 'mobile') {
-    if (!playerId) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-3xl font-bold text-green-900 mb-6 text-center">Entre ton prénom</h2>
+  if (screen === 'auth') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+          <h2 className="text-3xl font-bold text-green-900 mb-6 text-center">
+            {authMode === 'login' ? 'Connexion' : 'Inscription'}
+          </h2>
+          
+          {authMode === 'signup' && (
             <input
               type="text"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="ZYNGA"
-              className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
-              onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
+              value={pseudo}
+              onChange={(e) => setPseudo(e.target.value)}
+              placeholder="Pseudo"
+              className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
             />
-            <button onClick={handleJoin} className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800">
-              JOUER ! ⚽
-            </button>
-          </div>
+          )}
+          
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
+          />
+          
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Mot de passe"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
+          />
+          
+          <button 
+            onClick={authMode === 'login' ? handleLogin : handleSignup}
+            className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
+          >
+            {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} ⚽
+          </button>
+          
+          <button
+            onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+            className="w-full text-green-900 py-2 text-sm underline"
+          >
+            {authMode === 'login' ? "Pas de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
+          </button>
+          
+          <button
+            onClick={() => setScreen('home')}
+            className="w-full text-gray-500 py-2 text-sm mt-2"
+          >
+            ← Retour
+          </button>
         </div>
-      );
+      </div>
+    );
+  }
+
+  if (screen === 'mobile') {
+    if (!user) {
+      setScreen('auth');
+      return null;
     }
 
-    const myScore = players.find(p => p.id === playerId)?.score || 0;
+    const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
         <div className="max-w-md mx-auto">
           <div className="bg-white rounded-2xl p-6 mb-6 text-center">
-            <div className="text-green-700 text-lg font-semibold">{playerName}</div>
+            <div className="text-green-700 text-lg font-semibold">{userProfile?.pseudo}</div>
             <div className="text-4xl font-black text-green-900">{myScore} pts</div>
+            <div className="text-sm text-gray-500 mt-2">Total: {userProfile?.totalPoints || 0} pts</div>
+            <button onClick={handleLogout} className="mt-3 text-red-600 text-sm underline">
+              Déconnexion
+            </button>
           </div>
 
           {currentQuestion && currentQuestion.text && currentQuestion.options ? (
@@ -504,7 +632,7 @@ export default function App() {
                 }`}
               >
                 <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
-                <div className="col-span-7 font-bold truncate">{p.name}</div>
+                <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
                 <div className="col-span-4 text-right font-black">{p.score} pts</div>
               </div>
             ))}
@@ -590,7 +718,7 @@ export default function App() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {players.map(p => (
                 <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
-                  <span>{p.name}</span>
+                  <span>{p.pseudo}</span>
                   <span className="text-green-400">{p.score} pts</span>
                 </div>
               ))}
