@@ -16,7 +16,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const QUESTION_INTERVAL = 600000; // 10 minutes en millisecondes (600000ms = 10min)
+const QUESTION_INTERVAL = 600000;
 
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
@@ -66,6 +66,7 @@ export default function App() {
   const [matchState, setMatchState] = useState(null);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
+  const nextQuestionTimer = useRef(null);
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'players'), (snap) => {
@@ -82,10 +83,11 @@ export default function App() {
   useEffect(() => {
     const unsub = onValue(ref(db, 'currentQuestion'), (snap) => {
       const data = snap.val();
-      setCurrentQuestion(data);
-      if (data) {
+      if (data && data.text && data.options && Array.isArray(data.options)) {
+        setCurrentQuestion(data);
         setTimeLeft(data.timeLeft || 30);
       } else {
+        setCurrentQuestion(null);
         setPlayerAnswer(null);
       }
     });
@@ -127,26 +129,39 @@ export default function App() {
     const timer = setTimeout(() => {
       const newTime = timeLeft - 1;
       setTimeLeft(newTime);
-      if (currentQuestion) {
-        update(ref(db, 'currentQuestion'), { timeLeft: newTime }).catch(() => {});
-      }
+      update(ref(db, 'currentQuestion'), { timeLeft: newTime }).catch(() => {});
     }, 1000);
     return () => clearTimeout(timer);
   }, [currentQuestion?.id, timeLeft]);
 
   useEffect(() => {
-    if (!matchState?.active || currentQuestion) return;
-
-    const checkNextQuestion = setInterval(async () => {
-      const now = Date.now();
-      const nextQuestionTime = matchState.nextQuestionTime;
-
-      if (nextQuestionTime && now >= nextQuestionTime) {
-        await createRandomQuestion();
+    if (!matchState?.active || currentQuestion) {
+      if (nextQuestionTimer.current) {
+        clearTimeout(nextQuestionTimer.current);
+        nextQuestionTimer.current = null;
       }
-    }, 5000);
+      return;
+    }
 
-    return () => clearInterval(checkNextQuestion);
+    const scheduleNextQuestion = () => {
+      if (nextQuestionTimer.current) clearTimeout(nextQuestionTimer.current);
+      
+      const now = Date.now();
+      const nextTime = matchState.nextQuestionTime || now;
+      const delay = Math.max(0, nextTime - now);
+
+      nextQuestionTimer.current = setTimeout(() => {
+        createRandomQuestion();
+      }, delay);
+    };
+
+    scheduleNextQuestion();
+
+    return () => {
+      if (nextQuestionTimer.current) {
+        clearTimeout(nextQuestionTimer.current);
+      }
+    };
   }, [matchState, currentQuestion]);
 
   const startMatch = async () => {
@@ -158,9 +173,8 @@ export default function App() {
         nextQuestionTime: now + 60000,
         questionCount: 0
       });
-      console.log('Match démarré ! Première question dans 1 minute');
     } catch (e) {
-      console.error('Erreur démarrage match:', e);
+      console.error('Erreur démarrage:', e);
     }
   };
 
@@ -168,17 +182,19 @@ export default function App() {
     try {
       await remove(ref(db, 'matchState'));
       await remove(ref(db, 'currentQuestion'));
-      console.log('Match arrêté');
     } catch (e) {
-      console.error('Erreur arrêt match:', e);
+      console.error('Erreur arrêt:', e);
     }
   };
 
   const createRandomQuestion = async () => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
     try {
       const existingQ = await get(ref(db, 'currentQuestion'));
-      if (existingQ.exists()) {
-        console.log('Question déjà active');
+      if (existingQ.exists() && existingQ.val()?.text) {
+        isProcessingRef.current = false;
         return;
       }
 
@@ -187,14 +203,14 @@ export default function App() {
       );
       
       if (availableQuestions.length === 0) {
-        console.log('Reset des questions');
         usedQuestionsRef.current = [];
-        return createRandomQuestion();
       }
       
-      const randomQ = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
-      const qId = Date.now().toString();
+      const randomQ = availableQuestions.length > 0 
+        ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)]
+        : QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
       
+      const qId = Date.now().toString();
       usedQuestionsRef.current.push(randomQ.text);
       
       await set(ref(db, 'currentQuestion'), {
@@ -205,35 +221,29 @@ export default function App() {
         createdAt: Date.now()
       });
 
-      if (matchState) {
+      if (matchState?.active) {
         await update(ref(db, 'matchState'), {
           questionCount: (matchState.questionCount || 0) + 1
         });
       }
       
-      console.log('Question créée:', randomQ.text);
-      
     } catch (e) {
-      console.error('Erreur création question:', e);
+      console.error('Erreur création:', e);
+    } finally {
+      isProcessingRef.current = false;
     }
   };
 
   const autoValidate = async () => {
-    if (!currentQuestion || isProcessingRef.current) return;
+    if (!currentQuestion || !currentQuestion.options) return;
     
-    isProcessingRef.current = true;
     const questionId = currentQuestion.id;
     
     try {
-      console.log('Validation automatique...');
-      
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
-      console.log('Gagnant:', randomWinner);
-      
       const answersSnap = await get(ref(db, `answers/${questionId}`));
       
       if (answersSnap.exists()) {
-        let winnersCount = 0;
         for (const [pId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
             const playerSnap = await get(ref(db, `players/${pId}`));
@@ -243,11 +253,9 @@ export default function App() {
               await update(ref(db, `players/${pId}`), {
                 score: (playerSnap.val().score || 0) + total
               });
-              winnersCount++;
             }
           }
         }
-        console.log(`${winnersCount} gagnants`);
       }
 
       await remove(ref(db, 'currentQuestion'));
@@ -258,14 +266,10 @@ export default function App() {
         await update(ref(db, 'matchState'), {
           nextQuestionTime: nextTime
         });
-        console.log(`Prochaine question dans ${QUESTION_INTERVAL/60000} minutes`);
       }
-      
-      isProcessingRef.current = false;
       
     } catch (e) {
       console.error('Erreur validation:', e);
-      isProcessingRef.current = false;
     }
   };
 
@@ -409,7 +413,7 @@ export default function App() {
             <div className="text-4xl font-black text-green-900">{myScore} pts</div>
           </div>
 
-          {currentQuestion ? (
+          {currentQuestion && currentQuestion.text && currentQuestion.options ? (
             <div className="bg-white rounded-3xl p-8 shadow-2xl">
               <div className="text-center mb-6">
                 <div className="text-6xl font-black text-green-900 mb-2">{timeLeft}s</div>
@@ -500,7 +504,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Mode Match</h1>
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin</h1>
           
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
@@ -519,42 +523,42 @@ export default function App() {
             ) : (
               <div>
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
-                <p className="text-lg mb-2">Questions posées: {matchState.questionCount || 0}</p>
-                {currentQuestion ? (
+                <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
+                {currentQuestion?.text ? (
                   <div className="mb-4">
-                    <p className="text-yellow-400 mb-2">📢 Question active: {currentQuestion.text}</p>
-                    <p className="text-gray-400">⏱️ {timeLeft}s restantes</p>
+                    <p className="text-yellow-400 mb-2">📢 {currentQuestion.text}</p>
+                    <p className="text-gray-400">⏱️ {timeLeft}s</p>
                   </div>
                 ) : (
-                  <p className="text-gray-400 mb-4">⏱️ Prochaine question dans: {getTimeUntilNextQuestion()}</p>
+                  <p className="text-gray-400 mb-4">⏱️ Prochaine: {getTimeUntilNextQuestion()}</p>
                 )}
                 <div className="flex gap-4">
                   <button
                     onClick={stopMatch}
                     className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700"
                   >
-                    ⏹️ Arrêter le match
+                    ⏹️ Arrêter
                   </button>
                   <button
                     onClick={createRandomQuestion}
                     className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
                     disabled={currentQuestion !== null}
                   >
-                    🎲 Question manuelle
+                    🎲 Question maintenant
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {currentQuestion && (
+          {currentQuestion?.options && (
             <div className="bg-gray-800 rounded-xl p-6 mb-6">
-              <h2 className="text-2xl font-bold mb-4">Votes en temps réel</h2>
+              <h2 className="text-2xl font-bold mb-4">Votes</h2>
               <div className="grid grid-cols-2 gap-4">
                 {currentQuestion.options.map(opt => (
                   <div key={opt} className="bg-gray-700 p-4 rounded-lg">
                     <div className="text-lg font-bold">{opt}</div>
-                    <div className="text-3xl font-black text-green-400">{answers[opt] || 0} votes</div>
+                    <div className="text-3xl font-black text-green-400">{answers[opt] || 0}</div>
                   </div>
                 ))}
               </div>
