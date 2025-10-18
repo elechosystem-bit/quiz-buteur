@@ -19,6 +19,7 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 
 const QUESTION_INTERVAL = 300000;
+const ADMIN_CODE = '1234';
 
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
@@ -74,7 +75,9 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [adminCode, setAdminCode] = useState('');
   const [isAdminAuth, setIsAdminAuth] = useState(false);
-  const ADMIN_CODE = '1234'; // Changez ce code !
+  const usedQuestionsRef = useRef([]);
+  const isProcessingRef = useRef(false);
+  const nextQuestionTimer = useRef(null);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
@@ -270,6 +273,30 @@ export default function App() {
     }
   };
 
+  const stopMatch = async () => {
+    try {
+      if (currentMatchId && matchState?.active) {
+        const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
+        if (playersSnap.exists()) {
+          for (const [userId, playerData] of Object.entries(playersSnap.val())) {
+            const userSnap = await get(ref(db, `users/${userId}`));
+            if (userSnap.exists()) {
+              const userData = userSnap.val();
+              await update(ref(db, `users/${userId}`), {
+                totalPoints: (userData.totalPoints || 0) + (playerData.score || 0),
+                matchesPlayed: (userData.matchesPlayed || 0) + 1
+              });
+            }
+          }
+        }
+      }
+      await remove(ref(db, 'matchState'));
+      await remove(ref(db, 'currentQuestion'));
+    } catch (e) {
+      console.error('Erreur:', e);
+    }
+  };
+
   const resetMatchScores = async () => {
     if (!window.confirm('⚠️ Remettre à 0 tous les scores du match en cours ?')) {
       return;
@@ -304,32 +331,10 @@ export default function App() {
             matchesPlayed: 0
           });
         }
-        alert('✅ Points totaux de tous les joueurs remis à 0 !');
+        alert('✅ Points totaux remis à 0 !');
       }
     } catch (e) {
       alert('Erreur : ' + e.message);
-    }
-  };
-    try {
-      if (currentMatchId && matchState?.active) {
-        const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
-        if (playersSnap.exists()) {
-          for (const [userId, playerData] of Object.entries(playersSnap.val())) {
-            const userSnap = await get(ref(db, `users/${userId}`));
-            if (userSnap.exists()) {
-              const userData = userSnap.val();
-              await update(ref(db, `users/${userId}`), {
-                totalPoints: (userData.totalPoints || 0) + (playerData.score || 0),
-                matchesPlayed: (userData.matchesPlayed || 0) + 1
-              });
-            }
-          }
-        }
-      }
-      await remove(ref(db, 'matchState'));
-      await remove(ref(db, 'currentQuestion'));
-    } catch (e) {
-      console.error('Erreur:', e);
     }
   };
 
@@ -448,17 +453,6 @@ export default function App() {
     }
   };
 
-  const getMatchTime = () => {
-    const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
-    return `${mins}'`;
-  };
-
-  const getMatchPhase = () => {
-    const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
-    if (mins >= 45) return "2MT";
-    return "1MT";
-  };
-
   const MatchClock = () => {
     const [time, setTime] = useState('');
     
@@ -466,7 +460,6 @@ export default function App() {
       const updateTime = () => {
         const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
         const secs = Math.floor((Date.now() / 1000) % 60);
-        const phase = mins >= 45 ? "2MT" : "1MT";
         setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
       };
       
@@ -792,7 +785,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="bg-gray-800 rounded-xl p-6">
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {players.map(p => (
@@ -817,15 +810,13 @@ export default function App() {
 
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4 text-red-400">⚠️ Zone Dangereuse</h2>
-            <p className="text-gray-400 mb-4 text-sm">Actions irréversibles - Utiliser avec précaution</p>
-            <div className="flex gap-4">
-              <button
-                onClick={resetPlayerTotalPoints}
-                className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700"
-              >
-                ⚠️ Reset TOUS les totaux
-              </button>
-            </div>
+            <p className="text-gray-400 mb-4 text-sm">Actions irréversibles</p>
+            <button
+              onClick={resetPlayerTotalPoints}
+              className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700"
+            >
+              ⚠️ Reset TOUS les totaux
+            </button>
           </div>
 
           <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600 mr-4">
