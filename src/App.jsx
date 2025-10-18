@@ -72,9 +72,9 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [pseudo, setPseudo] = useState('');
   const [authMode, setAuthMode] = useState('login');
-  const usedQuestionsRef = useRef([]);
-  const isProcessingRef = useRef(false);
-  const nextQuestionTimer = useRef(null);
+  const [adminCode, setAdminCode] = useState('');
+  const [isAdminAuth, setIsAdminAuth] = useState(false);
+  const ADMIN_CODE = '1234'; // Changez ce code !
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
@@ -270,7 +270,46 @@ export default function App() {
     }
   };
 
-  const stopMatch = async () => {
+  const resetMatchScores = async () => {
+    if (!window.confirm('⚠️ Remettre à 0 tous les scores du match en cours ?')) {
+      return;
+    }
+    try {
+      if (currentMatchId) {
+        const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
+        if (playersSnap.exists()) {
+          for (const userId of Object.keys(playersSnap.val())) {
+            await update(ref(db, `matches/${currentMatchId}/players/${userId}`), {
+              score: 0
+            });
+          }
+        }
+        alert('✅ Scores du match remis à 0 !');
+      }
+    } catch (e) {
+      alert('Erreur : ' + e.message);
+    }
+  };
+
+  const resetPlayerTotalPoints = async () => {
+    if (!window.confirm('⚠️ DANGER ! Cela va remettre à 0 les points TOTAUX de TOUS les joueurs. Continuer ?')) {
+      return;
+    }
+    try {
+      const usersSnap = await get(ref(db, 'users'));
+      if (usersSnap.exists()) {
+        for (const userId of Object.keys(usersSnap.val())) {
+          await update(ref(db, `users/${userId}`), {
+            totalPoints: 0,
+            matchesPlayed: 0
+          });
+        }
+        alert('✅ Points totaux de tous les joueurs remis à 0 !');
+      }
+    } catch (e) {
+      alert('Erreur : ' + e.message);
+    }
+  };
     try {
       if (currentMatchId && matchState?.active) {
         const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
@@ -643,6 +682,46 @@ export default function App() {
   }
 
   if (screen === 'admin') {
+    if (!isAdminAuth) {
+      return (
+        <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-8">
+          <div className="bg-gray-800 rounded-3xl p-8 max-w-md w-full">
+            <h2 className="text-3xl font-bold mb-6 text-center">🔒 Code Admin</h2>
+            <input
+              type="password"
+              value={adminCode}
+              onChange={(e) => setAdminCode(e.target.value)}
+              placeholder="Code à 4 chiffres"
+              className="w-full px-6 py-4 text-xl bg-gray-700 text-white rounded-xl mb-6 focus:outline-none focus:ring-2 focus:ring-green-500"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && adminCode === ADMIN_CODE) {
+                  setIsAdminAuth(true);
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (adminCode === ADMIN_CODE) {
+                  setIsAdminAuth(true);
+                } else {
+                  alert('❌ Code incorrect !');
+                }
+              }}
+              className="w-full bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+            >
+              Valider
+            </button>
+            <button
+              onClick={() => setScreen('home')}
+              className="w-full mt-4 text-gray-400 hover:text-white"
+            >
+              ← Retour
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
@@ -722,6 +801,30 @@ export default function App() {
                   <span className="text-green-400">{p.score} pts</span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4 text-orange-400">🔄 Gestion des Scores</h2>
+            <p className="text-gray-400 mb-4 text-sm">Remettre à zéro les scores du match en cours</p>
+            <button
+              onClick={resetMatchScores}
+              className="bg-orange-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-orange-700"
+            >
+              🔄 Reset scores du match
+            </button>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4 text-red-400">⚠️ Zone Dangereuse</h2>
+            <p className="text-gray-400 mb-4 text-sm">Actions irréversibles - Utiliser avec précaution</p>
+            <div className="flex gap-4">
+              <button
+                onClick={resetPlayerTotalPoints}
+                className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700"
+              >
+                ⚠️ Reset TOUS les totaux
+              </button>
             </div>
           </div>
 
