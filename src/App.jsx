@@ -118,11 +118,14 @@ export default function App() {
     }
     
     const timer = setTimeout(() => {
-      setTimeLeft(timeLeft - 1);
-      update(ref(db, 'currentQuestion'), { timeLeft: timeLeft - 1 }).catch(() => {});
+      const newTime = timeLeft - 1;
+      setTimeLeft(newTime);
+      if (currentQuestion) {
+        update(ref(db, 'currentQuestion'), { timeLeft: newTime }).catch(() => {});
+      }
     }, 1000);
     return () => clearTimeout(timer);
-  }, [currentQuestion, timeLeft]);
+  }, [currentQuestion?.id, timeLeft]);
 
   const createRandomQuestion = async () => {
     try {
@@ -164,10 +167,12 @@ export default function App() {
   const autoValidate = async () => {
     if (!currentQuestion) return;
     
+    const questionId = currentQuestion.id;
+    
     try {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
       
-      const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
+      const answersSnap = await get(ref(db, `answers/${questionId}`));
       
       if (answersSnap.exists()) {
         for (const [pId, data] of Object.entries(answersSnap.val())) {
@@ -184,11 +189,12 @@ export default function App() {
         }
       }
 
+      // Supprimer la question et les réponses
       await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, 'answers'));
+      await remove(ref(db, `answers/${questionId}`));
       
     } catch (e) {
-      console.error(e);
+      console.error('Erreur validation:', e);
     }
   };
 
