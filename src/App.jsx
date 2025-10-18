@@ -16,7 +16,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const QUESTION_INTERVAL = 600000;
+const QUESTION_INTERVAL = 300000; // 5 minutes en millisecondes
 
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
@@ -135,34 +135,33 @@ export default function App() {
   }, [currentQuestion?.id, timeLeft]);
 
   useEffect(() => {
-    if (!matchState?.active || currentQuestion) {
+    if (!matchState?.active) {
       if (nextQuestionTimer.current) {
-        clearTimeout(nextQuestionTimer.current);
+        clearInterval(nextQuestionTimer.current);
         nextQuestionTimer.current = null;
       }
       return;
     }
 
-    const scheduleNextQuestion = () => {
-      if (nextQuestionTimer.current) clearTimeout(nextQuestionTimer.current);
+    if (nextQuestionTimer.current) clearInterval(nextQuestionTimer.current);
+
+    nextQuestionTimer.current = setInterval(async () => {
+      if (currentQuestion) return;
       
       const now = Date.now();
-      const nextTime = matchState.nextQuestionTime || now;
-      const delay = Math.max(0, nextTime - now);
+      const nextTime = matchState.nextQuestionTime || 0;
 
-      nextQuestionTimer.current = setTimeout(() => {
-        createRandomQuestion();
-      }, delay);
-    };
-
-    scheduleNextQuestion();
+      if (now >= nextTime) {
+        await createRandomQuestion();
+      }
+    }, 2000);
 
     return () => {
       if (nextQuestionTimer.current) {
-        clearTimeout(nextQuestionTimer.current);
+        clearInterval(nextQuestionTimer.current);
       }
     };
-  }, [matchState, currentQuestion]);
+  }, [matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
 
   const startMatch = async () => {
     try {
