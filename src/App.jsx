@@ -346,8 +346,8 @@ export default function App() {
       const updateTime = () => {
         const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
         const secs = Math.floor((Date.now() / 1000) % 60);
-        const phase = mins >= 45 ? "2ème MT" : "1ère MT";
-        setTime(`${mins}'${secs.toString().padStart(2, '0')} - ${phase}`);
+        const phase = mins >= 45 ? "2MT" : "1MT";
+        setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
       };
       
       updateTime();
@@ -355,10 +355,16 @@ export default function App() {
       return () => clearInterval(iv);
     }, []);
 
+    const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
+    const phase = mins >= 45 ? "2MT" : "1MT";
+
     return (
-      <div className="bg-black border-4 border-yellow-400 rounded-lg px-8 py-4">
-        <div className="text-5xl font-mono font-black text-yellow-400 text-center">
+      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
+        <div className="text-6xl font-mono font-black text-green-400" style={{ letterSpacing: '0.1em' }}>
           {time}
+        </div>
+        <div className="text-sm font-bold text-green-500 text-center mt-1">
+          {phase}
         </div>
       </div>
     );
@@ -591,8 +597,11 @@ export default function App() {
             </div>
           </div>
 
-          <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600">
+          <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600 mr-4">
             ← Retour
+          </button>
+          <button onClick={() => setScreen('tv')} className="mt-6 bg-blue-600 px-6 py-3 rounded-lg hover:bg-blue-700">
+            📺 Voir écran TV
           </button>
         </div>
       </div>
