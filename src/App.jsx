@@ -62,18 +62,6 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [answers, setAnswers] = useState({});
   const usedQuestionsRef = useRef([]);
-  const isValidatingRef = useRef(false);
-
-  // Démarrage automatique
-  useEffect(() => {
-    const init = async () => {
-      const qSnap = await get(ref(db, 'currentQuestion'));
-      if (!qSnap.exists()) {
-        setTimeout(() => createRandomQuestion(), 2000);
-      }
-    };
-    init();
-  }, []);
 
   // Écouter les joueurs
   useEffect(() => {
@@ -122,7 +110,7 @@ export default function App() {
 
   // Timer avec validation automatique
   useEffect(() => {
-    if (!currentQuestion || isValidatingRef.current) return;
+    if (!currentQuestion) return;
     
     if (timeLeft <= 0) {
       autoValidate();
@@ -138,12 +126,9 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     try {
-      console.log('📝 Tentative de création de question...');
-      
-      // Vérifier qu'aucune question n'existe déjà
       const existingQ = await get(ref(db, 'currentQuestion'));
       if (existingQ.exists()) {
-        console.log('⚠️ Une question existe déjà, annulation');
+        alert('Une question est déjà active !');
         return;
       }
 
@@ -151,10 +136,7 @@ export default function App() {
         !usedQuestionsRef.current.includes(q.text)
       );
       
-      console.log(`📚 ${availableQuestions.length} questions disponibles`);
-      
       if (availableQuestions.length === 0) {
-        console.log('🔄 Reset des questions utilisées');
         usedQuestionsRef.current = [];
         return createRandomQuestion();
       }
@@ -163,8 +145,6 @@ export default function App() {
       const qId = Date.now().toString();
       
       usedQuestionsRef.current.push(randomQ.text);
-      console.log('✨ Nouvelle question:', randomQ.text);
-      console.log(`📊 ${usedQuestionsRef.current.length} questions déjà utilisées`);
       
       await set(ref(db, 'currentQuestion'), {
         id: qId,
@@ -174,31 +154,22 @@ export default function App() {
         createdAt: Date.now()
       });
       
-      console.log('✅ Question créée avec succès !');
+      alert('Question créée !');
       
     } catch (e) {
-      console.error('❌ Erreur création question:', e);
+      alert('Erreur : ' + e.message);
     }
   };
 
   const autoValidate = async () => {
-    if (isValidatingRef.current || !currentQuestion) {
-      console.log('⚠️ Validation déjà en cours ou pas de question');
-      return;
-    }
-    
-    isValidatingRef.current = true;
-    console.log('🎯 DÉBUT VALIDATION AUTO');
-    console.log('Question actuelle:', currentQuestion.text);
+    if (!currentQuestion) return;
     
     try {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
-      console.log('✅ Gagnant choisi:', randomWinner);
       
       const answersSnap = await get(ref(db, `answers/${currentQuestion.id}`));
       
       if (answersSnap.exists()) {
-        console.log('📊 Distribution des points...');
         for (const [pId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
             const playerSnap = await get(ref(db, `players/${pId}`));
@@ -208,38 +179,16 @@ export default function App() {
               await update(ref(db, `players/${pId}`), {
                 score: (playerSnap.val().score || 0) + total
               });
-              console.log(`💰 +${total} points pour joueur ${pId}`);
             }
           }
         }
       }
 
-      console.log('🗑️ Suppression question...');
       await remove(ref(db, 'currentQuestion'));
-      console.log('✅ Question supprimée !');
-      
-      console.log('🗑️ Suppression réponses...');
       await remove(ref(db, 'answers'));
-      console.log('✅ Réponses supprimées !');
-      
-      // Attendre un peu avant de libérer le verrou
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      isValidatingRef.current = false;
-      console.log('🔓 Verrou libéré');
-      
-      // Attendre aléatoirement entre 5 et 15 secondes
-      const waitTime = 5000 + Math.floor(Math.random() * 10000);
-      console.log(`⏳ Attente de ${waitTime/1000}s avant nouvelle question...`);
-      
-      setTimeout(async () => {
-        console.log('🚀 Création de la nouvelle question...');
-        await createRandomQuestion();
-      }, waitTime);
       
     } catch (e) {
-      console.error('❌ ERREUR lors de la validation:', e);
-      isValidatingRef.current = false;
+      console.error(e);
     }
   };
 
@@ -324,7 +273,6 @@ export default function App() {
           <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
-          <p className="text-lg text-yellow-300 mt-4">🤖 Mode automatique</p>
         </div>
         <div className="flex gap-6">
           <button onClick={() => setScreen('mobile')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
@@ -332,6 +280,11 @@ export default function App() {
           </button>
           <button onClick={() => setScreen('tv')} className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white">
             📺 ÉCRAN BAR
+          </button>
+        </div>
+        <div className="mt-12">
+          <button onClick={() => setScreen('admin')} className="text-white opacity-50 hover:opacity-100 text-sm">
+            Admin
           </button>
         </div>
       </div>
@@ -398,7 +351,7 @@ export default function App() {
           ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
               <div className="text-6xl mb-4">⏳</div>
-              <p className="text-2xl text-gray-600 font-semibold">Prochaine question dans 10s...</p>
+              <p className="text-2xl text-gray-600 font-semibold">En attente de la prochaine question...</p>
             </div>
           )}
         </div>
@@ -446,6 +399,68 @@ export default function App() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'admin') {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Mode Manuel</h1>
+          
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Contrôles</h2>
+            {currentQuestion ? (
+              <div>
+                <p className="text-xl mb-4 text-green-400">✅ Question active</p>
+                <p className="text-lg mb-2">{currentQuestion.text}</p>
+                <p className="text-yellow-400 mb-4">⏱️ {timeLeft}s restantes</p>
+                <p className="text-sm text-gray-400">La question se terminera automatiquement à 0s</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-gray-400 mb-4">Aucune question active</p>
+                <button
+                  onClick={createRandomQuestion}
+                  className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+                >
+                  🎲 Créer une question aléatoire
+                </button>
+              </div>
+            )}
+          </div>
+
+          {currentQuestion && (
+            <div className="bg-gray-800 rounded-xl p-6 mb-6">
+              <h2 className="text-2xl font-bold mb-4">Votes en temps réel</h2>
+              <div className="grid grid-cols-2 gap-4">
+                {currentQuestion.options.map(opt => (
+                  <div key={opt} className="bg-gray-700 p-4 rounded-lg">
+                    <div className="text-lg font-bold">{opt}</div>
+                    <div className="text-3xl font-black text-green-400">{answers[opt] || 0} votes</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-gray-800 rounded-xl p-6">
+            <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
+            <div className="space-y-2">
+              {players.map(p => (
+                <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
+                  <span>{p.name}</span>
+                  <span className="text-green-400">{p.score} pts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600">
+            ← Retour
+          </button>
         </div>
       </div>
     );
