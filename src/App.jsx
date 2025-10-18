@@ -63,6 +63,7 @@ export default function App() {
   const [playerAnswer, setPlayerAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [, forceUpdate] = useState({});
+  const [nextQuestionCountdown, setNextQuestionCountdown] = useState(null);
   const [answers, setAnswers] = useState({});
   const [matchState, setMatchState] = useState(null);
   const usedQuestionsRef = useRef([]);
@@ -325,13 +326,33 @@ export default function App() {
     return "1MT";
   };
 
+  const [nextQuestionCountdown, setNextQuestionCountdown] = useState(null);
+
+  useEffect(() => {
+    if (!matchState?.nextQuestionTime) {
+      setNextQuestionCountdown(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const diff = matchState.nextQuestionTime - Date.now();
+      if (diff <= 0) {
+        setNextQuestionCountdown("Bientôt...");
+      } else {
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        setNextQuestionCountdown(`${mins}m ${secs}s`);
+      }
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(interval);
+  }, [matchState?.nextQuestionTime]);
+
   const getTimeUntilNextQuestion = () => {
-    if (!matchState?.nextQuestionTime) return null;
-    const diff = matchState.nextQuestionTime - Date.now();
-    if (diff <= 0) return "Bientôt...";
-    const mins = Math.floor(diff / 60000);
-    const secs = Math.floor((diff % 60000) / 1000);
-    return `${mins}m ${secs}s`;
+    return nextQuestionCountdown;
   };
 
   const MatchClock = () => {
