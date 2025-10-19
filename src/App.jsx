@@ -623,8 +623,8 @@ export default function App() {
     );
   }
 
-  // Rediriger vers auth si pas connecté
-  if (!user && screen !== 'auth' && screen !== 'barLogin') {
+  // Rediriger vers auth UNIQUEMENT si c'est un joueur (pas admin)
+  if (!user && screen === 'mobile') {
     setScreen('auth');
     return null;
   }
