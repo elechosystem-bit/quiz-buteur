@@ -1037,8 +1037,19 @@ export default function App() {
     
     useEffect(() => {
       const updateTime = () => {
-        const clockStartTime = matchState?.matchClock?.startTime || matchStartTime;
-        const clockHalf = matchState?.matchClock?.half || matchHalf;
+        // Priorité 1 : matchState.matchClock
+        // Priorité 2 : selectedMatch
+        // Priorité 3 : variables locales
+        let clockStartTime = matchState?.matchClock?.startTime || matchStartTime;
+        let clockHalf = matchState?.matchClock?.half || matchHalf;
+        let clockElapsed = matchState?.matchClock?.elapsedMinutes || matchElapsedMinutes;
+        
+        // Si on a un selectedMatch avec elapsed, on l'utilise
+        if (selectedMatch && selectedMatch.elapsed !== undefined) {
+          clockElapsed = selectedMatch.elapsed;
+          clockStartTime = Date.now() - (selectedMatch.elapsed * 60000);
+          clockHalf = selectedMatch.half || '1H';
+        }
         
         if (clockStartTime) {
           const elapsed = Math.floor((Date.now() - clockStartTime) / 60000);
@@ -1067,7 +1078,7 @@ export default function App() {
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchStartTime, matchHalf, matchState]);
+    }, [matchStartTime, matchHalf, matchState, selectedMatch]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
