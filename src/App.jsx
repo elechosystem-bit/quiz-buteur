@@ -121,6 +121,8 @@ export default function App() {
             id: fixture.fixture.id,
             homeTeam: fixture.teams.home.name,
             awayTeam: fixture.teams.away.name,
+            homeLogo: fixture.teams.home.logo,
+            awayLogo: fixture.teams.away.logo,
             league: fixture.league.name,
             date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
             status: fixture.fixture.status.long,
@@ -140,6 +142,8 @@ export default function App() {
           id: fixture.fixture.id,
           homeTeam: fixture.teams.home.name,
           awayTeam: fixture.teams.away.name,
+          homeLogo: fixture.teams.home.logo,
+          awayLogo: fixture.teams.away.logo,
           league: fixture.league.name,
           date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
           status: fixture.fixture.status.long,
@@ -175,6 +179,8 @@ export default function App() {
         id: match.id,
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
+        homeLogo: match.homeLogo,
+        awayLogo: match.awayLogo,
         league: match.league,
         score: match.score,
         date: match.date,
@@ -716,6 +722,8 @@ export default function App() {
         matchInfo: selectedMatch ? {
           homeTeam: selectedMatch.homeTeam,
           awayTeam: selectedMatch.awayTeam,
+          homeLogo: selectedMatch.homeLogo,
+          awayLogo: selectedMatch.awayLogo,
           league: selectedMatch.league,
           score: selectedMatch.score
         } : null,
@@ -1300,12 +1308,22 @@ export default function App() {
             
             {hasMatchInfo ? (
               <div className="mb-3 bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-4 rounded-xl border-2 border-blue-500">
-                <p className="text-4xl font-bold text-yellow-400">
-                  {matchInfo.homeTeam} 
-                  <span className="text-white mx-3">{matchInfo.score}</span> 
-                  {matchInfo.awayTeam}
-                </p>
-                <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
+                <div className="flex items-center justify-center gap-4">
+                  {matchInfo.homeLogo && (
+                    <img src={matchInfo.homeLogo} alt={matchInfo.homeTeam} className="w-12 h-12 object-contain" />
+                  )}
+                  <div className="text-center">
+                    <p className="text-4xl font-bold text-yellow-400">
+                      {matchInfo.homeTeam} 
+                      <span className="text-white mx-3">{matchInfo.score}</span> 
+                      {matchInfo.awayTeam}
+                    </p>
+                    <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
+                  </div>
+                  {matchInfo.awayLogo && (
+                    <img src={matchInfo.awayLogo} alt={matchInfo.awayTeam} className="w-12 h-12 object-contain" />
+                  )}
+                </div>
               </div>
             ) : matchState?.active ? (
               <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
@@ -1404,14 +1422,22 @@ export default function App() {
             {selectedMatch && (
               <div className="bg-green-900 border-2 border-green-500 rounded-lg p-4 mb-4">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm text-green-300">{selectedMatch.league}</div>
-                    <div className="text-xl font-bold">
-                      {selectedMatch.homeTeam} <span className="text-green-400">{selectedMatch.score}</span> {selectedMatch.awayTeam}
+                  <div className="flex items-center gap-4 flex-1">
+                    {selectedMatch.homeLogo && (
+                      <img src={selectedMatch.homeLogo} alt={selectedMatch.homeTeam} className="w-10 h-10 object-contain" />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-sm text-green-300">{selectedMatch.league}</div>
+                      <div className="text-xl font-bold">
+                        {selectedMatch.homeTeam} <span className="text-green-400">{selectedMatch.score}</span> {selectedMatch.awayTeam}
+                      </div>
+                      <div className="text-sm text-gray-300">{selectedMatch.date}</div>
                     </div>
-                    <div className="text-sm text-gray-300">{selectedMatch.date}</div>
+                    {selectedMatch.awayLogo && (
+                      <img src={selectedMatch.awayLogo} alt={selectedMatch.awayTeam} className="w-10 h-10 object-contain" />
+                    )}
                   </div>
-                  <div className="text-green-400 text-2xl">✅ Sélectionné</div>
+                  <div className="text-green-400 text-2xl ml-4">✅ Sélectionné</div>
                 </div>
               </div>
             )}
@@ -1429,23 +1455,31 @@ export default function App() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs bg-blue-600 px-2 py-1 rounded">{match.league}</span>
-                          <span className={`text-xs px-2 py-1 rounded ${
-                            match.status === 'En cours' ? 'bg-red-600 animate-pulse' :
-                            match.status === 'À venir' ? 'bg-yellow-600' :
-                            'bg-gray-600'
-                          }`}>
-                            {match.status}
-                          </span>
+                      <div className="flex items-center gap-3 flex-1">
+                        {match.homeLogo && (
+                          <img src={match.homeLogo} alt={match.homeTeam} className="w-8 h-8 object-contain" />
+                        )}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs bg-blue-600 px-2 py-1 rounded">{match.league}</span>
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              match.status === 'En cours' ? 'bg-red-600 animate-pulse' :
+                              match.status === 'À venir' ? 'bg-yellow-600' :
+                              'bg-gray-600'
+                            }`}>
+                              {match.status}
+                            </span>
+                          </div>
+                          <div className="text-lg font-bold">
+                            {match.homeTeam} <span className="text-blue-400 mx-2">{match.score}</span> {match.awayTeam}
+                          </div>
+                          <div className="text-sm text-gray-400">{match.date}</div>
                         </div>
-                        <div className="text-lg font-bold">
-                          {match.homeTeam} <span className="text-blue-400 mx-2">{match.score}</span> {match.awayTeam}
-                        </div>
-                        <div className="text-sm text-gray-400">{match.date}</div>
+                        {match.awayLogo && (
+                          <img src={match.awayLogo} alt={match.awayTeam} className="w-8 h-8 object-contain" />
+                        )}
                       </div>
-                      <div className="text-2xl">⚽</div>
+                      <div className="text-2xl ml-4">⚽</div>
                     </div>
                   </div>
                 ))}
@@ -1510,9 +1544,17 @@ export default function App() {
               <div>
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
                 {selectedMatch && (
-                  <div className="bg-gray-700 rounded-lg p-3 mb-4">
-                    <div className="text-lg font-bold">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</div>
-                    <div className="text-sm text-gray-400">{selectedMatch.league}</div>
+                  <div className="bg-gray-700 rounded-lg p-3 mb-4 flex items-center gap-3">
+                    {selectedMatch.homeLogo && (
+                      <img src={selectedMatch.homeLogo} alt={selectedMatch.homeTeam} className="w-8 h-8 object-contain" />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-lg font-bold">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</div>
+                      <div className="text-sm text-gray-400">{selectedMatch.league}</div>
+                    </div>
+                    {selectedMatch.awayLogo && (
+                      <img src={selectedMatch.awayLogo} alt={selectedMatch.awayTeam} className="w-8 h-8 object-contain" />
+                    )}
                   </div>
                 )}
                 <p className="text-lg mb-2">Match ID: {currentMatchId}</p>
