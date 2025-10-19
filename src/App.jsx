@@ -114,15 +114,26 @@ export default function App() {
   }, [barId]);
 
   useEffect(() => {
+    console.log('👤 Écoute de l\'authentification...');
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('👤 Auth changed - user:', currentUser ? currentUser.uid : 'null');
       setUser(currentUser);
+      
       if (currentUser) {
+        console.log('👤 Chargement du profil pour:', currentUser.uid);
         const userRef = ref(db, `users/${currentUser.uid}`);
         const snap = await get(userRef);
+        
         if (snap.exists()) {
-          setUserProfile(snap.val());
+          const profile = snap.val();
+          console.log('✅ Profil chargé:', profile);
+          setUserProfile(profile);
+        } else {
+          console.log('❌ Profil non trouvé dans Firebase pour:', currentUser.uid);
+          setUserProfile(null);
         }
       } else {
+        console.log('👤 Pas d\'utilisateur, reset du profil');
         setUserProfile(null);
       }
     });
