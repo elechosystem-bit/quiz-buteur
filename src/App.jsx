@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
-const QUESTION_INTERVAL = 300000;
+const QUESTION_INTERVAL = 60000; // 1 minute (pour les tests)
 
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
@@ -416,7 +416,7 @@ export default function App() {
       const data = snap.val();
       if (data && data.text && data.options && Array.isArray(data.options)) {
         setCurrentQuestion(data);
-        setTimeLeft(data.timeLeft || 30);
+        setTimeLeft(data.timeLeft || 15);
       } else {
         setCurrentQuestion(null);
         setPlayerAnswer(null);
@@ -553,7 +553,7 @@ export default function App() {
     
     const calculateTimeLeft = () => {
       const elapsed = Math.floor((Date.now() - currentQuestion.createdAt) / 1000);
-      const remaining = Math.max(0, 30 - elapsed);
+      const remaining = Math.max(0, 15 - elapsed);
       setTimeLeft(remaining);
       
       if (remaining === 0 && !isProcessingRef.current) {
@@ -710,7 +710,7 @@ export default function App() {
       const newMatchState = {
         active: true,
         startTime: now,
-        nextQuestionTime: now + 60000,
+        nextQuestionTime: now + 60000, // Première question dans 1 minute
         questionCount: 0,
         currentMatchId: matchId,
         matchInfo: selectedMatch ? {
@@ -871,7 +871,7 @@ export default function App() {
         id: qId,
         text: questionToUse.text,
         options: questionToUse.options,
-        timeLeft: 30,
+        timeLeft: 15,
         createdAt: Date.now()
       });
 
@@ -903,7 +903,7 @@ export default function App() {
           if (data.answer === randomWinner) {
             const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
             const playerSnap = await get(playerRef);
-            const bonus = Math.floor((data.timeLeft || 0) / 5);
+            const bonus = Math.floor((data.timeLeft || 0) / 3); // Bonus de rapidité (max 5 pts)
             const total = 10 + bonus;
             
             if (playerSnap.exists()) {
@@ -1218,7 +1218,7 @@ export default function App() {
               <div className="text-center mb-6">
                 <div className="text-6xl font-black text-green-900 mb-2">{timeLeft}s</div>
                 <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-600 transition-all" style={{ width: `${(timeLeft / 30) * 100}%` }} />
+                  <div className="h-full bg-green-600 transition-all" style={{ width: `${(timeLeft / 15) * 100}%` }} />
                 </div>
               </div>
               <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
@@ -1493,7 +1493,7 @@ export default function App() {
                 {!selectedMatch && (
                   <p className="text-sm text-yellow-400 mt-3">⚠️ Sélectionnez d'abord un match ci-dessus</p>
                 )}
-                <p className="text-sm text-gray-400 mt-3">Questions toutes les 5 minutes</p>
+                <p className="text-sm text-gray-400 mt-3">⚡ Questions toutes les 1 minute (15 secondes pour répondre)</p>
               </div>
             ) : (
               <div>
