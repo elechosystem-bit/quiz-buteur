@@ -125,33 +125,62 @@ export default function App() {
 
   useEffect(() => {
     if (!barId) return;
-    const unsub = onValue(ref(db, `bars/${barId}/matchState`), (snap) => {
+    
+    console.log('🎮 Écoute du matchState...');
+    const matchStateRef = ref(db, `bars/${barId}/matchState`);
+    
+    const unsub = onValue(matchStateRef, (snap) => {
       const state = snap.val();
+      console.log('🎮 matchState mis à jour:', state);
+      
       setMatchState(state);
+      
       if (state && state.currentMatchId) {
+        console.log('🎮 Match actif détecté:', state.currentMatchId);
         setCurrentMatchId(state.currentMatchId);
       } else {
+        console.log('🎮 Aucun match actif');
         setCurrentMatchId(null);
       }
     });
-    return () => unsub();
+    
+    return () => {
+      console.log('🎮 Arrêt de l\'écoute du matchState');
+      unsub();
+    };
   }, [barId]);
 
   useEffect(() => {
     if (!barId || !currentMatchId) {
+      console.log('👥 Reset players - pas de match');
       setPlayers([]);
       return;
     }
-    const unsub = onValue(ref(db, `bars/${barId}/matches/${currentMatchId}/players`), (snap) => {
+    
+    console.log('👥 Écoute des joueurs pour le match:', currentMatchId);
+    const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+    
+    const unsub = onValue(playersRef, (snap) => {
+      console.log('👥 Mise à jour des joueurs, exists:', snap.exists());
+      
       if (snap.exists()) {
         const data = snap.val();
+        console.log('👥 Données brutes:', data);
+        
         const list = Object.entries(data).map(([id, p]) => ({ id, ...p }));
+        console.log('👥 Liste des joueurs:', list);
+        
         setPlayers(list.sort((a, b) => b.score - a.score));
       } else {
+        console.log('👥 Aucun joueur');
         setPlayers([]);
       }
     });
-    return () => unsub();
+    
+    return () => {
+      console.log('👥 Arrêt de l\'écoute des joueurs');
+      unsub();
+    };
   }, [barId, currentMatchId]);
 
   useEffect(() => {
@@ -217,32 +246,63 @@ export default function App() {
 
   useEffect(() => {
     const addPlayerToMatch = async () => {
-      if (user && barId && currentMatchId && userProfile && screen === 'mobile' && matchState && matchState.active) {
-        try {
-          const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`);
-          const playerSnap = await get(playerRef);
+      if (!user) {
+        console.log('❌ Pas d\'utilisateur connecté');
+        return;
+      }
+      if (!barId) {
+        console.log('❌ Pas de barId');
+        return;
+      }
+      if (!currentMatchId) {
+        console.log('❌ Pas de currentMatchId');
+        return;
+      }
+      if (!userProfile) {
+        console.log('❌ Pas de userProfile');
+        return;
+      }
+      if (screen !== 'mobile') {
+        console.log('❌ Pas sur l\'écran mobile, écran actuel:', screen);
+        return;
+      }
+      if (!matchState || !matchState.active) {
+        console.log('❌ Match pas actif');
+        return;
+      }
+
+      try {
+        console.log('🔍 Tentative d\'ajout du joueur:', userProfile.pseudo, 'au match:', currentMatchId);
+        
+        const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`);
+        const playerSnap = await get(playerRef);
+        
+        if (!playerSnap.exists()) {
+          console.log('➕ Ajout du joueur dans Firebase...');
+          await set(playerRef, {
+            pseudo: userProfile.pseudo,
+            score: 0,
+            joinedAt: Date.now()
+          });
           
-          if (!playerSnap.exists()) {
-            await set(playerRef, {
-              pseudo: userProfile.pseudo,
-              score: 0,
-              joinedAt: Date.now()
-            });
-            
-            console.log('✅ Joueur ajouté:', userProfile.pseudo);
-            
-            const notifRef = push(ref(db, `bars/${barId}/notifications`));
-            await set(notifRef, {
-              type: 'playerJoined',
-              pseudo: userProfile.pseudo,
-              timestamp: Date.now()
-            });
-          } else {
-            console.log('🔄 Joueur déjà présent:', userProfile.pseudo);
-          }
-        } catch (e) {
-          console.error('❌ Erreur ajout joueur:', e);
+          console.log('✅ Joueur ajouté avec succès:', userProfile.pseudo);
+          
+          // Vérification immédiate
+          const verifySnap = await get(playerRef);
+          console.log('🔍 Vérification:', verifySnap.exists() ? 'OK' : 'ÉCHEC');
+          
+          const notifRef = push(ref(db, `bars/${barId}/notifications`));
+          await set(notifRef, {
+            type: 'playerJoined',
+            pseudo: userProfile.pseudo,
+            timestamp: Date.now()
+          });
+          console.log('✅ Notification envoyée');
+        } else {
+          console.log('🔄 Joueur déjà présent:', userProfile.pseudo, playerSnap.val());
         }
+      } catch (e) {
+        console.error('❌ Erreur ajout joueur:', e);
       }
     };
     
@@ -358,15 +418,32 @@ export default function App() {
 
   const startMatch = async () => {
     if (!barId) return;
+    
+    console.log('🎬 DÉMARRAGE DU MATCH...');
+    
     try {
+      // 1. SUPPRIMER TOUT L'ANCIEN ÉTAT
+      console.log('🗑️ Suppression de l\'ancien état...');
+      
       if (currentMatchId) {
+        console.log('🗑️ Suppression du match:', currentMatchId);
         await remove(ref(db, `bars/${barId}/matches/${currentMatchId}`));
       }
-      await remove(ref(db, `bars/${barId}/matchState`));
-      await remove(ref(db, `bars/${barId}/currentQuestion`));
-      await remove(ref(db, `bars/${barId}/answers`));
-      await remove(ref(db, `bars/${barId}/notifications`));
       
+      // Supprimer tous les chemins possibles
+      const pathsToDelete = [
+        `bars/${barId}/matchState`,
+        `bars/${barId}/currentQuestion`,
+        `bars/${barId}/answers`,
+        `bars/${barId}/notifications`
+      ];
+      
+      for (const path of pathsToDelete) {
+        console.log('🗑️ Suppression:', path);
+        await remove(ref(db, path));
+      }
+      
+      // Reset local
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
       if (nextQuestionTimer.current) {
@@ -374,11 +451,16 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // 2. ATTENDRE LE NETTOYAGE
+      console.log('⏳ Attente du nettoyage...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // 3. CRÉER LE NOUVEAU MATCH
       const now = Date.now();
       const matchId = `match_${now}`;
+      console.log('✨ Création du nouveau match:', matchId);
       
+      // Créer le matchState
       await set(ref(db, `bars/${barId}/matchState`), {
         active: true,
         startTime: now,
@@ -386,20 +468,35 @@ export default function App() {
         questionCount: 0,
         currentMatchId: matchId
       });
+      console.log('✅ matchState créé');
       
+      // Créer la structure du match avec un objet players vide
       await set(ref(db, `bars/${barId}/matches/${matchId}`), {
         info: {
           startedAt: now,
           status: 'active'
         },
-        players: {}
+        players: { placeholder: true }
       });
+      console.log('✅ Structure match créée');
       
-      console.log('✅ Match démarré:', matchId);
-      alert('✅ Match démarré ! Les joueurs peuvent maintenant rejoindre.');
+      // Supprimer le placeholder
+      await remove(ref(db, `bars/${barId}/matches/${matchId}/players/placeholder`));
+      console.log('✅ Placeholder supprimé');
+      
+      // 4. VÉRIFICATION
+      const verifyState = await get(ref(db, `bars/${barId}/matchState`));
+      console.log('🔍 Vérification matchState:', verifyState.val());
+      
+      const verifyMatch = await get(ref(db, `bars/${barId}/matches/${matchId}`));
+      console.log('🔍 Vérification match:', verifyMatch.val());
+      
+      console.log('✅✅✅ MATCH DÉMARRÉ AVEC SUCCÈS');
+      alert('✅ Match démarré ! ID: ' + matchId);
+      
     } catch (e) {
-      console.error('Erreur:', e);
-      alert('Erreur: ' + e.message);
+      console.error('❌ ERREUR:', e);
+      alert('❌ Erreur: ' + e.message);
     }
   };
 
