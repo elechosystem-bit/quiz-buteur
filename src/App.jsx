@@ -58,7 +58,7 @@ const QUESTIONS = [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState('home');
+  const [screen, setScreen] = useState('barLogin');
   const [barId, setBarId] = useState(null);
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
@@ -76,30 +76,21 @@ export default function App() {
   const [pseudo, setPseudo] = useState('');
   const [authMode, setAuthMode] = useState('login');
   const [adminCode, setAdminCode] = useState('');
-  const [isAdminAuth, setIsAdminAuth] = useState(false);
   const [barIdInput, setBarIdInput] = useState('');
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
 
-  // Détecter le barId dans l'URL
+  // Détecter si on arrive via un QR code (URL avec barId)
   useEffect(() => {
     const path = window.location.pathname;
     const match = path.match(/\/bar\/([^\/]+)/);
-    const params = new URLSearchParams(window.location.search);
     
     if (match) {
       const id = match[1];
       setBarId(id);
       loadBarInfo(id);
-      
-      // Si c'est l'écran TV (paramètre dans l'URL)
-      if (params.get('screen') === 'tv') {
-        setScreen('tv');
-      } else {
-        // Sinon, rediriger vers Auth pour les joueurs
-        setScreen('auth');
-      }
+      setScreen('auth');
     }
   }, []);
 
@@ -110,7 +101,12 @@ export default function App() {
       if (snap.exists()) {
         setBarInfo(snap.val());
       } else {
-        setBarInfo({ name: "Bar non trouvé" });
+        // Si le bar n'existe pas, le créer
+        await set(barRef, {
+          name: `Bar ${id}`,
+          createdAt: Date.now()
+        });
+        setBarInfo({ name: `Bar ${id}` });
       }
     } catch (e) {
       console.error('Erreur chargement bar:', e);
@@ -203,7 +199,7 @@ export default function App() {
               score: 0,
               joinedAt: Date.now()
             });
-            console.log('✅ Joueur ajouté au match du bar:', barId, userProfile.pseudo);
+            console.log('✅ Joueur ajouté au match:', userProfile.pseudo);
           }
         } catch (e) {
           console.error('Erreur ajout joueur:', e);
@@ -283,6 +279,22 @@ export default function App() {
     };
   }, [barId, matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
 
+  const handleBarLogin = async () => {
+    if (!barIdInput.trim()) {
+      alert('Entrez le code du bar');
+      return;
+    }
+    if (adminCode !== ADMIN_CODE) {
+      alert('❌ Code admin incorrect !');
+      return;
+    }
+    
+    const id = barIdInput.trim().toLowerCase().replace(/\s+/g, '_');
+    setBarId(id);
+    await loadBarInfo(id);
+    setScreen('tv');
+  };
+
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
       alert('Remplissez tous les champs');
@@ -318,15 +330,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    setScreen('home');
-  };
-
-  const joinBar = () => {
-    if (!barIdInput.trim()) {
-      alert('Entrez le code du bar');
-      return;
-    }
-    window.location.href = `/bar/${barIdInput.trim()}`;
+    window.location.href = '/';
   };
 
   const startMatch = async () => {
@@ -354,10 +358,10 @@ export default function App() {
         currentMatchId: matchId
       });
       
-      console.log('✅ Nouveau match créé pour', barId, ':', matchId);
+      console.log('✅ Match démarré:', matchId);
     } catch (e) {
       console.error('Erreur:', e);
-      alert('Erreur lors du démarrage: ' + e.message);
+      alert('Erreur: ' + e.message);
     }
   };
 
@@ -382,9 +386,7 @@ export default function App() {
       
       await remove(ref(db, `bars/${barId}/matchState`));
       await remove(ref(db, `bars/${barId}/currentQuestion`));
-      if (currentMatchId) {
-        await remove(ref(db, `bars/${barId}/answers`));
-      }
+      await remove(ref(db, `bars/${barId}/answers`));
       
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
@@ -393,50 +395,9 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      console.log('✅ Match arrêté et nettoyé pour', barId);
+      console.log('✅ Match arrêté');
     } catch (e) {
       console.error('Erreur:', e);
-    }
-  };
-
-  const resetMatchScores = async () => {
-    if (!barId || !window.confirm('⚠️ Remettre à 0 tous les scores du match en cours ?')) {
-      return;
-    }
-    try {
-      if (currentMatchId) {
-        const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
-        if (playersSnap.exists()) {
-          for (const userId of Object.keys(playersSnap.val())) {
-            await update(ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`), {
-              score: 0
-            });
-          }
-        }
-        alert('✅ Scores du match remis à 0 !');
-      }
-    } catch (e) {
-      alert('Erreur : ' + e.message);
-    }
-  };
-
-  const resetPlayerTotalPoints = async () => {
-    if (!window.confirm('⚠️ DANGER ! Cela va remettre à 0 les points TOTAUX de TOUS les joueurs. Continuer ?')) {
-      return;
-    }
-    try {
-      const usersSnap = await get(ref(db, 'users'));
-      if (usersSnap.exists()) {
-        for (const userId of Object.keys(usersSnap.val())) {
-          await update(ref(db, `users/${userId}`), {
-            totalPoints: 0,
-            matchesPlayed: 0
-          });
-        }
-        alert('✅ Points totaux remis à 0 !');
-      }
-    } catch (e) {
-      alert('Erreur : ' + e.message);
     }
   };
 
@@ -585,17 +546,17 @@ export default function App() {
     );
   };
 
-  if (screen === 'home') {
+  // Écran de connexion BAR (Admin)
+  if (screen === 'barLogin') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-green-900 flex flex-col items-center justify-center p-8">
-        <div className="text-center mb-12">
-          <div className="text-8xl mb-6">⚽</div>
-          <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
-          <p className="text-2xl text-green-200">Pronostics en temps réel</p>
-        </div>
-        
-        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl mb-6">
-          <h2 className="text-2xl font-bold text-green-900 mb-4 text-center">Rejoindre un bar</h2>
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+          <div className="text-center mb-6">
+            <div className="text-6xl mb-4">⚽</div>
+            <h1 className="text-4xl font-black text-green-900 mb-2">QUIZ BUTEUR</h1>
+            <p className="text-gray-600">Connexion Bar - Écran TV</p>
+          </div>
+          
           <input
             type="text"
             value={barIdInput}
@@ -603,35 +564,30 @@ export default function App() {
             placeholder="Code du bar (ex: le_penalty_paris)"
             className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
           />
-          <button onClick={joinBar} className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800">
-            📱 JOUER
-          </button>
-        </div>
-
-        <div className="mt-4">
-          <button onClick={() => setScreen('admin')} className="text-white opacity-50 hover:opacity-100 text-sm">
-            Admin
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!barId && screen !== 'home' && screen !== 'admin') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-900 to-red-700 flex items-center justify-center p-8">
-        <div className="bg-white rounded-3xl p-8 text-center">
-          <div className="text-6xl mb-4">❌</div>
-          <h2 className="text-2xl font-bold text-red-900 mb-4">Bar non trouvé</h2>
-          <p className="text-gray-600 mb-6">Veuillez scanner un QR code valide</p>
-          <button onClick={() => setScreen('home')} className="bg-red-900 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-800">
-            ← Retour
+          
+          <input
+            type="password"
+            value={adminCode}
+            onChange={(e) => setAdminCode(e.target.value)}
+            placeholder="Code admin"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') handleBarLogin();
+            }}
+          />
+          
+          <button 
+            onClick={handleBarLogin}
+            className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+          >
+            📺 ACCÉDER À L'ÉCRAN TV
           </button>
         </div>
       </div>
     );
   }
 
+  // Écran d'authentification JOUEUR
   if (screen === 'auth' && barId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
@@ -684,24 +640,19 @@ export default function App() {
           >
             {authMode === 'login' ? "Pas de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
           </button>
-          
-          <button
-            onClick={() => setScreen('home')}
-            className="w-full text-gray-500 py-2 text-sm mt-2"
-          >
-            ← Changer de bar
-          </button>
         </div>
       </div>
     );
   }
 
-  if (barId && !user) {
+  // Rediriger vers auth si pas connecté
+  if (barId && !user && screen !== 'auth') {
     setScreen('auth');
     return null;
   }
 
-  if (screen === 'mobile' && barId) {
+  // Écran MOBILE (Joueur)
+  if (screen === 'mobile' && barId && user) {
     const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
     return (
@@ -756,21 +707,61 @@ export default function App() {
     );
   }
 
+  // Écran TV (Bar)
   if (screen === 'tv' && barId) {
+    const qrUrl = `${window.location.origin}/bar/${barId}`;
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
-            <p className="text-2xl text-green-300">{barInfo?.name || 'Chargement...'}</p>
-            {matchState?.active && !currentQuestion && countdown && (
+            <p className="text-2xl text-green-300">{barInfo?.name || barId}</p>
+            {matchState?.active && countdown && (
               <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
+            )}
+            {!matchState?.active && (
+              <div className="mt-4">
+                <button
+                  onClick={startMatch}
+                  className="bg-green-600 px-6 py-3 rounded-lg text-lg font-bold hover:bg-green-700"
+                >
+                  ⚽ Démarrer le match
+                </button>
+              </div>
+            )}
+            {matchState?.active && (
+              <div className="mt-4 flex gap-4">
+                <button
+                  onClick={stopMatch}
+                  className="bg-red-600 px-6 py-3 rounded-lg text-lg font-bold hover:bg-red-700"
+                >
+                  ⏹️ Arrêter
+                </button>
+                <button
+                  onClick={async () => {
+                    if (currentQuestion) {
+                      await autoValidate();
+                      setTimeout(() => createRandomQuestion(), 1000);
+                    } else {
+                      await createRandomQuestion();
+                    }
+                  }}
+                  className="bg-blue-600 px-6 py-3 rounded-lg text-lg font-bold hover:bg-blue-700"
+                >
+                  🎲 Question maintenant
+                </button>
+              </div>
             )}
           </div>
           <div className="flex gap-6">
             <MatchClock />
             <div className="bg-white p-6 rounded-2xl">
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/bar/' + barId)}`} alt="QR" className="w-48 h-48" />
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`} 
+                alt="QR Code" 
+                className="w-48 h-48" 
+              />
               <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
             </div>
           </div>
@@ -783,198 +774,34 @@ export default function App() {
             <div className="col-span-4 text-right">SCORE</div>
           </div>
           <div className="space-y-1">
-            {players.slice(0, 16).map((p, i) => (
-              <div
-                key={p.id}
-                className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
-                  i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
-                  : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
-                  : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
-                  : 'bg-gray-50 text-lg'
-                }`}
-              >
-                <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
-                <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
-                <div className="col-span-4 text-right font-black">{p.score} pts</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (screen === 'admin') {
-    if (!isAdminAuth) {
-      return (
-        <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-8">
-          <div className="bg-gray-800 rounded-3xl p-8 max-w-md w-full">
-            <h2 className="text-3xl font-bold mb-6 text-center">🔒 Admin</h2>
-            
-            <input
-              type="text"
-              value={barIdInput}
-              onChange={(e) => setBarIdInput(e.target.value)}
-              placeholder="Code du bar"
-              className="w-full px-6 py-4 text-xl bg-gray-700 text-white rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-            
-            <input
-              type="password"
-              value={adminCode}
-              onChange={(e) => setAdminCode(e.target.value)}
-              placeholder="Code admin"
-              className="w-full px-6 py-4 text-xl bg-gray-700 text-white rounded-xl mb-6 focus:outline-none focus:ring-2 focus:ring-green-500"
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && adminCode === ADMIN_CODE && barIdInput) {
-                  setBarId(barIdInput);
-                  loadBarInfo(barIdInput);
-                  setIsAdminAuth(true);
-                }
-              }}
-            />
-            <button
-              onClick={() => {
-                if (adminCode === ADMIN_CODE && barIdInput) {
-                  setBarId(barIdInput);
-                  loadBarInfo(barIdInput);
-                  setIsAdminAuth(true);
-                } else {
-                  alert('❌ Code incorrect ou bar manquant !');
-                }
-              }}
-              className="w-full bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
-            >
-              Valider
-            </button>
-            <button
-              onClick={() => setScreen('home')}
-              className="w-full mt-4 text-gray-400 hover:text-white"
-            >
-              ← Retour
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="min-h-screen bg-gray-900 text-white p-8">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-2">🎮 Admin</h1>
-          <p className="text-xl text-gray-400 mb-8">Bar: {barInfo?.name || barId}</p>
-          
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
-            
-            {!matchState?.active ? (
-              <div>
-                <p className="text-gray-400 mb-4">Aucun match en cours</p>
-                <button
-                  onClick={startMatch}
-                  className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
-                >
-                  ⚽ Démarrer le match
-                </button>
-                <p className="text-sm text-gray-400 mt-3">Questions toutes les 5 minutes</p>
+            {players.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-4xl mb-4">👥</div>
+                <p className="text-xl">En attente de joueurs...</p>
+                <p className="text-sm mt-2">Scannez le QR code pour rejoindre !</p>
               </div>
             ) : (
-              <div>
-                <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
-                <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
-                {currentQuestion?.text ? (
-                  <div className="mb-4">
-                    <p className="text-yellow-400 mb-2">📢 {currentQuestion.text}</p>
-                    <p className="text-gray-400">⏱️ {timeLeft}s</p>
-                  </div>
-                ) : (
-                  countdown && <p className="text-gray-400 mb-4">⏱️ Prochaine: {countdown}</p>
-                )}
-                <div className="flex gap-4">
-                  <button
-                    onClick={stopMatch}
-                    className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700"
-                  >
-                    ⏹️ Arrêter
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (currentQuestion) {
-                        await autoValidate();
-                        setTimeout(() => createRandomQuestion(), 1000);
-                      } else {
-                        await createRandomQuestion();
-                      }
-                    }}
-                    className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
-                  >
-                    🎲 Question maintenant
-                  </button>
+              players.slice(0, 16).map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
+                    i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                    : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                    : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : 'bg-gray-50 text-lg'
+                  }`}
+                >
+                  <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
+                  <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
+                  <div className="col-span-4 text-right font-black">{p.score} pts</div>
                 </div>
-              </div>
+              ))
             )}
           </div>
-
-          {currentQuestion?.options && (
-            <div className="bg-gray-800 rounded-xl p-6 mb-6">
-              <h2 className="text-2xl font-bold mb-4">Votes</h2>
-              <div className="grid grid-cols-2 gap-4">
-                {currentQuestion.options.map(opt => (
-                  <div key={opt} className="bg-gray-700 p-4 rounded-lg">
-                    <div className="text-lg font-bold">{opt}</div>
-                    <div className="text-3xl font-black text-green-400">{answers[opt] || 0}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {players.map(p => (
-                <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
-                  <span>{p.pseudo}</span>
-                  <span className="text-green-400">{p.score} pts</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4 text-orange-400">🔄 Gestion des Scores</h2>
-            <p className="text-gray-400 mb-4 text-sm">Remettre à zéro les scores du match en cours</p>
-            <button
-              onClick={resetMatchScores}
-              className="bg-orange-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-orange-700"
-            >
-              🔄 Reset scores du match
-            </button>
-          </div>
-
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4 text-red-400">⚠️ Zone Dangereuse</h2>
-            <p className="text-gray-400 mb-4 text-sm">Actions irréversibles</p>
-            <button
-              onClick={resetPlayerTotalPoints}
-              className="bg-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-700"
-            >
-              ⚠️ Reset TOUS les totaux
-            </button>
-          </div>
-
-          <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600 mr-4">
-            ← Retour
-          </button>
-          <button onClick={() => { window.location.href = `/bar/${barId}?screen=tv`; setScreen('tv'); }} className="mt-6 bg-blue-600 px-6 py-3 rounded-lg hover:bg-blue-700">
-            📺 Voir écran TV
-          </button>
         </div>
       </div>
     );
   }
 
-  // Supprimer l'effet qui détecte ?screen=tv (déjà géré au début)
-  
   return null;
 }
