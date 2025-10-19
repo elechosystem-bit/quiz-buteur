@@ -98,28 +98,25 @@ export default function App() {
     }
   };
 
-  // Écouter les notifications
+  // Écouter les notifications en temps réel
   useEffect(() => {
-    if (!barId) return;
-    const notifRef = ref(db, `bars/${barId}/notifications`);
+    if (!barId || screen !== 'tv') return;
+    
+    const notifRef = ref(db, `bars/${barId}/lastNotification`);
     const unsub = onValue(notifRef, (snap) => {
       if (snap.exists()) {
-        const notifs = Object.entries(snap.val());
-        const latest = notifs[notifs.length - 1];
-        if (latest) {
-          const [key, data] = latest;
+        const data = snap.val();
+        if (data.timestamp > Date.now() - 6000) { // Moins de 6 secondes
           setNotification(data);
           
-          // Effacer après 5 secondes
           setTimeout(() => {
             setNotification(null);
-            remove(ref(db, `bars/${barId}/notifications/${key}`));
           }, 5000);
         }
       }
     });
     return () => unsub();
-  }, [barId]);
+  }, [barId, screen]);
 
   useEffect(() => {
     loadBarInfo(barId);
@@ -217,8 +214,8 @@ export default function App() {
               joinedAt: Date.now()
             });
             
-            // Notification push
-            await set(ref(db, `bars/${barId}/notifications/${Date.now()}`), {
+            // Notification push sur l'écran TV
+            await set(ref(db, `bars/${barId}/lastNotification`), {
               type: 'playerJoined',
               pseudo: userProfile.pseudo,
               timestamp: Date.now()
