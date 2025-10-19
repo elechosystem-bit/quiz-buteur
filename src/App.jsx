@@ -208,11 +208,14 @@ export default function App() {
           const playerSnap = await get(playerRef);
           
           if (!playerSnap.exists()) {
+            // S'assurer que la structure existe avant d'ajouter le joueur
             await set(playerRef, {
               pseudo: userProfile.pseudo,
               score: 0,
               joinedAt: Date.now()
             });
+            
+            console.log('✅ Joueur ajouté au match:', currentMatchId, userProfile.pseudo);
             
             // Notification push sur l'écran TV
             await set(ref(db, `bars/${barId}/lastNotification`), {
@@ -220,12 +223,20 @@ export default function App() {
               pseudo: userProfile.pseudo,
               timestamp: Date.now()
             });
-            
-            console.log('✅ Joueur ajouté:', userProfile.pseudo);
+          } else {
+            console.log('ℹ️ Joueur déjà dans le match:', userProfile.pseudo);
           }
         } catch (e) {
-          console.error('Erreur ajout joueur:', e);
+          console.error('❌ Erreur ajout joueur:', e);
         }
+      } else {
+        console.log('⚠️ Conditions non remplies:', {
+          user: !!user,
+          barId: !!barId,
+          currentMatchId: !!currentMatchId,
+          userProfile: !!userProfile,
+          screen
+        });
       }
     };
     
