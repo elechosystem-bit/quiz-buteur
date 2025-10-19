@@ -283,17 +283,35 @@ export default function App() {
 
   const startMatch = async () => {
     try {
+      // ✅ Nettoyer AVANT de créer un nouveau match
+      await remove(ref(db, 'matchState'));
+      await remove(ref(db, 'currentQuestion'));
+      await remove(ref(db, 'answers'));
+      
+      // Reset les refs locales
+      usedQuestionsRef.current = [];
+      isProcessingRef.current = false;
+      if (nextQuestionTimer.current) {
+        clearInterval(nextQuestionTimer.current);
+        nextQuestionTimer.current = null;
+      }
+      
+      // Créer le nouveau match
       const now = Date.now();
       const matchId = `match_${now}`;
+      
       await set(ref(db, 'matchState'), {
         active: true,
         startTime: now,
-        nextQuestionTime: now + 60000,
+        nextQuestionTime: now + 60000, // Première question dans 1 minute
         questionCount: 0,
         currentMatchId: matchId
       });
+      
+      console.log('✅ Nouveau match créé:', matchId);
     } catch (e) {
       console.error('Erreur:', e);
+      alert('Erreur lors du démarrage: ' + e.message);
     }
   };
 
