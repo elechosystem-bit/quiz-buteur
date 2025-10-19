@@ -79,6 +79,11 @@ export default function App() {
   const [availableMatches, setAvailableMatches] = useState([]);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [loadingMatches, setLoadingMatches] = useState(false);
+  const usedQuestionsRef = useRef([]);
+  const isProcessingRef = useRef(false);
+  const nextQuestionTimer = useRef(null);
+
+  console.log('🚀 APP DÉMARRÉ - Screen initial:', screen);
 
   const loadBarInfo = async (id) => {
     try {
