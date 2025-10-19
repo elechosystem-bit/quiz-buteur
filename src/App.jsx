@@ -1135,7 +1135,7 @@ export default function App() {
         
         if (clockStartTime) {
           const elapsed = Math.floor((Date.now() - clockStartTime) / 60000);
-          const mins = Math.min(elapsed, 90);
+          const mins = elapsed; // Pas de limite, peut aller au-delà de 90'
           const secs = Math.floor((Date.now() - clockStartTime) / 1000) % 60;
           
           setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
