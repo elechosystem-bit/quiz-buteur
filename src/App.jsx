@@ -86,10 +86,20 @@ export default function App() {
   useEffect(() => {
     const path = window.location.pathname;
     const match = path.match(/\/bar\/([^\/]+)/);
+    const params = new URLSearchParams(window.location.search);
+    
     if (match) {
       const id = match[1];
       setBarId(id);
       loadBarInfo(id);
+      
+      // Si c'est l'écran TV (paramètre dans l'URL)
+      if (params.get('screen') === 'tv') {
+        setScreen('tv');
+      } else {
+        // Sinon, rediriger vers Auth pour les joueurs
+        setScreen('auth');
+      }
     }
   }, []);
 
@@ -964,13 +974,7 @@ export default function App() {
     );
   }
 
-  // Détecter le paramètre ?screen=tv dans l'URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('screen') === 'tv' && barId) {
-      setScreen('tv');
-    }
-  }, [barId]);
-
+  // Supprimer l'effet qui détecte ?screen=tv (déjà géré au début)
+  
   return null;
 }
