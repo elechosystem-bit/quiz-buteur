@@ -422,26 +422,23 @@ export default function App() {
     console.log('🎬 DÉMARRAGE DU MATCH...');
     
     try {
-      // 1. SUPPRIMER TOUT L'ANCIEN ÉTAT
-      console.log('🗑️ Suppression de l\'ancien état...');
+      // 1. NETTOYAGE COMPLET DE FIREBASE
+      console.log('🗑️ Nettoyage complet de Firebase...');
       
-      if (currentMatchId) {
-        console.log('🗑️ Suppression du match:', currentMatchId);
-        await remove(ref(db, `bars/${barId}/matches/${currentMatchId}`));
+      // Récupérer tous les anciens matchs
+      const allMatchesSnap = await get(ref(db, `bars/${barId}/matches`));
+      if (allMatchesSnap.exists()) {
+        console.log('🗑️ Suppression de tous les anciens matchs...');
+        await remove(ref(db, `bars/${barId}/matches`));
       }
       
-      // Supprimer tous les chemins possibles
-      const pathsToDelete = [
-        `bars/${barId}/matchState`,
-        `bars/${barId}/currentQuestion`,
-        `bars/${barId}/answers`,
-        `bars/${barId}/notifications`
-      ];
+      // Supprimer tout l'état
+      await remove(ref(db, `bars/${barId}/matchState`));
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/answers`));
+      await remove(ref(db, `bars/${barId}/notifications`));
       
-      for (const path of pathsToDelete) {
-        console.log('🗑️ Suppression:', path);
-        await remove(ref(db, path));
-      }
+      console.log('✅ Nettoyage terminé');
       
       // Reset local
       usedQuestionsRef.current = [];
@@ -451,52 +448,62 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      // 2. ATTENDRE LE NETTOYAGE
-      console.log('⏳ Attente du nettoyage...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 2. ATTENDRE QUE FIREBASE SYNCHRONISE
+      console.log('⏳ Attente de synchronisation Firebase (2 secondes)...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // 3. CRÉER LE NOUVEAU MATCH
       const now = Date.now();
       const matchId = `match_${now}`;
       console.log('✨ Création du nouveau match:', matchId);
       
-      // Créer le matchState
-      await set(ref(db, `bars/${barId}/matchState`), {
+      // Créer le matchState AVANT la structure du match
+      const newMatchState = {
         active: true,
         startTime: now,
         nextQuestionTime: now + 60000,
         questionCount: 0,
         currentMatchId: matchId
-      });
-      console.log('✅ matchState créé');
+      };
       
-      // Créer la structure du match avec un objet players vide
-      await set(ref(db, `bars/${barId}/matches/${matchId}`), {
+      await set(ref(db, `bars/${barId}/matchState`), newMatchState);
+      console.log('✅ matchState créé:', newMatchState);
+      
+      // Attendre un peu
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Créer la structure du match
+      const newMatch = {
         info: {
           startedAt: now,
           status: 'active'
         },
-        players: { placeholder: true }
-      });
+        players: {}
+      };
+      
+      await set(ref(db, `bars/${barId}/matches/${matchId}`), newMatch);
       console.log('✅ Structure match créée');
       
-      // Supprimer le placeholder
-      await remove(ref(db, `bars/${barId}/matches/${matchId}/players/placeholder`));
-      console.log('✅ Placeholder supprimé');
+      // 4. VÉRIFICATION COMPLÈTE
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // 4. VÉRIFICATION
       const verifyState = await get(ref(db, `bars/${barId}/matchState`));
-      console.log('🔍 Vérification matchState:', verifyState.val());
+      console.log('🔍 Vérification matchState:', verifyState.exists(), verifyState.val());
       
       const verifyMatch = await get(ref(db, `bars/${barId}/matches/${matchId}`));
-      console.log('🔍 Vérification match:', verifyMatch.val());
+      console.log('🔍 Vérification match:', verifyMatch.exists(), verifyMatch.val());
       
-      console.log('✅✅✅ MATCH DÉMARRÉ AVEC SUCCÈS');
-      alert('✅ Match démarré ! ID: ' + matchId);
+      if (verifyState.exists() && verifyMatch.exists()) {
+        console.log('✅✅✅ MATCH DÉMARRÉ AVEC SUCCÈS !');
+        console.log('📋 Match ID:', matchId);
+        alert('✅ Match démarré avec succès !\n\nID: ' + matchId + '\n\nLes joueurs peuvent maintenant rejoindre.');
+      } else {
+        throw new Error('La vérification a échoué');
+      }
       
     } catch (e) {
-      console.error('❌ ERREUR:', e);
-      alert('❌ Erreur: ' + e.message);
+      console.error('❌ ERREUR CRITIQUE:', e);
+      alert('❌ Erreur lors du démarrage: ' + e.message);
     }
   };
 
@@ -935,6 +942,34 @@ export default function App() {
   }
 
   if (screen === 'admin') {
+    const debugFirebase = async () => {
+      console.log('🔍 === DEBUG FIREBASE ===');
+      try {
+        const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
+        console.log('matchState exists:', matchStateSnap.exists());
+        console.log('matchState value:', matchStateSnap.val());
+        
+        const matchesSnap = await get(ref(db, `bars/${barId}/matches`));
+        console.log('matches exists:', matchesSnap.exists());
+        console.log('matches value:', matchesSnap.val());
+        
+        if (currentMatchId) {
+          const currentMatchSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}`));
+          console.log('currentMatch exists:', currentMatchSnap.exists());
+          console.log('currentMatch value:', currentMatchSnap.val());
+          
+          const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
+          console.log('players exists:', playersSnap.exists());
+          console.log('players value:', playersSnap.val());
+        }
+        
+        alert('✅ Debug terminé - voir la console');
+      } catch (e) {
+        console.error('Erreur debug:', e);
+        alert('❌ Erreur: ' + e.message);
+      }
+    };
+
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
@@ -946,12 +981,20 @@ export default function App() {
             {!matchState || !matchState.active ? (
               <div>
                 <p className="text-gray-400 mb-4">Aucun match en cours</p>
-                <button
-                  onClick={startMatch}
-                  className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
-                >
-                  ⚽ Démarrer le match
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    onClick={startMatch}
+                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+                  >
+                    ⚽ Démarrer le match
+                  </button>
+                  <button
+                    onClick={debugFirebase}
+                    className="bg-purple-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-purple-700"
+                  >
+                    🔍 Debug Firebase
+                  </button>
+                </div>
                 <p className="text-sm text-gray-400 mt-3">Questions toutes les 5 minutes</p>
               </div>
             ) : (
@@ -959,6 +1002,7 @@ export default function App() {
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
                 <p className="text-lg mb-2">Match ID: {currentMatchId}</p>
                 <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
+                <p className="text-lg mb-2">Joueurs connectés: {players.length}</p>
                 {currentQuestion && currentQuestion.text ? (
                   <div className="mb-4">
                     <p className="text-yellow-400 mb-2">📢 {currentQuestion.text}</p>
@@ -986,6 +1030,12 @@ export default function App() {
                     className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
                   >
                     🎲 Question maintenant
+                  </button>
+                  <button
+                    onClick={debugFirebase}
+                    className="bg-purple-600 px-6 py-4 rounded-lg text-lg font-bold hover:bg-purple-700"
+                  >
+                    🔍 Debug
                   </button>
                 </div>
               </div>
