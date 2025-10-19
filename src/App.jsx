@@ -171,6 +171,24 @@ export default function App() {
       console.log('⏱️ Temps du match configuré:', match.elapsed, 'min -', match.half);
     }
     
+    // 🔥 NOUVEAU : Sauvegarder le match sélectionné dans Firebase
+    try {
+      await set(ref(db, `bars/${barId}/selectedMatch`), {
+        id: match.id,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        league: match.league,
+        score: match.score,
+        date: match.date,
+        status: match.status,
+        elapsed: match.elapsed || 0,
+        half: match.half || '1H'
+      });
+      console.log('✅ Match sélectionné sauvegardé dans Firebase');
+    } catch (e) {
+      console.error('❌ Erreur sauvegarde match sélectionné:', e);
+    }
+    
     await loadMatchLineups(match.id);
   };
 
@@ -614,22 +632,15 @@ export default function App() {
     window.location.href = '/';
   };
 
-  // 🔧 FONCTION startMatch CORRIGÉE - FIX CRITIQUE
   const startMatch = async () => {
-    if (!barId) {
-      alert('❌ Erreur: Pas de barId');
-      return;
-    }
+    if (!barId) return;
     
-    console.log('🎬 === DÉMARRAGE DU MATCH ===');
-    console.log('📌 selectedMatch:', selectedMatch);
-    console.log('📌 matchPlayers:', matchPlayers.length);
+    console.log('🎬 DÉMARRAGE DU MATCH...');
     
     try {
-      // 1️⃣ NETTOYAGE
       const allMatchesSnap = await get(ref(db, `bars/${barId}/matches`));
       if (allMatchesSnap.exists()) {
-        console.log('🗑️ Suppression anciens matchs...');
+        console.log('🗑️ Suppression de tous les anciens matchs...');
         await remove(ref(db, `bars/${barId}/matches`));
       }
       
@@ -647,84 +658,35 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      // 2️⃣ ATTENTE SYNC FIREBASE
-      console.log('⏳ Attente synchronisation (2s)...');
+      console.log('⏳ Attente de synchronisation Firebase (2 secondes)...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // 3️⃣ CRÉATION MATCH ID
       const now = Date.now();
       const matchId = `match_${now}`;
-      console.log('✨ Nouveau match:', matchId);
+      console.log('✨ Création du nouveau match:', matchId);
       
-      // 4️⃣ CONSTRUCTION matchInfo ET matchClock - TOUJOURS DÉFINIS
-      let matchInfo = null;
-      let matchClock = null;
-      
-      if (selectedMatch) {
-        // ✅ MATCH RÉEL
-        console.log('⚽ Match réel détecté');
-        
-        matchInfo = {
-          matchName: `${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}`,
-          homeTeam: selectedMatch.homeTeam,
-          awayTeam: selectedMatch.awayTeam,
-          score: selectedMatch.score || '0-0',
-          league: selectedMatch.league || 'Ligue inconnue',
-          status: selectedMatch.status || 'En cours'
-        };
-        
-        const elapsed = selectedMatch.elapsed || 0;
-        const half = selectedMatch.half || '1H';
-        
-        matchClock = {
-          startTime: matchStartTime || Date.now(),
-          elapsedMinutes: elapsed,
-          half: half
-        };
-        
-        console.log('✅ matchInfo créé:', matchInfo);
-        console.log('⏱️ matchClock créé:', matchClock);
-        
-      } else {
-        // ⚙️ MATCH TEST - IMPORTANT: NE JAMAIS LAISSER matchInfo À NULL
-        console.log('⚙️ Mode test - création matchInfo par défaut');
-        
-        matchInfo = {
-          matchName: "Match Test",
-          homeTeam: "Équipe A",
-          awayTeam: "Équipe B",
-          score: "0-0",
-          league: "Test League",
-          status: "1H"
-        };
-        
-        matchClock = {
-          startTime: Date.now(),
-          elapsedMinutes: 0,
-          half: '1H'
-        };
-        
-        console.log('✅ Match test créé');
-      }
-      
-      // 5️⃣ ÉCRITURE MATCHSTATE - CRITIQUE: TOUJOURS INCLURE matchInfo et matchClock
       const newMatchState = {
         active: true,
         startTime: now,
         nextQuestionTime: now + 60000,
         questionCount: 0,
         currentMatchId: matchId,
-        matchInfo: matchInfo,        // ← TOUJOURS présent (jamais null)
-        matchClock: matchClock       // ← TOUJOURS présent (jamais null)
+        matchInfo: selectedMatch ? {
+          homeTeam: selectedMatch.homeTeam,
+          awayTeam: selectedMatch.awayTeam,
+          league: selectedMatch.league,
+          score: selectedMatch.score
+        } : null,
+        matchClock: {
+          startTime: matchStartTime,
+          elapsedMinutes: matchElapsedMinutes,
+          half: matchHalf
+        }
       };
       
-      console.log('💾 Écriture matchState:', newMatchState);
-      console.log('🔍 matchInfo présent ?', !!newMatchState.matchInfo);
-      console.log('🔍 matchClock présent ?', !!newMatchState.matchClock);
-      
       await set(ref(db, `bars/${barId}/matchState`), newMatchState);
+      console.log('✅ matchState créé:', newMatchState);
       
-      // 6️⃣ CRÉATION STRUCTURE MATCH
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const newMatch = {
@@ -732,52 +694,31 @@ export default function App() {
           startedAt: now,
           status: 'active'
         },
-        players: {},
-        realPlayers: matchPlayers.length > 0 ? matchPlayers : null
+        players: {}
       };
       
       await set(ref(db, `bars/${barId}/matches/${matchId}`), newMatch);
       console.log('✅ Structure match créée');
       
-      // 7️⃣ VÉRIFICATION
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const verifyState = await get(ref(db, `bars/${barId}/matchState`));
-      const verifyMatch = await get(ref(db, `bars/${barId}/matches/${matchId}`));
+      console.log('🔍 Vérification matchState:', verifyState.exists(), verifyState.val());
       
-      console.log('🔍 Vérification matchState:', verifyState.val());
-      console.log('🔍 Vérification match:', verifyMatch.val());
+      const verifyMatch = await get(ref(db, `bars/${barId}/matches/${matchId}`));
+      console.log('🔍 Vérification match:', verifyMatch.exists(), verifyMatch.val());
       
       if (verifyState.exists() && verifyMatch.exists()) {
-        const stateData = verifyState.val();
-        
         console.log('✅✅✅ MATCH DÉMARRÉ AVEC SUCCÈS !');
-        console.log('📊 matchInfo présent ?', !!stateData.matchInfo);
-        console.log('⏱️ matchClock présent ?', !!stateData.matchClock);
-        
-        if (stateData.matchInfo) {
-          console.log('✅ matchInfo.homeTeam:', stateData.matchInfo.homeTeam);
-          console.log('✅ matchInfo.awayTeam:', stateData.matchInfo.awayTeam);
-        } else {
-          console.error('❌ ERREUR: matchInfo est null dans Firebase !');
-        }
-        
-        alert(`✅ Match démarré avec succès !
-
-📋 ID: ${matchId}
-⚽ Match: ${stateData.matchInfo?.matchName || 'Test'}
-👥 ${matchPlayers.length} joueurs disponibles
-
-Les joueurs peuvent maintenant rejoindre !`);
-        
+        console.log('📋 Match ID:', matchId);
+        alert('✅ Match démarré avec succès !\n\nID: ' + matchId + '\n\nLes joueurs peuvent maintenant rejoindre.');
       } else {
-        throw new Error('Vérification échouée - match non créé dans Firebase');
+        throw new Error('La vérification a échoué');
       }
       
     } catch (e) {
       console.error('❌ ERREUR CRITIQUE:', e);
-      console.error('Stack:', e.stack);
-      alert(`❌ Erreur : ${e.message}`);
+      alert('❌ Erreur lors du démarrage: ' + e.message);
     }
   };
 
@@ -1269,10 +1210,15 @@ Les joueurs peuvent maintenant rejoindre !`);
   if (screen === 'tv') {
     const qrUrl = `${window.location.origin}/play`;
     
+    console.log('📺 === ÉCRAN TV - DEBUG COMPLET ===');
+    console.log('📺 matchState:', matchState);
+    console.log('📺 matchState?.matchInfo:', matchState?.matchInfo);
+    console.log('📺 matchState?.active:', matchState?.active);
+    
     const matchInfo = matchState?.matchInfo;
     const hasMatchInfo = matchInfo && matchInfo.homeTeam && matchInfo.awayTeam;
     
-    console.log('📺 Écran TV - matchInfo:', matchInfo);
+    console.log('📺 matchInfo final:', matchInfo);
     console.log('📺 hasMatchInfo:', hasMatchInfo);
     
     return (
@@ -1286,6 +1232,129 @@ Les joueurs peuvent maintenant rejoindre !`);
                 <div className="text-lg">a rejoint la partie !</div>
               </div>
             </div>
+          </div>
+        )}
+
+        <div className="flex justify-between items-start mb-8">
+          <div>
+            <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
+            
+            {hasMatchInfo ? (
+              <div className="mb-3 bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-4 rounded-xl border-2 border-blue-500">
+                <p className="text-4xl font-bold text-yellow-400">
+                  {matchInfo.homeTeam} 
+                  <span className="text-white mx-3">{matchInfo.score}</span> 
+                  {matchInfo.awayTeam}
+                </p>
+                <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
+              </div>
+            ) : matchState?.active ? (
+              <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
+                <p className="text-2xl text-yellow-400">⚽ Match en cours</p>
+                <p className="text-lg text-gray-300">En attente des informations...</p>
+              </div>
+            ) : (
+              <p className="text-2xl text-green-300">{barInfo ? barInfo.name : 'Quiz Buteur Live'}</p>
+            )}
+            
+            {matchState && matchState.active && countdown && (
+              <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
+            )}
+            {(!matchState || !matchState.active) && (
+              <p className="text-gray-300 mt-2">Le match n'est pas démarré</p>
+            )}
+          </div>
+          <div className="flex gap-6">
+            <MatchClock />
+            <div className="bg-white p-6 rounded-2xl">
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`} 
+                alt="QR Code" 
+                className="w-48 h-48" 
+              />
+              <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
+          <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
+            <div className="col-span-1">#</div>
+            <div className="col-span-7">JOUEUR</div>
+            <div className="col-span-4 text-right">SCORE</div>
+          </div>
+          <div className="space-y-1">
+            {players.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-4xl mb-4">👥</div>
+                <p className="text-xl">En attente de joueurs...</p>
+                <p className="text-sm mt-2">Scannez le QR code pour rejoindre !</p>
+              </div>
+            ) : (
+              players.slice(0, 16).map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
+                    i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                    : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                    : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : 'bg-gray-50 text-lg'
+                  }`}
+                >
+                  <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
+                  <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
+                  <div className="col-span-4 text-right font-black">{p.score} pts</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'admin') {
+    console.log('🎮 Affichage écran ADMIN');
+    console.log('📊 État actuel - matchState:', matchState, 'currentMatchId:', currentMatchId, 'players:', players.length);
+    
+    return (
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Gestion du Match</h1>
+          
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
+            <div className="flex gap-4 mb-4">
+              <input
+                type="text"
+                value={matchSearch}
+                onChange={(e) => setMatchSearch(e.target.value)}
+                placeholder="PSG, Real Madrid, Premier League..."
+                className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onKeyPress={(e) => e.key === 'Enter' && searchMatches()}
+              />
+              <button
+                onClick={searchMatches}
+                disabled={loadingMatches}
+                className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-600"
+              >
+                {loadingMatches ? '⏳ Recherche...' : '🔍 Rechercher'}
+              </button>
+            </div>
+
+            {selectedMatch && (
+              <div className="bg-green-900 border-2 border-green-500 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-green-300">{selectedMatch.league}</div>
+                    <div className="text-xl font-bold">
+                      {selectedMatch.homeTeam} <span className="text-green-400">{selectedMatch.score}</span> {selectedMatch.awayTeam}
+                    </div>
+                    <div className="text-sm text-gray-300">{selectedMatch.date}</div>
+                  </div>
+                  <div className="text-green-400 text-2xl">✅ Sélectionné</div>
+                </div>
+              </div>
             )}
 
             {availableMatches.length > 0 && (
@@ -1355,7 +1424,8 @@ Les joueurs peuvent maintenant rejoindre !`);
                 <div className="flex gap-4 flex-wrap">
                   <button
                     onClick={startMatch}
-                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+                    disabled={!selectedMatch}
+                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
                   >
                     ⚽ Démarrer le match
                   </button>
@@ -1372,6 +1442,9 @@ Les joueurs peuvent maintenant rejoindre !`);
                     🔍 Debug Firebase
                   </button>
                 </div>
+                {!selectedMatch && (
+                  <p className="text-sm text-yellow-400 mt-3">⚠️ Sélectionnez d'abord un match ci-dessus</p>
+                )}
                 <p className="text-sm text-gray-400 mt-3">Questions toutes les 5 minutes</p>
               </div>
             ) : (
@@ -1481,118 +1554,4 @@ Les joueurs peuvent maintenant rejoindre !`);
   }
 
   return null;
-}>
-          </div>
-        )}
-
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
-            {hasMatchInfo ? (
-              <div className="mb-3">
-                <p className="text-4xl font-bold text-yellow-400">
-                  {matchInfo.homeTeam} <span className="text-white mx-3">{matchInfo.score}</span> {matchInfo.awayTeam}
-                </p>
-                <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
-              </div>
-            ) : (
-              <p className="text-2xl text-green-300">{barInfo ? barInfo.name : 'Quiz Buteur Live'}</p>
-            )}
-            {matchState && matchState.active && countdown && (
-              <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
-            )}
-            {(!matchState || !matchState.active) && (
-              <p className="text-gray-300 mt-2">Le match n'est pas démarré</p>
-            )}
-          </div>
-          <div className="flex gap-6">
-            <MatchClock />
-            <div className="bg-white p-6 rounded-2xl">
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`} 
-                alt="QR Code" 
-                className="w-48 h-48" 
-              />
-              <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
-          <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
-            <div className="col-span-1">#</div>
-            <div className="col-span-7">JOUEUR</div>
-            <div className="col-span-4 text-right">SCORE</div>
-          </div>
-          <div className="space-y-1">
-            {players.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <div className="text-4xl mb-4">👥</div>
-                <p className="text-xl">En attente de joueurs...</p>
-                <p className="text-sm mt-2">Scannez le QR code pour rejoindre !</p>
-              </div>
-            ) : (
-              players.slice(0, 16).map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
-                    i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
-                    : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
-                    : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
-                    : 'bg-gray-50 text-lg'
-                  }`}
-                >
-                  <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
-                  <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
-                  <div className="col-span-4 text-right font-black">{p.score} pts</div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (screen === 'admin') {
-    console.log('🎮 Affichage écran ADMIN');
-    console.log('📊 État actuel - matchState:', matchState, 'currentMatchId:', currentMatchId, 'players:', players.length);
-    
-    return (
-      <div className="min-h-screen bg-gray-900 text-white p-8">
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Gestion du Match</h1>
-          
-          <div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
-            <div className="flex gap-4 mb-4">
-              <input
-                type="text"
-                value={matchSearch}
-                onChange={(e) => setMatchSearch(e.target.value)}
-                placeholder="PSG, Real Madrid, Premier League..."
-                className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                onKeyPress={(e) => e.key === 'Enter' && searchMatches()}
-              />
-              <button
-                onClick={searchMatches}
-                disabled={loadingMatches}
-                className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-600"
-              >
-                {loadingMatches ? '⏳ Recherche...' : '🔍 Rechercher'}
-              </button>
-            </div>
-
-            {selectedMatch && (
-              <div className="bg-green-900 border-2 border-green-500 rounded-lg p-4 mb-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm text-green-300">{selectedMatch.league}</div>
-                    <div className="text-xl font-bold">
-                      {selectedMatch.homeTeam} <span className="text-green-400">{selectedMatch.score}</span> {selectedMatch.awayTeam}
-                    </div>
-                    <div className="text-sm text-gray-300">{selectedMatch.date}</div>
-                  </div>
-                  <div className="text-green-400 text-2xl">✅ Sélectionné</div>
-                </div>
-              </div
+}
