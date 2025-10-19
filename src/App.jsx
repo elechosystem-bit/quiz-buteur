@@ -75,11 +75,10 @@ export default function App() {
   const [pseudo, setPseudo] = useState('');
   const [authMode, setAuthMode] = useState('login');
   const [notification, setNotification] = useState(null);
-  const usedQuestionsRef = useRef([]);
-  const isProcessingRef = useRef(false);
-  const nextQuestionTimer = useRef(null);
-
-  console.log('🚀 APP DÉMARRÉ - Screen initial:', screen);
+  const [matchSearch, setMatchSearch] = useState('');
+  const [availableMatches, setAvailableMatches] = useState([]);
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [loadingMatches, setLoadingMatches] = useState(false);
 
   const loadBarInfo = async (id) => {
     try {
@@ -1081,19 +1080,106 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl font-bold mb-8">🎮 Admin - Gestion du Match</h1>
           
+          {/* Section Recherche de matchs */}
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
+            <div className="flex gap-4 mb-4">
+              <input
+                type="text"
+                value={matchSearch}
+                onChange={(e) => setMatchSearch(e.target.value)}
+                placeholder="PSG, Real Madrid, Premier League..."
+                className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onKeyPress={(e) => e.key === 'Enter' && searchMatches()}
+              />
+              <button
+                onClick={searchMatches}
+                disabled={loadingMatches}
+                className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-600"
+              >
+                {loadingMatches ? '⏳ Recherche...' : '🔍 Rechercher'}
+              </button>
+            </div>
+
+            {selectedMatch && (
+              <div className="bg-green-900 border-2 border-green-500 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-green-300">{selectedMatch.league}</div>
+                    <div className="text-xl font-bold">
+                      {selectedMatch.homeTeam} <span className="text-green-400">{selectedMatch.score}</span> {selectedMatch.awayTeam}
+                    </div>
+                    <div className="text-sm text-gray-300">{selectedMatch.date}</div>
+                  </div>
+                  <div className="text-green-400 text-2xl">✅ Sélectionné</div>
+                </div>
+              </div>
+            )}
+
+            {availableMatches.length > 0 && (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {availableMatches.map(match => (
+                  <div
+                    key={match.id}
+                    onClick={() => selectMatch(match)}
+                    className={`p-4 rounded-lg cursor-pointer transition-all ${
+                      selectedMatch && selectedMatch.id === match.id
+                        ? 'bg-green-800 border-2 border-green-500'
+                        : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs bg-blue-600 px-2 py-1 rounded">{match.league}</span>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            match.status === 'En cours' ? 'bg-red-600 animate-pulse' :
+                            match.status === 'À venir' ? 'bg-yellow-600' :
+                            'bg-gray-600'
+                          }`}>
+                            {match.status}
+                          </span>
+                        </div>
+                        <div className="text-lg font-bold">
+                          {match.homeTeam} <span className="text-blue-400 mx-2">{match.score}</span> {match.awayTeam}
+                        </div>
+                        <div className="text-sm text-gray-400">{match.date}</div>
+                      </div>
+                      <div className="text-2xl">⚽</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {availableMatches.length === 0 && !loadingMatches && (
+              <div className="text-center py-8 text-gray-400">
+                <div className="text-4xl mb-2">🔍</div>
+                <p>Recherchez un match pour commencer</p>
+                <p className="text-sm mt-2">Ex: "PSG", "Premier League", "Real Madrid"</p>
+              </div>
+            )}
+          </div>
+
+          {/* Section Contrôle du Match */}
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
             
             {!matchState || !matchState.active ? (
               <div>
-                <p className="text-gray-400 mb-4">Aucun match en cours</p>
+                <p className="text-gray-400 mb-4">
+                  {selectedMatch 
+                    ? `Prêt à démarrer : ${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}`
+                    : 'Sélectionnez un match ci-dessus'}
+                </p>
                 <div className="flex gap-4 flex-wrap">
                   <button
                     onClick={startMatch}
-                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+                    disabled={!selectedMatch}
+                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
                   >
                     ⚽ Démarrer le match
                   </button>
@@ -1110,11 +1196,20 @@ export default function App() {
                     🔍 Debug Firebase
                   </button>
                 </div>
+                {!selectedMatch && (
+                  <p className="text-sm text-yellow-400 mt-3">⚠️ Sélectionnez d'abord un match ci-dessus</p>
+                )}
                 <p className="text-sm text-gray-400 mt-3">Questions toutes les 5 minutes</p>
               </div>
             ) : (
               <div>
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
+                {selectedMatch && (
+                  <div className="bg-gray-700 rounded-lg p-3 mb-4">
+                    <div className="text-lg font-bold">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</div>
+                    <div className="text-sm text-gray-400">{selectedMatch.league}</div>
+                  </div>
+                )}
                 <p className="text-lg mb-2">Match ID: {currentMatchId}</p>
                 <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
                 <p className="text-lg mb-2">Joueurs connectés: {players.length}</p>
