@@ -438,9 +438,30 @@ export default function App() {
       return;
     }
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('✅ Connexion réussie:', userCredential.user.uid);
+      
+      // Vérifier si le profil existe
+      const userRef = ref(db, `users/${userCredential.user.uid}`);
+      const snap = await get(userRef);
+      
+      if (!snap.exists()) {
+        console.log('⚠️ Profil manquant, création automatique...');
+        // Créer le profil manquant
+        await set(userRef, {
+          email: userCredential.user.email,
+          pseudo: email.split('@')[0], // Utilise la partie avant @ comme pseudo
+          totalPoints: 0,
+          matchesPlayed: 0,
+          createdAt: Date.now()
+        });
+        console.log('✅ Profil créé automatiquement');
+        alert('✅ Profil créé ! Vous pouvez maintenant jouer.');
+      }
+      
       setScreen('mobile');
     } catch (e) {
+      console.error('❌ Erreur connexion:', e);
       alert('Erreur: ' + e.message);
     }
   };
