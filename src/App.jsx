@@ -314,8 +314,23 @@ export default function App() {
           }
         }
       }
+      
+      // ✅ FIX : Nettoyer TOUT proprement
       await remove(ref(db, 'matchState'));
       await remove(ref(db, 'currentQuestion'));
+      if (currentMatchId) {
+        await remove(ref(db, `answers`));
+      }
+      
+      // Reset les refs
+      usedQuestionsRef.current = [];
+      isProcessingRef.current = false;
+      if (nextQuestionTimer.current) {
+        clearInterval(nextQuestionTimer.current);
+        nextQuestionTimer.current = null;
+      }
+      
+      console.log('✅ Match arrêté et nettoyé');
     } catch (e) {
       console.error('Erreur:', e);
     }
