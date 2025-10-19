@@ -64,6 +64,7 @@ export default function App() {
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
+  const wakeLockRef = useRef(null);
 
   console.log('🚀 APP DÉMARRÉ - Screen initial:', screen);
 
@@ -298,6 +299,50 @@ export default function App() {
     }
   }, [barId]);
 
+  // 🔥 Wake Lock : Empêcher l'écran de s'éteindre
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && (screen === 'tv' || screen === 'mobile')) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+          console.log('✅ Wake Lock activé - l\'écran ne s\'éteindra pas');
+          
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('⚠️ Wake Lock libéré');
+          });
+        } catch (err) {
+          console.error('❌ Erreur Wake Lock:', err);
+        }
+      }
+    };
+
+    const releaseWakeLock = () => {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        console.log('🔓 Wake Lock libéré manuellement');
+      }
+    };
+
+    if (screen === 'tv' || screen === 'mobile') {
+      requestWakeLock();
+    }
+
+    // Re-demander le Wake Lock si l'onglet redevient visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && (screen === 'tv' || screen === 'mobile')) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      releaseWakeLock();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [screen]);
+
   useEffect(() => {
     console.log('👤 Écoute de l\'authentification...');
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
@@ -423,13 +468,27 @@ export default function App() {
       if (data && data.text && data.options && Array.isArray(data.options)) {
         setCurrentQuestion(data);
         setTimeLeft(data.timeLeft || 15);
+        
+        // 🔥 Envoyer une notification push quand une nouvelle question arrive
+        if (screen === 'mobile' && 'Notification' in window) {
+          if (Notification.permission === 'granted') {
+            new Notification('⚽ Nouvelle question !', {
+              body: data.text,
+              icon: '/icon-192.png',
+              badge: '/icon-192.png',
+              vibrate: [200, 100, 200],
+              tag: 'quiz-question',
+              requireInteraction: true
+            });
+          }
+        }
       } else {
         setCurrentQuestion(null);
         setPlayerAnswer(null);
       }
     });
     return () => unsub();
-  }, [barId]);
+  }, [barId, screen]);
 
   useEffect(() => {
     if (!barId || !currentQuestion) {
@@ -666,6 +725,18 @@ export default function App() {
         });
         console.log('✅ Profil créé automatiquement');
         alert('✅ Profil créé ! Vous pouvez maintenant jouer.');
+      }
+      
+      // 🔥 Demander la permission pour les notifications
+      if ('Notification' in window && Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          console.log('✅ Notifications autorisées');
+          new Notification('🎉 Notifications activées !', {
+            body: 'Vous serez alerté à chaque nouvelle question',
+            icon: '/icon-192.png'
+          });
+        }
       }
       
       setScreen('mobile');
