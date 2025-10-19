@@ -74,6 +74,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [pseudo, setPseudo] = useState('');
   const [authMode, setAuthMode] = useState('login');
+  const [notification, setNotification] = useState(null);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -96,6 +97,29 @@ export default function App() {
       console.error('Erreur chargement bar:', e);
     }
   };
+
+  // Écouter les notifications
+  useEffect(() => {
+    if (!barId) return;
+    const notifRef = ref(db, `bars/${barId}/notifications`);
+    const unsub = onValue(notifRef, (snap) => {
+      if (snap.exists()) {
+        const notifs = Object.entries(snap.val());
+        const latest = notifs[notifs.length - 1];
+        if (latest) {
+          const [key, data] = latest;
+          setNotification(data);
+          
+          // Effacer après 5 secondes
+          setTimeout(() => {
+            setNotification(null);
+            remove(ref(db, `bars/${barId}/notifications/${key}`));
+          }, 5000);
+        }
+      }
+    });
+    return () => unsub();
+  }, [barId]);
 
   useEffect(() => {
     loadBarInfo(barId);
@@ -705,6 +729,19 @@ export default function App() {
     
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
+        {/* Notification push */}
+        {notification && (
+          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
+            <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-8 py-6 rounded-2xl shadow-2xl flex items-center gap-4">
+              <div className="text-4xl">🎉</div>
+              <div>
+                <div className="text-2xl font-black">{notification.pseudo}</div>
+                <div className="text-lg">a rejoint la partie !</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
