@@ -161,7 +161,6 @@ export default function App() {
   };
 
   const selectMatch = async (match) => {
-    setSelectedMatch(match);
     console.log('⚽ Match sélectionné:', match);
     
     if (match.elapsed !== undefined) {
@@ -172,7 +171,7 @@ export default function App() {
     }
     
     try {
-      await set(ref(db, `bars/${barId}/selectedMatch`), {
+      const matchData = {
         id: match.id,
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
@@ -182,10 +181,23 @@ export default function App() {
         status: match.status,
         elapsed: match.elapsed || 0,
         half: match.half || '1H'
-      });
-      console.log('✅ Match sélectionné sauvegardé dans Firebase');
+      };
+      
+      console.log('💾 Sauvegarde dans Firebase:', matchData);
+      await set(ref(db, `bars/${barId}/selectedMatch`), matchData);
+      console.log('✅ Match sauvegardé dans Firebase');
+      
+      // Vérification immédiate
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const verifySnap = await get(ref(db, `bars/${barId}/selectedMatch`));
+      console.log('🔍 Vérification: exists =', verifySnap.exists(), 'data =', verifySnap.val());
+      
+      // Mettre à jour le state local APRÈS la sauvegarde
+      setSelectedMatch(matchData);
+      
     } catch (e) {
       console.error('❌ Erreur sauvegarde match sélectionné:', e);
+      alert('❌ Erreur lors de la sélection du match: ' + e.message);
     }
     
     await loadMatchLineups(match.id);
@@ -431,7 +443,7 @@ export default function App() {
   }, [barId, currentQuestion]);
 
   useEffect(() => {
-  if (!barId) return;
+    if (!barId || screen !== 'tv') return;
     
     const notifRef = ref(db, `bars/${barId}/notifications`);
     const unsub = onValue(notifRef, (snap) => {
