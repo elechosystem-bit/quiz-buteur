@@ -356,12 +356,19 @@ export default function App() {
       const now = Date.now();
       const matchId = `match_${now}`;
       
+      // Créer le match ET le dossier matches en même temps
       await set(ref(db, `bars/${barId}/matchState`), {
         active: true,
         startTime: now,
         nextQuestionTime: now + 60000,
         questionCount: 0,
         currentMatchId: matchId
+      });
+      
+      // Créer la structure matches
+      await set(ref(db, `bars/${barId}/matches/${matchId}/info`), {
+        startedAt: now,
+        status: 'active'
       });
       
       console.log('✅ Match démarré:', matchId);
