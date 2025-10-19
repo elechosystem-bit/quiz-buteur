@@ -59,7 +59,7 @@ const QUESTIONS = [
 
 export default function App() {
   const [screen, setScreen] = useState('barLogin');
-  const [barId, setBarId] = useState(null);
+  const [barId] = useState('default_bar'); // Bar unique par défaut
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -81,15 +81,15 @@ export default function App() {
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
 
-  // Détecter si on arrive via un QR code (URL avec barId)
+  // Charger les infos du bar au démarrage
+  useEffect(() => {
+    loadBarInfo(barId);
+  }, []);
+
+  // Détecter si on arrive via un QR code (URL avec /play)
   useEffect(() => {
     const path = window.location.pathname;
-    const match = path.match(/\/bar\/([^\/]+)/);
-    
-    if (match) {
-      const id = match[1];
-      setBarId(id);
-      loadBarInfo(id);
+    if (path === '/play') {
       setScreen('auth');
     }
   }, []);
@@ -101,12 +101,13 @@ export default function App() {
       if (snap.exists()) {
         setBarInfo(snap.val());
       } else {
-        // Si le bar n'existe pas, le créer
-        await set(barRef, {
-          name: `Bar ${id}`,
+        // Créer le bar par défaut
+        const defaultInfo = {
+          name: "Quiz Buteur Live",
           createdAt: Date.now()
-        });
-        setBarInfo({ name: `Bar ${id}` });
+        };
+        await set(barRef, defaultInfo);
+        setBarInfo(defaultInfo);
       }
     } catch (e) {
       console.error('Erreur chargement bar:', e);
@@ -282,10 +283,6 @@ export default function App() {
   const handleBarLogin = async () => {
     if (!barIdInput.trim()) {
       alert('Entrez le code du bar');
-      return;
-    }
-    if (adminCode !== ADMIN_CODE) {
-      alert('❌ Code admin incorrect !');
       return;
     }
     
@@ -546,49 +543,28 @@ export default function App() {
     );
   };
 
-  // Écran de connexion BAR (Admin)
+  // Page d'accueil simple avec bouton ADMIN
   if (screen === 'barLogin') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
-        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-          <div className="text-center mb-6">
-            <div className="text-6xl mb-4">⚽</div>
-            <h1 className="text-4xl font-black text-green-900 mb-2">QUIZ BUTEUR</h1>
-            <p className="text-gray-600">Connexion Bar - Écran TV</p>
-          </div>
-          
-          <input
-            type="text"
-            value={barIdInput}
-            onChange={(e) => setBarIdInput(e.target.value)}
-            placeholder="Code du bar (ex: le_penalty_paris)"
-            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
-          />
-          
-          <input
-            type="password"
-            value={adminCode}
-            onChange={(e) => setAdminCode(e.target.value)}
-            placeholder="Code admin"
-            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') handleBarLogin();
-            }}
-          />
-          
-          <button 
-            onClick={handleBarLogin}
-            className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800"
-          >
-            📺 ACCÉDER À L'ÉCRAN TV
-          </button>
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
+        <div className="text-center mb-12">
+          <div className="text-8xl mb-6">⚽</div>
+          <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
+          <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
+        
+        <button 
+          onClick={() => setScreen('tv')}
+          className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
+        >
+          🎮 ADMIN
+        </button>
       </div>
     );
   }
 
   // Écran d'authentification JOUEUR
-  if (screen === 'auth' && barId) {
+  if (screen === 'auth') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
@@ -646,13 +622,13 @@ export default function App() {
   }
 
   // Rediriger vers auth si pas connecté
-  if (barId && !user && screen !== 'auth') {
+  if (!user && screen !== 'auth' && screen !== 'barLogin') {
     setScreen('auth');
     return null;
   }
 
   // Écran MOBILE (Joueur)
-  if (screen === 'mobile' && barId && user) {
+  if (screen === 'mobile' && user) {
     const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
     return (
@@ -708,8 +684,8 @@ export default function App() {
   }
 
   // Écran TV (Bar)
-  if (screen === 'tv' && barId) {
-    const qrUrl = `${window.location.origin}/bar/${barId}`;
+  if (screen === 'tv') {
+    const qrUrl = `${window.location.origin}/play`;
     
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
