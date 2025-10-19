@@ -306,6 +306,7 @@ export default function App() {
         matchesPlayed: 0,
         createdAt: Date.now()
       });
+      // Après inscription → TOUJOURS aller sur Mobile (Jouer)
       setScreen('mobile');
     } catch (e) {
       alert('Erreur: ' + e.message);
@@ -319,6 +320,7 @@ export default function App() {
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // Après connexion → TOUJOURS aller sur Mobile (Jouer)
       setScreen('mobile');
     } catch (e) {
       alert('Erreur: ' + e.message);
