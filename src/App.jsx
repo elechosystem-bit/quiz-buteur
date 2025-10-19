@@ -79,6 +79,8 @@ export default function App() {
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
 
+  console.log('🚀 APP DÉMARRÉ - Screen initial:', screen);
+
   const loadBarInfo = async (id) => {
     try {
       const barRef = ref(db, `bars/${id}/info`);
@@ -99,11 +101,15 @@ export default function App() {
   };
 
   useEffect(() => {
+    console.log('📍 Chargement initial - path:', window.location.pathname);
     loadBarInfo(barId);
     
     const path = window.location.pathname;
     if (path === '/play' || path.includes('/play')) {
+      console.log('📱 Redirection vers playJoin');
       setScreen('playJoin');
+    } else {
+      console.log('🏠 Écran home');
     }
   }, [barId]);
 
@@ -698,6 +704,7 @@ export default function App() {
   };
 
   if (screen === 'home') {
+    console.log('🖥️ Affichage écran HOME');
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
@@ -708,13 +715,19 @@ export default function App() {
         
         <div className="flex gap-6">
           <button 
-            onClick={() => setScreen('tv')}
+            onClick={() => {
+              console.log('🖥️ Clic sur TV');
+              setScreen('tv');
+            }}
             className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
           >
             📺 ÉCRAN
           </button>
           <button 
-            onClick={() => setScreen('admin')}
+            onClick={() => {
+              console.log('🎮 Clic sur ADMIN');
+              setScreen('admin');
+            }}
             className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
           >
             🎮 ADMIN
@@ -942,6 +955,9 @@ export default function App() {
   }
 
   if (screen === 'admin') {
+    console.log('🎮 Affichage écran ADMIN');
+    console.log('📊 État actuel - matchState:', matchState, 'currentMatchId:', currentMatchId, 'players:', players.length);
+    
     const debugFirebase = async () => {
       console.log('🔍 === DEBUG FIREBASE ===');
       try {
