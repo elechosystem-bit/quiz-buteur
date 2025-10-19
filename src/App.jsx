@@ -252,51 +252,64 @@ export default function App() {
 
   useEffect(() => {
     const addPlayerToMatch = async () => {
+      // Vérifications détaillées
       if (!user) {
-        console.log('❌ Pas d\'utilisateur connecté');
+        console.log('❌ useEffect addPlayer - Pas d\'utilisateur');
         return;
       }
       if (!barId) {
-        console.log('❌ Pas de barId');
+        console.log('❌ useEffect addPlayer - Pas de barId');
         return;
       }
       if (!currentMatchId) {
-        console.log('❌ Pas de currentMatchId');
+        console.log('❌ useEffect addPlayer - Pas de currentMatchId. matchState:', matchState);
         return;
       }
       if (!userProfile) {
-        console.log('❌ Pas de userProfile');
+        console.log('❌ useEffect addPlayer - Pas de userProfile');
         return;
       }
       if (screen !== 'mobile') {
-        console.log('❌ Pas sur l\'écran mobile, écran actuel:', screen);
-        return;
-      }
-      if (!matchState || !matchState.active) {
-        console.log('❌ Match pas actif');
+        console.log('❌ useEffect addPlayer - Pas sur mobile, screen:', screen);
         return;
       }
 
+      // PAS DE VÉRIFICATION matchState.active - on ajoute le joueur dès qu'il y a un match
+      console.log('✅ Toutes les conditions OK pour ajouter le joueur');
+      console.log('📋 user:', user.uid);
+      console.log('📋 barId:', barId);
+      console.log('📋 currentMatchId:', currentMatchId);
+      console.log('📋 userProfile:', userProfile);
+
       try {
-        console.log('🔍 Tentative d\'ajout du joueur:', userProfile.pseudo, 'au match:', currentMatchId);
+        const playerPath = `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`;
+        console.log('🔍 Vérification du chemin:', playerPath);
         
-        const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`);
+        const playerRef = ref(db, playerPath);
         const playerSnap = await get(playerRef);
+        
+        console.log('🔍 Joueur existe déjà ?', playerSnap.exists());
         
         if (!playerSnap.exists()) {
           console.log('➕ Ajout du joueur dans Firebase...');
-          await set(playerRef, {
+          
+          const newPlayer = {
             pseudo: userProfile.pseudo,
             score: 0,
             joinedAt: Date.now()
-          });
+          };
           
-          console.log('✅ Joueur ajouté avec succès:', userProfile.pseudo);
+          console.log('➕ Données du joueur:', newPlayer);
+          
+          await set(playerRef, newPlayer);
+          console.log('✅ set() terminé');
           
           // Vérification immédiate
+          await new Promise(resolve => setTimeout(resolve, 500));
           const verifySnap = await get(playerRef);
-          console.log('🔍 Vérification:', verifySnap.exists() ? 'OK' : 'ÉCHEC');
+          console.log('🔍 Vérification immédiate - existe:', verifySnap.exists(), 'valeur:', verifySnap.val());
           
+          // Notification
           const notifRef = push(ref(db, `bars/${barId}/notifications`));
           await set(notifRef, {
             type: 'playerJoined',
@@ -304,16 +317,20 @@ export default function App() {
             timestamp: Date.now()
           });
           console.log('✅ Notification envoyée');
+          
+          console.log('🎉🎉🎉 JOUEUR AJOUTÉ AVEC SUCCÈS !');
         } else {
-          console.log('🔄 Joueur déjà présent:', userProfile.pseudo, playerSnap.val());
+          console.log('🔄 Joueur déjà présent:', playerSnap.val());
         }
       } catch (e) {
-        console.error('❌ Erreur ajout joueur:', e);
+        console.error('❌ ERREUR lors de l\'ajout du joueur:', e);
+        console.error('❌ Stack:', e.stack);
       }
     };
     
+    // Appeler la fonction
     addPlayerToMatch();
-  }, [user, barId, currentMatchId, userProfile, screen, matchState]);
+  }, [user, barId, currentMatchId, userProfile, screen]);
 
   useEffect(() => {
     if (!currentQuestion || !currentQuestion.id || !currentQuestion.createdAt) return;
