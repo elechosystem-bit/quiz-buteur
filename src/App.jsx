@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, push, update, remove, get } from 'firebase/database';
+import { getDatabase, ref, onValue, set, update, remove, get } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -59,6 +59,8 @@ const QUESTIONS = [
 
 export default function App() {
   const [screen, setScreen] = useState('home');
+  const [barId, setBarId] = useState(null);
+  const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [currentMatchId, setCurrentMatchId] = useState(null);
@@ -75,9 +77,35 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [adminCode, setAdminCode] = useState('');
   const [isAdminAuth, setIsAdminAuth] = useState(false);
+  const [barIdInput, setBarIdInput] = useState('');
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
+
+  // Détecter le barId dans l'URL
+  useEffect(() => {
+    const path = window.location.pathname;
+    const match = path.match(/\/bar\/([^\/]+)/);
+    if (match) {
+      const id = match[1];
+      setBarId(id);
+      loadBarInfo(id);
+    }
+  }, []);
+
+  const loadBarInfo = async (id) => {
+    try {
+      const barRef = ref(db, `bars/${id}/info`);
+      const snap = await get(barRef);
+      if (snap.exists()) {
+        setBarInfo(snap.val());
+      } else {
+        setBarInfo({ name: "Bar non trouvé" });
+      }
+    } catch (e) {
+      console.error('Erreur chargement bar:', e);
+    }
+  };
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
@@ -96,7 +124,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'matchState'), (snap) => {
+    if (!barId) return;
+    const unsub = onValue(ref(db, `bars/${barId}/matchState`), (snap) => {
       const state = snap.val();
       setMatchState(state);
       if (state?.currentMatchId) {
@@ -104,11 +133,11 @@ export default function App() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [barId]);
 
   useEffect(() => {
-    if (!currentMatchId) return;
-    const unsub = onValue(ref(db, `matches/${currentMatchId}/players`), (snap) => {
+    if (!barId || !currentMatchId) return;
+    const unsub = onValue(ref(db, `bars/${barId}/matches/${currentMatchId}/players`), (snap) => {
       if (snap.exists()) {
         const list = Object.entries(snap.val()).map(([id, p]) => ({ id, ...p }));
         setPlayers(list.sort((a, b) => b.score - a.score));
@@ -117,10 +146,11 @@ export default function App() {
       }
     });
     return () => unsub();
-  }, [currentMatchId]);
+  }, [barId, currentMatchId]);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'currentQuestion'), (snap) => {
+    if (!barId) return;
+    const unsub = onValue(ref(db, `bars/${barId}/currentQuestion`), (snap) => {
       const data = snap.val();
       if (data && data.text && data.options && Array.isArray(data.options)) {
         setCurrentQuestion(data);
@@ -131,14 +161,14 @@ export default function App() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [barId]);
 
   useEffect(() => {
-    if (!currentQuestion) {
+    if (!barId || !currentQuestion) {
       setAnswers({});
       return;
     }
-    const unsub = onValue(ref(db, `answers/${currentQuestion.id}`), (snap) => {
+    const unsub = onValue(ref(db, `bars/${barId}/answers/${currentQuestion.id}`), (snap) => {
       const count = {};
       if (snap.exists()) {
         Object.values(snap.val()).forEach(a => {
@@ -148,13 +178,13 @@ export default function App() {
       setAnswers(count);
     });
     return () => unsub();
-  }, [currentQuestion?.id]);
+  }, [barId, currentQuestion?.id]);
 
   useEffect(() => {
     const addPlayerToMatch = async () => {
-      if (user && currentMatchId && userProfile && screen === 'mobile') {
+      if (user && barId && currentMatchId && userProfile && screen === 'mobile') {
         try {
-          const playerRef = ref(db, `matches/${currentMatchId}/players/${user.uid}`);
+          const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`);
           const playerSnap = await get(playerRef);
           
           if (!playerSnap.exists()) {
@@ -163,7 +193,7 @@ export default function App() {
               score: 0,
               joinedAt: Date.now()
             });
-            console.log('✅ Joueur ajouté au match:', userProfile.pseudo);
+            console.log('✅ Joueur ajouté au match du bar:', barId, userProfile.pseudo);
           }
         } catch (e) {
           console.error('Erreur ajout joueur:', e);
@@ -172,7 +202,7 @@ export default function App() {
     };
     
     addPlayerToMatch();
-  }, [user, currentMatchId, userProfile, screen]);
+  }, [user, barId, currentMatchId, userProfile, screen]);
 
   useEffect(() => {
     if (!currentQuestion?.id || !currentQuestion?.createdAt) return;
@@ -215,7 +245,7 @@ export default function App() {
   }, [matchState?.nextQuestionTime]);
 
   useEffect(() => {
-    if (!matchState?.active) {
+    if (!barId || !matchState?.active) {
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
         nextQuestionTimer.current = null;
@@ -241,7 +271,7 @@ export default function App() {
         clearInterval(nextQuestionTimer.current);
       }
     };
-  }, [matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
+  }, [barId, matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
 
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
@@ -281,14 +311,21 @@ export default function App() {
     setScreen('home');
   };
 
+  const joinBar = () => {
+    if (!barIdInput.trim()) {
+      alert('Entrez le code du bar');
+      return;
+    }
+    window.location.href = `/bar/${barIdInput.trim()}`;
+  };
+
   const startMatch = async () => {
+    if (!barId) return;
     try {
-      // ✅ Nettoyer AVANT de créer un nouveau match
-      await remove(ref(db, 'matchState'));
-      await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, 'answers'));
+      await remove(ref(db, `bars/${barId}/matchState`));
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/answers`));
       
-      // Reset les refs locales
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
       if (nextQuestionTimer.current) {
@@ -296,19 +333,18 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      // Créer le nouveau match
       const now = Date.now();
       const matchId = `match_${now}`;
       
-      await set(ref(db, 'matchState'), {
+      await set(ref(db, `bars/${barId}/matchState`), {
         active: true,
         startTime: now,
-        nextQuestionTime: now + 60000, // Première question dans 1 minute
+        nextQuestionTime: now + 60000,
         questionCount: 0,
         currentMatchId: matchId
       });
       
-      console.log('✅ Nouveau match créé:', matchId);
+      console.log('✅ Nouveau match créé pour', barId, ':', matchId);
     } catch (e) {
       console.error('Erreur:', e);
       alert('Erreur lors du démarrage: ' + e.message);
@@ -316,9 +352,10 @@ export default function App() {
   };
 
   const stopMatch = async () => {
+    if (!barId) return;
     try {
       if (currentMatchId && matchState?.active) {
-        const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
+        const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
         if (playersSnap.exists()) {
           for (const [userId, playerData] of Object.entries(playersSnap.val())) {
             const userSnap = await get(ref(db, `users/${userId}`));
@@ -333,14 +370,12 @@ export default function App() {
         }
       }
       
-      // ✅ FIX : Nettoyer TOUT proprement
-      await remove(ref(db, 'matchState'));
-      await remove(ref(db, 'currentQuestion'));
+      await remove(ref(db, `bars/${barId}/matchState`));
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
       if (currentMatchId) {
-        await remove(ref(db, `answers`));
+        await remove(ref(db, `bars/${barId}/answers`));
       }
       
-      // Reset les refs
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
       if (nextQuestionTimer.current) {
@@ -348,22 +383,22 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      console.log('✅ Match arrêté et nettoyé');
+      console.log('✅ Match arrêté et nettoyé pour', barId);
     } catch (e) {
       console.error('Erreur:', e);
     }
   };
 
   const resetMatchScores = async () => {
-    if (!window.confirm('⚠️ Remettre à 0 tous les scores du match en cours ?')) {
+    if (!barId || !window.confirm('⚠️ Remettre à 0 tous les scores du match en cours ?')) {
       return;
     }
     try {
       if (currentMatchId) {
-        const playersSnap = await get(ref(db, `matches/${currentMatchId}/players`));
+        const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
         if (playersSnap.exists()) {
           for (const userId of Object.keys(playersSnap.val())) {
-            await update(ref(db, `matches/${currentMatchId}/players/${userId}`), {
+            await update(ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`), {
               score: 0
             });
           }
@@ -396,11 +431,11 @@ export default function App() {
   };
 
   const createRandomQuestion = async () => {
-    if (isProcessingRef.current) return;
+    if (!barId || isProcessingRef.current) return;
     isProcessingRef.current = true;
 
     try {
-      const existingQ = await get(ref(db, 'currentQuestion'));
+      const existingQ = await get(ref(db, `bars/${barId}/currentQuestion`));
       if (existingQ.exists() && existingQ.val()?.text) {
         isProcessingRef.current = false;
         return;
@@ -421,7 +456,7 @@ export default function App() {
       const qId = Date.now().toString();
       usedQuestionsRef.current.push(randomQ.text);
       
-      await set(ref(db, 'currentQuestion'), {
+      await set(ref(db, `bars/${barId}/currentQuestion`), {
         id: qId,
         text: randomQ.text,
         options: randomQ.options,
@@ -430,7 +465,7 @@ export default function App() {
       });
 
       if (matchState?.active) {
-        await update(ref(db, 'matchState'), {
+        await update(ref(db, `bars/${barId}/matchState`), {
           questionCount: (matchState.questionCount || 0) + 1
         });
       }
@@ -443,19 +478,19 @@ export default function App() {
   };
 
   const autoValidate = async () => {
-    if (!currentQuestion || !currentQuestion.options || isProcessingRef.current) return;
+    if (!barId || !currentQuestion || !currentQuestion.options || isProcessingRef.current) return;
     
     isProcessingRef.current = true;
     const questionId = currentQuestion.id;
     
     try {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
-      const answersSnap = await get(ref(db, `answers/${questionId}`));
+      const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
       
       if (answersSnap.exists() && currentMatchId) {
         for (const [userId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
-            const playerRef = ref(db, `matches/${currentMatchId}/players/${userId}`);
+            const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
             const playerSnap = await get(playerRef);
             const bonus = Math.floor((data.timeLeft || 0) / 5);
             const total = 10 + bonus;
@@ -477,12 +512,12 @@ export default function App() {
         }
       }
 
-      await remove(ref(db, 'currentQuestion'));
-      await remove(ref(db, `answers/${questionId}`));
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/answers/${questionId}`));
       
       if (matchState?.active) {
         const nextTime = Date.now() + QUESTION_INTERVAL;
-        await update(ref(db, 'matchState'), {
+        await update(ref(db, `bars/${barId}/matchState`), {
           nextQuestionTime: nextTime
         });
       }
@@ -497,10 +532,10 @@ export default function App() {
   };
 
   const handleAnswer = async (answer) => {
-    if (!currentQuestion || playerAnswer || !user) return;
+    if (!barId || !currentQuestion || playerAnswer || !user) return;
     try {
       setPlayerAnswer(answer);
-      await set(ref(db, `answers/${currentQuestion.id}/${user.uid}`), {
+      await set(ref(db, `bars/${barId}/answers/${currentQuestion.id}/${user.uid}`), {
         answer,
         timestamp: Date.now(),
         timeLeft
@@ -548,15 +583,22 @@ export default function App() {
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
-        <div className="flex gap-6">
-          <button onClick={() => setScreen('auth')} className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl">
+        
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl mb-6">
+          <h2 className="text-2xl font-bold text-green-900 mb-4 text-center">Rejoindre un bar</h2>
+          <input
+            type="text"
+            value={barIdInput}
+            onChange={(e) => setBarIdInput(e.target.value)}
+            placeholder="Code du bar (ex: le_penalty_paris)"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
+          />
+          <button onClick={joinBar} className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800">
             📱 JOUER
           </button>
-          <button onClick={() => setScreen('tv')} className="bg-green-800 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-700 transition-all shadow-2xl border-4 border-white">
-            📺 ÉCRAN BAR
-          </button>
         </div>
-        <div className="mt-12">
+
+        <div className="mt-4">
           <button onClick={() => setScreen('admin')} className="text-white opacity-50 hover:opacity-100 text-sm">
             Admin
           </button>
@@ -565,13 +607,33 @@ export default function App() {
     );
   }
 
-  if (screen === 'auth') {
+  if (!barId && screen !== 'home' && screen !== 'admin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-900 to-red-700 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl p-8 text-center">
+          <div className="text-6xl mb-4">❌</div>
+          <h2 className="text-2xl font-bold text-red-900 mb-4">Bar non trouvé</h2>
+          <p className="text-gray-600 mb-6">Veuillez scanner un QR code valide</p>
+          <button onClick={() => setScreen('home')} className="bg-red-900 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-800">
+            ← Retour
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'auth' && barId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-          <h2 className="text-3xl font-bold text-green-900 mb-6 text-center">
+          <div className="text-center mb-6">
+            <div className="text-4xl mb-2">🏆</div>
+            <h2 className="text-2xl font-bold text-green-900">{barInfo?.name || 'Chargement...'}</h2>
+          </div>
+
+          <h3 className="text-xl font-bold text-green-900 mb-6 text-center">
             {authMode === 'login' ? 'Connexion' : 'Inscription'}
-          </h2>
+          </h3>
           
           {authMode === 'signup' && (
             <input
@@ -617,25 +679,26 @@ export default function App() {
             onClick={() => setScreen('home')}
             className="w-full text-gray-500 py-2 text-sm mt-2"
           >
-            ← Retour
+            ← Changer de bar
           </button>
         </div>
       </div>
     );
   }
 
-  if (screen === 'mobile') {
-    if (!user) {
-      setScreen('auth');
-      return null;
-    }
+  if (barId && !user) {
+    setScreen('auth');
+    return null;
+  }
 
+  if (screen === 'mobile' && barId) {
     const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
         <div className="max-w-md mx-auto">
           <div className="bg-white rounded-2xl p-6 mb-6 text-center">
+            <div className="text-sm text-gray-500">{barInfo?.name}</div>
             <div className="text-green-700 text-lg font-semibold">{userProfile?.pseudo}</div>
             <div className="text-4xl font-black text-green-900">{myScore} pts</div>
             <div className="text-sm text-gray-500 mt-2">Total: {userProfile?.totalPoints || 0} pts</div>
@@ -683,13 +746,13 @@ export default function App() {
     );
   }
 
-  if (screen === 'tv') {
+  if (screen === 'tv' && barId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
-            <p className="text-2xl text-green-300">Le Penalty - Paris 11e</p>
+            <p className="text-2xl text-green-300">{barInfo?.name || 'Chargement...'}</p>
             {matchState?.active && !currentQuestion && countdown && (
               <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
             )}
@@ -697,7 +760,7 @@ export default function App() {
           <div className="flex gap-6">
             <MatchClock />
             <div className="bg-white p-6 rounded-2xl">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://quiz-buteur.vercel.app" alt="QR" className="w-48 h-48" />
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/bar/' + barId)}`} alt="QR" className="w-48 h-48" />
               <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
             </div>
           </div>
@@ -736,25 +799,38 @@ export default function App() {
       return (
         <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-8">
           <div className="bg-gray-800 rounded-3xl p-8 max-w-md w-full">
-            <h2 className="text-3xl font-bold mb-6 text-center">🔒 Code Admin</h2>
+            <h2 className="text-3xl font-bold mb-6 text-center">🔒 Admin</h2>
+            
+            <input
+              type="text"
+              value={barIdInput}
+              onChange={(e) => setBarIdInput(e.target.value)}
+              placeholder="Code du bar"
+              className="w-full px-6 py-4 text-xl bg-gray-700 text-white rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            
             <input
               type="password"
               value={adminCode}
               onChange={(e) => setAdminCode(e.target.value)}
-              placeholder="Code à 4 chiffres"
+              placeholder="Code admin"
               className="w-full px-6 py-4 text-xl bg-gray-700 text-white rounded-xl mb-6 focus:outline-none focus:ring-2 focus:ring-green-500"
               onKeyPress={(e) => {
-                if (e.key === 'Enter' && adminCode === ADMIN_CODE) {
+                if (e.key === 'Enter' && adminCode === ADMIN_CODE && barIdInput) {
+                  setBarId(barIdInput);
+                  loadBarInfo(barIdInput);
                   setIsAdminAuth(true);
                 }
               }}
             />
             <button
               onClick={() => {
-                if (adminCode === ADMIN_CODE) {
+                if (adminCode === ADMIN_CODE && barIdInput) {
+                  setBarId(barIdInput);
+                  loadBarInfo(barIdInput);
                   setIsAdminAuth(true);
                 } else {
-                  alert('❌ Code incorrect !');
+                  alert('❌ Code incorrect ou bar manquant !');
                 }
               }}
               className="w-full bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
@@ -775,7 +851,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin</h1>
+          <h1 className="text-4xl font-bold mb-2">🎮 Admin</h1>
+          <p className="text-xl text-gray-400 mb-8">Bar: {barInfo?.name || barId}</p>
           
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
@@ -879,13 +956,21 @@ export default function App() {
           <button onClick={() => setScreen('home')} className="mt-6 bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600 mr-4">
             ← Retour
           </button>
-          <button onClick={() => setScreen('tv')} className="mt-6 bg-blue-600 px-6 py-3 rounded-lg hover:bg-blue-700">
+          <button onClick={() => { window.location.href = `/bar/${barId}?screen=tv`; setScreen('tv'); }} className="mt-6 bg-blue-600 px-6 py-3 rounded-lg hover:bg-blue-700">
             📺 Voir écran TV
           </button>
         </div>
       </div>
     );
   }
+
+  // Détecter le paramètre ?screen=tv dans l'URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('screen') === 'tv' && barId) {
+      setScreen('tv');
+    }
+  }, [barId]);
 
   return null;
 }
