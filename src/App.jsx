@@ -164,7 +164,6 @@ export default function App() {
     setSelectedMatch(match);
     console.log('⚽ Match sélectionné:', match);
     
-    // Configurer l'horloge du match
     if (match.elapsed !== undefined) {
       setMatchElapsedMinutes(match.elapsed);
       setMatchStartTime(Date.now() - (match.elapsed * 60000));
@@ -172,7 +171,6 @@ export default function App() {
       console.log('⏱️ Temps du match configuré:', match.elapsed, 'min -', match.half);
     }
     
-    // Récupérer les compositions d'équipes
     await loadMatchLineups(match.id);
   };
 
@@ -203,7 +201,6 @@ export default function App() {
       if (data.response && data.response.length > 0) {
         const allPlayers = [];
         
-        // Extraire les joueurs des 2 équipes
         data.response.forEach(team => {
           if (team.startXI && Array.isArray(team.startXI)) {
             team.startXI.forEach(playerObj => {
@@ -617,15 +614,22 @@ export default function App() {
     window.location.href = '/';
   };
 
+  // 🔧 FONCTION startMatch CORRIGÉE
   const startMatch = async () => {
-    if (!barId) return;
+    if (!barId) {
+      alert('❌ Erreur: Pas de barId');
+      return;
+    }
     
-    console.log('🎬 DÉMARRAGE DU MATCH...');
+    console.log('🎬 === DÉMARRAGE DU MATCH ===');
+    console.log('📌 selectedMatch:', selectedMatch);
+    console.log('📌 matchPlayers:', matchPlayers.length);
     
     try {
+      // 1️⃣ NETTOYAGE
       const allMatchesSnap = await get(ref(db, `bars/${barId}/matches`));
       if (allMatchesSnap.exists()) {
-        console.log('🗑️ Suppression de tous les anciens matchs...');
+        console.log('🗑️ Suppression anciens matchs...');
         await remove(ref(db, `bars/${barId}/matches`));
       }
       
@@ -643,35 +647,82 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      console.log('⏳ Attente de synchronisation Firebase (2 secondes)...');
+      // 2️⃣ ATTENTE SYNC FIREBASE
+      console.log('⏳ Attente synchronisation (2s)...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
+      // 3️⃣ CRÉATION MATCH ID
       const now = Date.now();
       const matchId = `match_${now}`;
-      console.log('✨ Création du nouveau match:', matchId);
+      console.log('✨ Nouveau match:', matchId);
       
+      // 4️⃣ CONSTRUCTION matchInfo
+      let matchInfo = null;
+      let matchClock = null;
+      
+      if (selectedMatch) {
+        // ✅ MATCH RÉEL
+        console.log('⚽ Match réel détecté');
+        
+        matchInfo = {
+          matchName: `${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}`,
+          homeTeam: selectedMatch.homeTeam,
+          awayTeam: selectedMatch.awayTeam,
+          score: selectedMatch.score || '0-0',
+          league: selectedMatch.league || 'Ligue inconnue',
+          status: selectedMatch.status || 'En cours'
+        };
+        
+        // Horloge du match réel
+        const elapsed = selectedMatch.elapsed || 0;
+        const half = selectedMatch.half || '1H';
+        
+        matchClock = {
+          startTime: matchStartTime || Date.now(),
+          elapsedMinutes: elapsed,
+          half: half
+        };
+        
+        console.log('✅ matchInfo créé:', matchInfo);
+        console.log('⏱️ matchClock créé:', matchClock);
+        
+      } else {
+        // ⚙️ MATCH TEST
+        console.log('⚙️ Mode test (pas de match sélectionné)');
+        
+        matchInfo = {
+          matchName: "Match Test",
+          homeTeam: "Équipe A",
+          awayTeam: "Équipe B",
+          score: "0-0",
+          league: "Test League",
+          status: "1H"
+        };
+        
+        matchClock = {
+          startTime: Date.now(),
+          elapsedMinutes: 0,
+          half: '1H'
+        };
+        
+        console.log('✅ Match test créé');
+      }
+      
+      // 5️⃣ ÉCRITURE MATCHSTATE
       const newMatchState = {
         active: true,
         startTime: now,
-        nextQuestionTime: now + 60000,
+        nextQuestionTime: now + 60000, // 1 minute
         questionCount: 0,
         currentMatchId: matchId,
-        matchInfo: selectedMatch ? {
-          homeTeam: selectedMatch.homeTeam,
-          awayTeam: selectedMatch.awayTeam,
-          league: selectedMatch.league,
-          score: selectedMatch.score
-        } : null,
-        matchClock: {
-          startTime: matchStartTime,
-          elapsedMinutes: matchElapsedMinutes,
-          half: matchHalf
-        }
+        matchInfo: matchInfo,           // ← TOUJOURS présent
+        matchClock: matchClock          // ← TOUJOURS présent
       };
       
+      console.log('💾 Écriture matchState:', newMatchState);
       await set(ref(db, `bars/${barId}/matchState`), newMatchState);
-      console.log('✅ matchState créé:', newMatchState);
       
+      // 6️⃣ CRÉATION STRUCTURE MATCH
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const newMatch = {
@@ -679,31 +730,52 @@ export default function App() {
           startedAt: now,
           status: 'active'
         },
-        players: {}
+        players: {},
+        realPlayers: matchPlayers.length > 0 ? matchPlayers : null
       };
       
       await set(ref(db, `bars/${barId}/matches/${matchId}`), newMatch);
       console.log('✅ Structure match créée');
       
+      // 7️⃣ VÉRIFICATION
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const verifyState = await get(ref(db, `bars/${barId}/matchState`));
-      console.log('🔍 Vérification matchState:', verifyState.exists(), verifyState.val());
-      
       const verifyMatch = await get(ref(db, `bars/${barId}/matches/${matchId}`));
-      console.log('🔍 Vérification match:', verifyMatch.exists(), verifyMatch.val());
+      
+      console.log('🔍 Vérification matchState:', {
+        exists: verifyState.exists(),
+        value: verifyState.val()
+      });
+      
+      console.log('🔍 Vérification match:', {
+        exists: verifyMatch.exists(),
+        value: verifyMatch.val()
+      });
       
       if (verifyState.exists() && verifyMatch.exists()) {
+        const stateData = verifyState.val();
+        
         console.log('✅✅✅ MATCH DÉMARRÉ AVEC SUCCÈS !');
-        console.log('📋 Match ID:', matchId);
-        alert('✅ Match démarré avec succès !\n\nID: ' + matchId + '\n\nLes joueurs peuvent maintenant rejoindre.');
+        console.log('📊 matchInfo présent ?', !!stateData.matchInfo);
+        console.log('⏱️ matchClock présent ?', !!stateData.matchClock);
+        
+        alert(`✅ Match démarré avec succès !
+
+📋 ID: ${matchId}
+⚽ Match: ${stateData.matchInfo?.matchName || 'Test'}
+👥 ${matchPlayers.length} joueurs disponibles
+
+Les joueurs peuvent maintenant rejoindre !`);
+        
       } else {
-        throw new Error('La vérification a échoué');
+        throw new Error('Vérification échouée');
       }
       
     } catch (e) {
       console.error('❌ ERREUR CRITIQUE:', e);
-      alert('❌ Erreur lors du démarrage: ' + e.message);
+      console.error('Stack:', e.stack);
+      alert(`❌ Erreur : ${e.message}`);
     }
   };
 
@@ -765,18 +837,16 @@ export default function App() {
 
       let questionToUse;
       
-      // Si on a des joueurs du match, créer des questions dynamiques
       if (matchPlayers.length >= 4) {
         console.log('🎲 Génération de question avec joueurs réels');
         
-        // Sélectionner 4 joueurs aléatoires
         const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
         const selectedPlayers = shuffled.slice(0, 4);
         
         const questionTypes = [
           {
             text: "Qui va marquer le prochain but ?",
-            options: selectedPlayers.map(p => p.name.split(' ').pop()) // Nom de famille
+            options: selectedPlayers.map(p => p.name.split(' ').pop())
           },
           {
             text: "Quel joueur va faire la prochaine passe décisive ?",
@@ -795,7 +865,6 @@ export default function App() {
         questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
         console.log('✅ Question créée:', questionToUse);
       } else {
-        // Sinon utiliser les questions par défaut
         console.log('📋 Utilisation des questions par défaut');
         const availableQuestions = QUESTIONS.filter(q => 
           !usedQuestionsRef.current.includes(q.text)
@@ -977,19 +1046,16 @@ export default function App() {
     
     useEffect(() => {
       const updateTime = () => {
-        // Utiliser les données du matchState si disponibles
         const clockStartTime = matchState?.matchClock?.startTime || matchStartTime;
         const clockHalf = matchState?.matchClock?.half || matchHalf;
         
         if (clockStartTime) {
-          // Calculer le temps écoulé depuis le début du match
           const elapsed = Math.floor((Date.now() - clockStartTime) / 60000);
           const mins = Math.min(elapsed, 90);
           const secs = Math.floor((Date.now() - clockStartTime) / 1000) % 60;
           
           setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
           
-          // Déterminer la phase
           if (clockHalf === 'HT') {
             setPhase('MI-TEMPS');
           } else if (clockHalf === 'FT') {
@@ -1000,7 +1066,6 @@ export default function App() {
             setPhase('1MT');
           }
         } else {
-          // Mode démo si pas de match sélectionné
           const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
           const secs = Math.floor((Date.now() / 1000) % 60);
           setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
@@ -1202,11 +1267,11 @@ export default function App() {
   if (screen === 'tv') {
     const qrUrl = `${window.location.origin}/play`;
     
-    // Infos du match depuis matchState
     const matchInfo = matchState?.matchInfo;
     const hasMatchInfo = matchInfo && matchInfo.homeTeam && matchInfo.awayTeam;
     
     console.log('📺 Écran TV - matchInfo:', matchInfo);
+    console.log('📺 hasMatchInfo:', hasMatchInfo);
     
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
