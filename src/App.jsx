@@ -32,7 +32,6 @@ if (screen === 'tv') {
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             
-            {/* 🎯 AFFICHAGE CONDITIONNEL AMÉLIORÉ */}
             {hasMatchInfo ? (
               <div className="mb-3 bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-4 rounded-xl border-2 border-blue-500">
                 <p className="text-4xl font-bold text-yellow-400">
@@ -70,3 +69,39 @@ if (screen === 'tv') {
             </div>
           </div>
         </div>
+
+        <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
+          <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
+            <div className="col-span-1">#</div>
+            <div className="col-span-7">JOUEUR</div>
+            <div className="col-span-4 text-right">SCORE</div>
+          </div>
+          <div className="space-y-1">
+            {players.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-4xl mb-4">👥</div>
+                <p className="text-xl">En attente de joueurs...</p>
+                <p className="text-sm mt-2">Scannez le QR code pour rejoindre !</p>
+              </div>
+            ) : (
+              players.slice(0, 16).map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
+                    i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                    : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                    : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : 'bg-gray-50 text-lg'
+                  }`}
+                >
+                  <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
+                  <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
+                  <div className="col-span-4 text-right font-black">{p.score} pts</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
