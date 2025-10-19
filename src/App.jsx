@@ -655,7 +655,18 @@ export default function App() {
         startTime: now,
         nextQuestionTime: now + 60000,
         questionCount: 0,
-        currentMatchId: matchId
+        currentMatchId: matchId,
+        matchInfo: selectedMatch ? {
+          homeTeam: selectedMatch.homeTeam,
+          awayTeam: selectedMatch.awayTeam,
+          league: selectedMatch.league,
+          score: selectedMatch.score
+        } : null,
+        matchClock: {
+          startTime: matchStartTime,
+          elapsedMinutes: matchElapsedMinutes,
+          half: matchHalf
+        }
       };
       
       await set(ref(db, `bars/${barId}/matchState`), newMatchState);
@@ -966,20 +977,24 @@ export default function App() {
     
     useEffect(() => {
       const updateTime = () => {
-        if (matchStartTime) {
+        // Utiliser les données du matchState si disponibles
+        const clockStartTime = matchState?.matchClock?.startTime || matchStartTime;
+        const clockHalf = matchState?.matchClock?.half || matchHalf;
+        
+        if (clockStartTime) {
           // Calculer le temps écoulé depuis le début du match
-          const elapsed = Math.floor((Date.now() - matchStartTime) / 60000);
+          const elapsed = Math.floor((Date.now() - clockStartTime) / 60000);
           const mins = Math.min(elapsed, 90);
-          const secs = Math.floor((Date.now() - matchStartTime) / 1000) % 60;
+          const secs = Math.floor((Date.now() - clockStartTime) / 1000) % 60;
           
           setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
           
           // Déterminer la phase
-          if (matchHalf === 'HT') {
+          if (clockHalf === 'HT') {
             setPhase('MI-TEMPS');
-          } else if (matchHalf === 'FT') {
+          } else if (clockHalf === 'FT') {
             setPhase('TERMINÉ');
-          } else if (mins >= 45) {
+          } else if (mins >= 45 && clockHalf !== '1H') {
             setPhase('2MT');
           } else {
             setPhase('1MT');
@@ -996,7 +1011,7 @@ export default function App() {
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchStartTime, matchHalf]);
+    }, [matchStartTime, matchHalf, matchState]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
@@ -1204,7 +1219,16 @@ export default function App() {
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
-            <p className="text-2xl text-green-300">{barInfo ? barInfo.name : 'Quiz Buteur Live'}</p>
+            {matchState?.matchInfo ? (
+              <div className="mb-3">
+                <p className="text-3xl font-bold text-yellow-400">
+                  {matchState.matchInfo.homeTeam} <span className="text-white">{matchState.matchInfo.score}</span> {matchState.matchInfo.awayTeam}
+                </p>
+                <p className="text-lg text-green-300">{matchState.matchInfo.league}</p>
+              </div>
+            ) : (
+              <p className="text-2xl text-green-300">{barInfo ? barInfo.name : 'Quiz Buteur Live'}</p>
+            )}
             {matchState && matchState.active && countdown && (
               <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
             )}
