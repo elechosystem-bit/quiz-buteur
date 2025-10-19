@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, remove, get } from 'firebase/database';
+import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -98,26 +98,6 @@ export default function App() {
     }
   };
 
-  // Écouter les notifications en temps réel
-  useEffect(() => {
-    if (!barId || screen !== 'tv') return;
-    
-    const notifRef = ref(db, `bars/${barId}/lastNotification`);
-    const unsub = onValue(notifRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
-        if (data.timestamp > Date.now() - 6000) { // Moins de 6 secondes
-          setNotification(data);
-          
-          setTimeout(() => {
-            setNotification(null);
-          }, 5000);
-        }
-      }
-    });
-    return () => unsub();
-  }, [barId, screen]);
-
   useEffect(() => {
     loadBarInfo(barId);
     
@@ -150,6 +130,8 @@ export default function App() {
       setMatchState(state);
       if (state?.currentMatchId) {
         setCurrentMatchId(state.currentMatchId);
+      } else {
+        setCurrentMatchId(null);
       }
     });
     return () => unsub();
@@ -200,6 +182,38 @@ export default function App() {
     return () => unsub();
   }, [barId, currentQuestion?.id]);
 
+  // Écouter les notifications en temps réel sur l'écran TV
+  useEffect(() => {
+    if (!barId || screen !== 'tv') return;
+    
+    const notifRef = ref(db, `bars/${barId}/notifications`);
+    const unsub = onValue(notifRef, (snap) => {
+      if (snap.exists()) {
+        const notifs = Object.entries(snap.val());
+        if (notifs.length > 0) {
+          const latest = notifs[notifs.length - 1];
+          const [key, data] = latest;
+          
+          // Vérifier si c'est récent (moins de 6 secondes)
+          if (Date.now() - data.timestamp < 6000) {
+            setNotification(data);
+            
+            // Masquer après 5 secondes
+            setTimeout(() => {
+              setNotification(null);
+            }, 5000);
+            
+            // Supprimer après 10 secondes
+            setTimeout(() => {
+              remove(ref(db, `bars/${barId}/notifications/${key}`));
+            }, 10000);
+          }
+        }
+      }
+    });
+    return () => unsub();
+  }, [barId, screen]);
+
   useEffect(() => {
     const addPlayerToMatch = async () => {
       if (user && barId && currentMatchId && userProfile && screen === 'mobile') {
@@ -208,35 +222,26 @@ export default function App() {
           const playerSnap = await get(playerRef);
           
           if (!playerSnap.exists()) {
-            // S'assurer que la structure existe avant d'ajouter le joueur
+            // Ajouter le joueur
             await set(playerRef, {
               pseudo: userProfile.pseudo,
               score: 0,
               joinedAt: Date.now()
             });
             
-            console.log('✅ Joueur ajouté au match:', currentMatchId, userProfile.pseudo);
+            console.log('✅ Joueur ajouté:', userProfile.pseudo);
             
-            // Notification push sur l'écran TV
-            await set(ref(db, `bars/${barId}/lastNotification`), {
+            // Notification push
+            const notifRef = push(ref(db, `bars/${barId}/notifications`));
+            await set(notifRef, {
               type: 'playerJoined',
               pseudo: userProfile.pseudo,
               timestamp: Date.now()
             });
-          } else {
-            console.log('ℹ️ Joueur déjà dans le match:', userProfile.pseudo);
           }
         } catch (e) {
           console.error('❌ Erreur ajout joueur:', e);
         }
-      } else {
-        console.log('⚠️ Conditions non remplies:', {
-          user: !!user,
-          barId: !!barId,
-          currentMatchId: !!currentMatchId,
-          userProfile: !!userProfile,
-          screen
-        });
       }
     };
     
@@ -353,9 +358,11 @@ export default function App() {
   const startMatch = async () => {
     if (!barId) return;
     try {
+      // Nettoyer complètement l'ancien match
       await remove(ref(db, `bars/${barId}/matchState`));
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers`));
+      await remove(ref(db, `bars/${barId}/notifications`));
       
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
@@ -367,7 +374,7 @@ export default function App() {
       const now = Date.now();
       const matchId = `match_${now}`;
       
-      // Créer le match ET le dossier matches en même temps
+      // Créer le nouveau match avec toute la structure
       await set(ref(db, `bars/${barId}/matchState`), {
         active: true,
         startTime: now,
@@ -376,13 +383,14 @@ export default function App() {
         currentMatchId: matchId
       });
       
-      // Créer la structure matches
+      // Créer la structure matches/[matchId]
       await set(ref(db, `bars/${barId}/matches/${matchId}/info`), {
         startedAt: now,
         status: 'active'
       });
       
       console.log('✅ Match démarré:', matchId);
+      alert('✅ Match démarré !');
     } catch (e) {
       console.error('Erreur:', e);
       alert('Erreur: ' + e.message);
@@ -408,9 +416,11 @@ export default function App() {
         }
       }
       
+      // Nettoyage complet
       await remove(ref(db, `bars/${barId}/matchState`));
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers`));
+      await remove(ref(db, `bars/${barId}/notifications`));
       
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
@@ -420,6 +430,7 @@ export default function App() {
       }
       
       console.log('✅ Match arrêté');
+      alert('✅ Match arrêté !');
     } catch (e) {
       console.error('Erreur:', e);
     }
@@ -570,7 +581,6 @@ export default function App() {
     );
   };
 
-  // HOME avec 2 boutons
   if (screen === 'home') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
@@ -598,7 +608,6 @@ export default function App() {
     );
   }
 
-  // Page "JOUER" (client scanne QR)
   if (screen === 'playJoin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
@@ -618,7 +627,6 @@ export default function App() {
     );
   }
 
-  // AUTH
   if (screen === 'auth') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
@@ -676,13 +684,11 @@ export default function App() {
     );
   }
 
-  // Redirection si pas connecté en mode mobile
   if (!user && screen === 'mobile') {
     setScreen('auth');
     return null;
   }
 
-  // MOBILE (Joueur)
   if (screen === 'mobile' && user) {
     const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
@@ -731,6 +737,9 @@ export default function App() {
               {matchState?.active && countdown && (
                 <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
               )}
+              {!matchState?.active && (
+                <p className="text-lg text-gray-500">En attente du démarrage du match</p>
+              )}
             </div>
           )}
         </div>
@@ -738,13 +747,11 @@ export default function App() {
     );
   }
 
-  // ÉCRAN TV
   if (screen === 'tv') {
     const qrUrl = `${window.location.origin}/play`;
     
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
-        {/* Notification push */}
         {notification && (
           <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
             <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-8 py-6 rounded-2xl shadow-2xl flex items-center gap-4">
@@ -763,6 +770,9 @@ export default function App() {
             <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             {matchState?.active && countdown && (
               <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
+            )}
+            {!matchState?.active && (
+              <p className="text-gray-300 mt-2">Le match n'est pas démarré</p>
             )}
           </div>
           <div className="flex gap-6">
@@ -814,7 +824,6 @@ export default function App() {
     );
   }
 
-  // ADMIN
   if (screen === 'admin') {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -838,6 +847,7 @@ export default function App() {
             ) : (
               <div>
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
+                <p className="text-lg mb-2">Match ID: {currentMatchId}</p>
                 <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
                 {currentQuestion?.text ? (
                   <div className="mb-4">
