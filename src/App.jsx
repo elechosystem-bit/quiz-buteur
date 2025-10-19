@@ -56,6 +56,9 @@ export default function App() {
   const [availableMatches, setAvailableMatches] = useState([]);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [loadingMatches, setLoadingMatches] = useState(false);
+  const [matchStartTime, setMatchStartTime] = useState(null);
+  const [matchElapsedMinutes, setMatchElapsedMinutes] = useState(0);
+  const [matchHalf, setMatchHalf] = useState('1H');
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -138,7 +141,9 @@ export default function App() {
           league: fixture.league.name,
           date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
           status: fixture.fixture.status.long,
-          score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+          score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
+          elapsed: fixture.fixture.status.elapsed || 0,
+          half: fixture.fixture.status.short
         }));
 
         setAvailableMatches(matches);
@@ -156,6 +161,14 @@ export default function App() {
   const selectMatch = (match) => {
     setSelectedMatch(match);
     console.log('⚽ Match sélectionné:', match);
+    
+    // Configurer l'horloge du match
+    if (match.elapsed !== undefined) {
+      setMatchElapsedMinutes(match.elapsed);
+      setMatchStartTime(Date.now() - (match.elapsed * 60000));
+      setMatchHalf(match.half || '1H');
+      console.log('⏱️ Temps du match configuré:', match.elapsed, 'min -', match.half);
+    }
   };
 
   const loadBarInfo = async (id) => {
@@ -851,21 +864,41 @@ export default function App() {
 
   const MatchClock = () => {
     const [time, setTime] = useState('');
+    const [phase, setPhase] = useState('');
     
     useEffect(() => {
       const updateTime = () => {
-        const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
-        const secs = Math.floor((Date.now() / 1000) % 60);
-        setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
+        if (matchStartTime) {
+          // Calculer le temps écoulé depuis le début du match
+          const elapsed = Math.floor((Date.now() - matchStartTime) / 60000);
+          const mins = Math.min(elapsed, 90);
+          const secs = Math.floor((Date.now() - matchStartTime) / 1000) % 60;
+          
+          setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
+          
+          // Déterminer la phase
+          if (matchHalf === 'HT') {
+            setPhase('MI-TEMPS');
+          } else if (matchHalf === 'FT') {
+            setPhase('TERMINÉ');
+          } else if (mins >= 45) {
+            setPhase('2MT');
+          } else {
+            setPhase('1MT');
+          }
+        } else {
+          // Mode démo si pas de match sélectionné
+          const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
+          const secs = Math.floor((Date.now() / 1000) % 60);
+          setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
+          setPhase(mins >= 45 ? "2MT" : "1MT");
+        }
       };
       
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, []);
-
-    const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
-    const phase = mins >= 45 ? "2MT" : "1MT";
+    }, [matchStartTime, matchHalf]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
