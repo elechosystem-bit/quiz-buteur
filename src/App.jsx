@@ -59,6 +59,8 @@ export default function App() {
   const [matchStartTime, setMatchStartTime] = useState(null);
   const [matchElapsedMinutes, setMatchElapsedMinutes] = useState(0);
   const [matchHalf, setMatchHalf] = useState('1H');
+  const [matchPlayers, setMatchPlayers] = useState([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -158,7 +160,7 @@ export default function App() {
     }
   };
 
-  const selectMatch = (match) => {
+  const selectMatch = async (match) => {
     setSelectedMatch(match);
     console.log('⚽ Match sélectionné:', match);
     
@@ -168,6 +170,67 @@ export default function App() {
       setMatchStartTime(Date.now() - (match.elapsed * 60000));
       setMatchHalf(match.half || '1H');
       console.log('⏱️ Temps du match configuré:', match.elapsed, 'min -', match.half);
+    }
+    
+    // Récupérer les compositions d'équipes
+    await loadMatchLineups(match.id);
+  };
+
+  const loadMatchLineups = async (fixtureId) => {
+    setLoadingPlayers(true);
+    console.log('👥 Récupération des compositions pour le match:', fixtureId);
+    
+    try {
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+      
+      if (!apiKey) {
+        console.error('❌ Clé API manquante');
+        setLoadingPlayers(false);
+        return;
+      }
+
+      const response = await fetch(`https://v3.football.api-sports.io/fixtures/lineups?fixture=${fixtureId}`, {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'v3.football.api-sports.io'
+        }
+      });
+
+      const data = await response.json();
+      console.log('📡 Compositions reçues:', data);
+
+      if (data.response && data.response.length > 0) {
+        const allPlayers = [];
+        
+        // Extraire les joueurs des 2 équipes
+        data.response.forEach(team => {
+          if (team.startXI && Array.isArray(team.startXI)) {
+            team.startXI.forEach(playerObj => {
+              if (playerObj.player) {
+                allPlayers.push({
+                  name: playerObj.player.name,
+                  number: playerObj.player.number,
+                  position: playerObj.player.pos,
+                  team: team.team.name
+                });
+              }
+            });
+          }
+        });
+        
+        console.log('✅ Joueurs extraits:', allPlayers.length);
+        setMatchPlayers(allPlayers);
+      } else {
+        console.log('⚠️ Aucune composition disponible pour ce match');
+        setMatchPlayers([]);
+      }
+      
+    } catch (e) {
+      console.error('❌ Erreur récupération compositions:', e);
+      setMatchPlayers([]);
+    } finally {
+      setLoadingPlayers(false);
     }
   };
 
@@ -689,25 +752,60 @@ export default function App() {
         return;
       }
 
-      const availableQuestions = QUESTIONS.filter(q => 
-        !usedQuestionsRef.current.includes(q.text)
-      );
+      let questionToUse;
       
-      if (availableQuestions.length === 0) {
-        usedQuestionsRef.current = [];
+      // Si on a des joueurs du match, créer des questions dynamiques
+      if (matchPlayers.length >= 4) {
+        console.log('🎲 Génération de question avec joueurs réels');
+        
+        // Sélectionner 4 joueurs aléatoires
+        const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
+        const selectedPlayers = shuffled.slice(0, 4);
+        
+        const questionTypes = [
+          {
+            text: "Qui va marquer le prochain but ?",
+            options: selectedPlayers.map(p => p.name.split(' ').pop()) // Nom de famille
+          },
+          {
+            text: "Quel joueur va faire la prochaine passe décisive ?",
+            options: selectedPlayers.map(p => p.name.split(' ').pop())
+          },
+          {
+            text: "Qui va avoir le prochain carton ?",
+            options: selectedPlayers.map(p => p.name.split(' ').pop())
+          },
+          {
+            text: "Quel joueur va tenter le prochain tir ?",
+            options: selectedPlayers.map(p => p.name.split(' ').pop())
+          }
+        ];
+        
+        questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
+        console.log('✅ Question créée:', questionToUse);
+      } else {
+        // Sinon utiliser les questions par défaut
+        console.log('📋 Utilisation des questions par défaut');
+        const availableQuestions = QUESTIONS.filter(q => 
+          !usedQuestionsRef.current.includes(q.text)
+        );
+        
+        if (availableQuestions.length === 0) {
+          usedQuestionsRef.current = [];
+        }
+        
+        questionToUse = availableQuestions.length > 0 
+          ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)]
+          : QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
       }
       
-      const randomQ = availableQuestions.length > 0 
-        ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)]
-        : QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
-      
       const qId = Date.now().toString();
-      usedQuestionsRef.current.push(randomQ.text);
+      usedQuestionsRef.current.push(questionToUse.text);
       
       await set(ref(db, `bars/${barId}/currentQuestion`), {
         id: qId,
-        text: randomQ.text,
-        options: randomQ.options,
+        text: questionToUse.text,
+        options: questionToUse.options,
         timeLeft: 30,
         createdAt: Date.now()
       });
@@ -1262,6 +1360,15 @@ export default function App() {
                     ? `Prêt à démarrer : ${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}`
                     : 'Sélectionnez un match ci-dessus'}
                 </p>
+                {loadingPlayers && (
+                  <p className="text-yellow-400 mb-4">⏳ Chargement des compositions...</p>
+                )}
+                {matchPlayers.length > 0 && (
+                  <div className="mb-4 p-3 bg-green-900 rounded-lg">
+                    <p className="text-green-300">✅ {matchPlayers.length} joueurs chargés</p>
+                    <p className="text-sm text-gray-300 mt-1">Les questions utiliseront les vrais joueurs du match !</p>
+                  </div>
+                )}
                 <div className="flex gap-4 flex-wrap">
                   <button
                     onClick={startMatch}
