@@ -1,28 +1,3 @@
-# 🎯 CODE COMPLET - App.jsx
-
-Copie ce code et remplace tout le contenu de ton fichier `src/App.jsx`
-
----
-
-## ✅ SOLUTION INTÉGRÉE : 
-- Les joueurs apparaissent automatiquement dans le classement dès la connexion (lignes 145-166)
-- Plus besoin de répondre à une question pour apparaître sur l'écran TV
-
----
-
-## 📝 Instructions :
-
-1. **Ouvre ton projet local** sur ton ordinateur
-2. **Va dans** `src/App.jsx`
-3. **Supprime tout** le contenu actuel
-4. **Colle ce code** ci-dessous
-5. **Sauvegarde** (Ctrl+S)
-6. **Git commit + push** vers GitHub
-7. **Vercel déploiera automatiquement** ✅
-
----
-
-```jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, push, update, remove, get } from 'firebase/database';
@@ -175,7 +150,6 @@ export default function App() {
     return () => unsub();
   }, [currentQuestion?.id]);
 
-  // ✅ SOLUTION : Ajouter automatiquement le joueur au match dès la connexion
   useEffect(() => {
     const addPlayerToMatch = async () => {
       if (user && currentMatchId && userProfile && screen === 'mobile') {
@@ -882,18 +856,3 @@ export default function App() {
 
   return null;
 }
-```
-
----
-
-## 🚀 Commandes Git (dans ton terminal)
-
-Une fois le code copié dans `src/App.jsx` :
-
-```bash
-git add .
-git commit -m "fix: ajout auto joueurs au classement"
-git push
-```
-
-Vercel va automatiquement déployer la nouvelle version ! ✅
