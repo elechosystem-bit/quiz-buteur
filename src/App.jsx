@@ -1307,7 +1307,7 @@ export default function App() {
         )}
 
         <div className="flex justify-between items-start mb-8">
-          <div>
+          <div className="flex-1">
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             
             {hasMatchInfo ? (
@@ -1339,22 +1339,22 @@ export default function App() {
             )}
             
             {matchState && matchState.active && countdown && (
-              <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
+              <div className="space-y-2">
+                <p className="text-xl text-yellow-400">⏱️ Prochaine question: {countdown}</p>
+                <MatchClock />
+              </div>
             )}
             {(!matchState || !matchState.active) && (
               <p className="text-gray-300 mt-2">Le match n'est pas démarré</p>
             )}
           </div>
-          <div className="flex gap-6">
-            <MatchClock />
-            <div className="bg-white p-6 rounded-2xl">
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`} 
-                alt="QR Code" 
-                className="w-48 h-48" 
-              />
-              <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
-            </div>
+          <div className="bg-white p-6 rounded-2xl ml-6">
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`} 
+              alt="QR Code" 
+              className="w-48 h-48" 
+            />
+            <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
           </div>
         </div>
 
