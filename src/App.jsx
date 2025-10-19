@@ -57,7 +57,7 @@ const QUESTIONS = [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState('barLogin');
+  const [screen, setScreen] = useState('home');
   const [barId] = useState('default_bar');
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
@@ -102,7 +102,7 @@ export default function App() {
     
     const path = window.location.pathname;
     if (path === '/play' || path.includes('/play')) {
-      setScreen('auth');
+      setScreen('playJoin');
     }
   }, [barId]);
 
@@ -192,7 +192,15 @@ export default function App() {
               score: 0,
               joinedAt: Date.now()
             });
-            console.log('✅ Joueur ajouté au match:', userProfile.pseudo);
+            
+            // Notification push
+            await set(ref(db, `bars/${barId}/notifications/${Date.now()}`), {
+              type: 'playerJoined',
+              pseudo: userProfile.pseudo,
+              timestamp: Date.now()
+            });
+            
+            console.log('✅ Joueur ajouté:', userProfile.pseudo);
           }
         } catch (e) {
           console.error('Erreur ajout joueur:', e);
@@ -523,7 +531,8 @@ export default function App() {
     );
   };
 
-  if (screen === 'barLogin') {
+  // HOME avec 2 boutons
+  if (screen === 'home') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
@@ -532,16 +541,45 @@ export default function App() {
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
         
+        <div className="flex gap-6">
+          <button 
+            onClick={() => setScreen('tv')}
+            className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
+          >
+            📺 ÉCRAN
+          </button>
+          <button 
+            onClick={() => setScreen('admin')}
+            className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
+          >
+            🎮 ADMIN
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Page "JOUER" (client scanne QR)
+  if (screen === 'playJoin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
+        <div className="text-center mb-12">
+          <div className="text-8xl mb-6">⚽</div>
+          <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
+          <p className="text-2xl text-green-200">Pronostics en temps réel</p>
+        </div>
+        
         <button 
-          onClick={() => setScreen('tv')}
-          className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
+          onClick={() => setScreen('auth')}
+          className="bg-white text-green-900 px-16 py-10 rounded-3xl text-4xl font-black hover:bg-green-100 transition-all shadow-2xl"
         >
-          🎮 ADMIN
+          📱 JOUER
         </button>
       </div>
     );
   }
 
+  // AUTH
   if (screen === 'auth') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
@@ -599,11 +637,13 @@ export default function App() {
     );
   }
 
+  // Redirection si pas connecté en mode mobile
   if (!user && screen === 'mobile') {
     setScreen('auth');
     return null;
   }
 
+  // MOBILE (Joueur)
   if (screen === 'mobile' && user) {
     const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
@@ -659,6 +699,7 @@ export default function App() {
     );
   }
 
+  // ÉCRAN TV
   if (screen === 'tv') {
     const qrUrl = `${window.location.origin}/play`;
     
@@ -670,39 +711,6 @@ export default function App() {
             <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             {matchState?.active && countdown && (
               <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
-            )}
-            {!matchState?.active && (
-              <div className="mt-4">
-                <button
-                  onClick={startMatch}
-                  className="bg-green-600 px-6 py-3 rounded-lg text-lg font-bold hover:bg-green-700"
-                >
-                  ⚽ Démarrer le match
-                </button>
-              </div>
-            )}
-            {matchState?.active && (
-              <div className="mt-4 flex gap-4">
-                <button
-                  onClick={stopMatch}
-                  className="bg-red-600 px-6 py-3 rounded-lg text-lg font-bold hover:bg-red-700"
-                >
-                  ⏹️ Arrêter
-                </button>
-                <button
-                  onClick={async () => {
-                    if (currentQuestion) {
-                      await autoValidate();
-                      setTimeout(() => createRandomQuestion(), 1000);
-                    } else {
-                      await createRandomQuestion();
-                    }
-                  }}
-                  className="bg-blue-600 px-6 py-3 rounded-lg text-lg font-bold hover:bg-blue-700"
-                >
-                  🎲 Question maintenant
-                </button>
-              </div>
             )}
           </div>
           <div className="flex gap-6">
@@ -748,6 +756,113 @@ export default function App() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ADMIN
+  if (screen === 'admin') {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Gestion du Match</h1>
+          
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
+            
+            {!matchState?.active ? (
+              <div>
+                <p className="text-gray-400 mb-4">Aucun match en cours</p>
+                <button
+                  onClick={startMatch}
+                  className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
+                >
+                  ⚽ Démarrer le match
+                </button>
+                <p className="text-sm text-gray-400 mt-3">Questions toutes les 5 minutes</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
+                <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
+                {currentQuestion?.text ? (
+                  <div className="mb-4">
+                    <p className="text-yellow-400 mb-2">📢 {currentQuestion.text}</p>
+                    <p className="text-gray-400">⏱️ {timeLeft}s</p>
+                  </div>
+                ) : (
+                  countdown && <p className="text-gray-400 mb-4">⏱️ Prochaine: {countdown}</p>
+                )}
+                <div className="flex gap-4">
+                  <button
+                    onClick={stopMatch}
+                    className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700"
+                  >
+                    ⏹️ Arrêter
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (currentQuestion) {
+                        await autoValidate();
+                        setTimeout(() => createRandomQuestion(), 1000);
+                      } else {
+                        await createRandomQuestion();
+                      }
+                    }}
+                    className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
+                  >
+                    🎲 Question maintenant
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {currentQuestion?.options && (
+            <div className="bg-gray-800 rounded-xl p-6 mb-6">
+              <h2 className="text-2xl font-bold mb-4">Votes en direct</h2>
+              <div className="grid grid-cols-2 gap-4">
+                {currentQuestion.options.map(opt => (
+                  <div key={opt} className="bg-gray-700 p-4 rounded-lg">
+                    <div className="text-lg font-bold">{opt}</div>
+                    <div className="text-3xl font-black text-green-400">{answers[opt] || 0}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Joueurs connectés ({players.length})</h2>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {players.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">Aucun joueur pour le moment</p>
+              ) : (
+                players.map(p => (
+                  <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
+                    <span>{p.pseudo}</span>
+                    <span className="text-green-400">{p.score} pts</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <button 
+              onClick={() => setScreen('home')} 
+              className="bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600"
+            >
+              ← Retour
+            </button>
+            <button 
+              onClick={() => setScreen('tv')} 
+              className="bg-blue-600 px-6 py-3 rounded-lg hover:bg-blue-700"
+            >
+              📺 Voir écran TV
+            </button>
           </div>
         </div>
       </div>
