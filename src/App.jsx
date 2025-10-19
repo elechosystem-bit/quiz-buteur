@@ -171,7 +171,6 @@ export default function App() {
       console.log('⏱️ Temps du match configuré:', match.elapsed, 'min -', match.half);
     }
     
-    // 🔥 NOUVEAU : Sauvegarder le match sélectionné dans Firebase
     try {
       await set(ref(db, `bars/${barId}/selectedMatch`), {
         id: match.id,
@@ -334,6 +333,37 @@ export default function App() {
       unsub();
     };
   }, [barId]);
+
+  // 🔥 NOUVEAU : Écoute de selectedMatch pour l'écran TV
+  useEffect(() => {
+    if (!barId || screen !== 'tv') return;
+    
+    console.log('📺 Écoute de selectedMatch...');
+    const selectedMatchRef = ref(db, `bars/${barId}/selectedMatch`);
+    
+    const unsub = onValue(selectedMatchRef, (snap) => {
+      if (snap.exists()) {
+        const match = snap.val();
+        console.log('📺 Match sélectionné reçu depuis Firebase:', match);
+        
+        setSelectedMatch(match);
+        
+        if (match.elapsed !== undefined) {
+          setMatchElapsedMinutes(match.elapsed);
+          setMatchStartTime(Date.now() - (match.elapsed * 60000));
+          setMatchHalf(match.half || '1H');
+          console.log('📺 Temps synchronisé:', match.elapsed, 'min');
+        }
+      } else {
+        console.log('📺 Aucun match sélectionné dans Firebase');
+      }
+    });
+    
+    return () => {
+      console.log('📺 Arrêt de l\'écoute de selectedMatch');
+      unsub();
+    };
+  }, [barId, screen]);
 
   useEffect(() => {
     if (!barId || !currentMatchId) {
@@ -927,6 +957,7 @@ export default function App() {
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers`));
       await remove(ref(db, `bars/${barId}/notifications`));
+      await remove(ref(db, `bars/${barId}/selectedMatch`));
       
       console.log('✅ Firebase nettoyé');
       
@@ -934,6 +965,7 @@ export default function App() {
       setCurrentMatchId(null);
       setPlayers([]);
       setCurrentQuestion(null);
+      setSelectedMatch(null);
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
       
@@ -961,6 +993,10 @@ export default function App() {
       const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
       console.log('matchState exists:', matchStateSnap.exists());
       console.log('matchState value:', matchStateSnap.val());
+      
+      const selectedMatchSnap = await get(ref(db, `bars/${barId}/selectedMatch`));
+      console.log('selectedMatch exists:', selectedMatchSnap.exists());
+      console.log('selectedMatch value:', selectedMatchSnap.val());
       
       const matchesSnap = await get(ref(db, `bars/${barId}/matches`));
       console.log('matches exists:', matchesSnap.exists());
@@ -1212,13 +1248,13 @@ export default function App() {
     
     console.log('📺 === ÉCRAN TV - DEBUG COMPLET ===');
     console.log('📺 matchState:', matchState);
+    console.log('📺 selectedMatch (state):', selectedMatch);
     console.log('📺 matchState?.matchInfo:', matchState?.matchInfo);
-    console.log('📺 matchState?.active:', matchState?.active);
     
-    const matchInfo = matchState?.matchInfo;
+    const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo && matchInfo.homeTeam && matchInfo.awayTeam;
     
-    console.log('📺 matchInfo final:', matchInfo);
+    console.log('📺 matchInfo FINAL utilisé:', matchInfo);
     console.log('📺 hasMatchInfo:', hasMatchInfo);
     
     return (
