@@ -31,29 +31,6 @@ const QUESTIONS = [
   { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] },
   { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "Peut-être", "VAR"] },
   { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
-  { text: "Qui va faire la prochaine passe décisive ?", options: ["Milieu offensif", "Ailier", "Défenseur", "Attaquant"] },
-  { text: "Quelle équipe dominera ?", options: ["Domicile", "Extérieur", "Égalité", "Incertain"] },
-  { text: "Y aura-t-il un carton rouge ?", options: ["Oui", "Non", "Deux cartons", "VAR annule"] },
-  { text: "Qui va gagner le plus de duels ?", options: ["Attaquant A", "Milieu B", "Défenseur C", "Gardien"] },
-  { text: "Combien de temps additionnel ?", options: ["0-1 min", "2-3 min", "4-5 min", "6+ min"] },
-  { text: "Qui va faire le prochain arrêt ?", options: ["Gardien domicile", "Gardien extérieur", "Défenseur", "Poteau"] },
-  { text: "Quelle sera la prochaine action ?", options: ["Corner", "Coup franc", "Penalty", "But"] },
-  { text: "Qui va sortir sur blessure ?", options: ["Personne", "Attaquant", "Défenseur", "Milieu"] },
-  { text: "Combien de fautes au total ?", options: ["0-3", "4-6", "7-9", "10+"] },
-  { text: "But dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Peut-être", "Deux buts"] },
-  { text: "Quelle équipe tirera le plus ?", options: ["Domicile", "Extérieur", "Égalité", "Aucune"] },
-  { text: "Y aura-t-il un hors-jeu ?", options: ["Oui", "Non", "Plusieurs", "Avec but refusé"] },
-  { text: "Combien de remplacements ?", options: ["0", "1", "2", "3+"] },
-  { text: "Qui va toucher le plus de ballons ?", options: ["Milieu A", "Défenseur B", "Attaquant C", "Gardien"] },
-  { text: "Quelle équipe aura le plus de possession ?", options: ["Domicile", "Extérieur", "50-50", "Incertain"] },
-  { text: "Y aura-t-il un but contre son camp ?", options: ["Oui", "Non", "Peut-être", "Deux CSC"] },
-  { text: "Qui va tenter le prochain dribble ?", options: ["Ailier", "Milieu", "Attaquant", "Défenseur"] },
-  { text: "Combien de tirs cadrés ?", options: ["0-1", "2-3", "4-5", "6+"] },
-  { text: "Quelle équipe commettra le plus de fautes ?", options: ["Domicile", "Extérieur", "Égalité", "Aucune"] },
-  { text: "Y aura-t-il une intervention VAR ?", options: ["Oui", "Non", "Plusieurs", "But refusé"] },
-  { text: "Qui va gagner le prochain duel aérien ?", options: ["Attaquant A", "Défenseur B", "Milieu C", "Gardien"] },
-  { text: "Combien de corners ?", options: ["0-1", "2-3", "4-5", "6+"] },
-  { text: "Quelle équipe va presser le plus haut ?", options: ["Domicile", "Extérieur", "Les deux", "Aucune"] }
 ];
 
 export default function App() {
@@ -84,6 +61,102 @@ export default function App() {
   const nextQuestionTimer = useRef(null);
 
   console.log('🚀 APP DÉMARRÉ - Screen initial:', screen);
+
+  const searchMatches = async () => {
+    setLoadingMatches(true);
+    console.log('🔍 Recherche de matchs via API-Football...');
+    
+    try {
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+      
+      if (!apiKey) {
+        console.error('❌ Clé API manquante !');
+        alert('❌ Clé API non configurée. Vérifiez votre fichier .env.local');
+        setLoadingMatches(false);
+        return;
+      }
+
+      console.log('✅ Clé API trouvée');
+
+      const response = await fetch('https://v3.football.api-sports.io/fixtures?live=all', {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'v3.football.api-sports.io'
+        }
+      });
+
+      const data = await response.json();
+      console.log('📡 Réponse API:', data);
+
+      if (data.errors && Object.keys(data.errors).length > 0) {
+        console.error('❌ Erreur API:', data.errors);
+        alert('❌ Erreur API: ' + JSON.stringify(data.errors));
+        setLoadingMatches(false);
+        return;
+      }
+
+      if (!data.response || data.response.length === 0) {
+        console.log('⚠️ Aucun match en direct trouvé');
+        
+        const today = new Date().toISOString().split('T')[0];
+        const responseToday = await fetch(`https://v3.football.api-sports.io/fixtures?date=${today}`, {
+          method: 'GET',
+          headers: {
+            'x-rapidapi-key': apiKey,
+            'x-rapidapi-host': 'v3.football.api-sports.io'
+          }
+        });
+
+        const dataToday = await responseToday.json();
+        console.log('📡 Matchs du jour:', dataToday);
+
+        if (dataToday.response && dataToday.response.length > 0) {
+          const matches = dataToday.response.slice(0, 20).map(fixture => ({
+            id: fixture.fixture.id,
+            homeTeam: fixture.teams.home.name,
+            awayTeam: fixture.teams.away.name,
+            league: fixture.league.name,
+            date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
+            status: fixture.fixture.status.long,
+            score: fixture.fixture.status.short === 'NS' 
+              ? 'vs' 
+              : `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+          }));
+
+          setAvailableMatches(matches);
+          console.log('✅ Matchs trouvés:', matches.length);
+        } else {
+          alert('⚠️ Aucun match trouvé aujourd\'hui');
+          setAvailableMatches([]);
+        }
+      } else {
+        const matches = data.response.slice(0, 20).map(fixture => ({
+          id: fixture.fixture.id,
+          homeTeam: fixture.teams.home.name,
+          awayTeam: fixture.teams.away.name,
+          league: fixture.league.name,
+          date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
+          status: fixture.fixture.status.long,
+          score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+        }));
+
+        setAvailableMatches(matches);
+        console.log('✅ Matchs en direct trouvés:', matches.length);
+      }
+
+    } catch (e) {
+      console.error('❌ Erreur recherche matchs:', e);
+      alert('❌ Erreur: ' + e.message);
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
+  const selectMatch = (match) => {
+    setSelectedMatch(match);
+    console.log('⚽ Match sélectionné:', match);
+  };
 
   const loadBarInfo = async (id) => {
     try {
@@ -267,7 +340,6 @@ export default function App() {
 
   useEffect(() => {
     const addPlayerToMatch = async () => {
-      // Vérifications détaillées
       if (!user) {
         console.log('❌ useEffect addPlayer - Pas d\'utilisateur');
         return;
@@ -289,7 +361,6 @@ export default function App() {
         return;
       }
 
-      // PAS DE VÉRIFICATION matchState.active - on ajoute le joueur dès qu'il y a un match
       console.log('✅ Toutes les conditions OK pour ajouter le joueur');
       console.log('📋 user:', user.uid);
       console.log('📋 barId:', barId);
@@ -319,12 +390,10 @@ export default function App() {
           await set(playerRef, newPlayer);
           console.log('✅ set() terminé');
           
-          // Vérification immédiate
           await new Promise(resolve => setTimeout(resolve, 500));
           const verifySnap = await get(playerRef);
           console.log('🔍 Vérification immédiate - existe:', verifySnap.exists(), 'valeur:', verifySnap.val());
           
-          // Notification
           const notifRef = push(ref(db, `bars/${barId}/notifications`));
           await set(notifRef, {
             type: 'playerJoined',
@@ -343,7 +412,6 @@ export default function App() {
       }
     };
     
-    // Appeler la fonction
     addPlayerToMatch();
   }, [user, barId, currentMatchId, userProfile, screen]);
 
@@ -445,16 +513,14 @@ export default function App() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       console.log('✅ Connexion réussie:', userCredential.user.uid);
       
-      // Vérifier si le profil existe
       const userRef = ref(db, `users/${userCredential.user.uid}`);
       const snap = await get(userRef);
       
       if (!snap.exists()) {
         console.log('⚠️ Profil manquant, création automatique...');
-        // Créer le profil manquant
         await set(userRef, {
           email: userCredential.user.email,
-          pseudo: email.split('@')[0], // Utilise la partie avant @ comme pseudo
+          pseudo: email.split('@')[0],
           totalPoints: 0,
           matchesPlayed: 0,
           createdAt: Date.now()
@@ -481,17 +547,12 @@ export default function App() {
     console.log('🎬 DÉMARRAGE DU MATCH...');
     
     try {
-      // 1. NETTOYAGE COMPLET DE FIREBASE
-      console.log('🗑️ Nettoyage complet de Firebase...');
-      
-      // Récupérer tous les anciens matchs
       const allMatchesSnap = await get(ref(db, `bars/${barId}/matches`));
       if (allMatchesSnap.exists()) {
         console.log('🗑️ Suppression de tous les anciens matchs...');
         await remove(ref(db, `bars/${barId}/matches`));
       }
       
-      // Supprimer tout l'état
       await remove(ref(db, `bars/${barId}/matchState`));
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers`));
@@ -499,7 +560,6 @@ export default function App() {
       
       console.log('✅ Nettoyage terminé');
       
-      // Reset local
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
       if (nextQuestionTimer.current) {
@@ -507,16 +567,13 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
-      // 2. ATTENDRE QUE FIREBASE SYNCHRONISE
       console.log('⏳ Attente de synchronisation Firebase (2 secondes)...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // 3. CRÉER LE NOUVEAU MATCH
       const now = Date.now();
       const matchId = `match_${now}`;
       console.log('✨ Création du nouveau match:', matchId);
       
-      // Créer le matchState AVANT la structure du match
       const newMatchState = {
         active: true,
         startTime: now,
@@ -528,10 +585,8 @@ export default function App() {
       await set(ref(db, `bars/${barId}/matchState`), newMatchState);
       console.log('✅ matchState créé:', newMatchState);
       
-      // Attendre un peu
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Créer la structure du match
       const newMatch = {
         info: {
           startedAt: now,
@@ -543,7 +598,6 @@ export default function App() {
       await set(ref(db, `bars/${barId}/matches/${matchId}`), newMatch);
       console.log('✅ Structure match créée');
       
-      // 4. VÉRIFICATION COMPLÈTE
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const verifyState = await get(ref(db, `bars/${barId}/matchState`));
@@ -723,6 +777,75 @@ export default function App() {
       });
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const forceCleanup = async () => {
+    if (!window.confirm('⚠️ ATTENTION : Ceci va supprimer TOUS les matchs et réinitialiser complètement Firebase. Continuer ?')) {
+      return;
+    }
+    
+    console.log('🧹 NETTOYAGE FORCÉ DE FIREBASE...');
+    
+    try {
+      await remove(ref(db, `bars/${barId}/matches`));
+      await remove(ref(db, `bars/${barId}/matchState`));
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/answers`));
+      await remove(ref(db, `bars/${barId}/notifications`));
+      
+      console.log('✅ Firebase nettoyé');
+      
+      setMatchState(null);
+      setCurrentMatchId(null);
+      setPlayers([]);
+      setCurrentQuestion(null);
+      usedQuestionsRef.current = [];
+      isProcessingRef.current = false;
+      
+      if (nextQuestionTimer.current) {
+        clearInterval(nextQuestionTimer.current);
+        nextQuestionTimer.current = null;
+      }
+      
+      console.log('✅ État local réinitialisé');
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const verifyState = await get(ref(db, `bars/${barId}/matchState`));
+      console.log('🔍 Vérification après nettoyage - matchState exists:', verifyState.exists());
+      
+      alert('✅ Nettoyage complet terminé ! Vous pouvez maintenant démarrer un nouveau match.');
+    } catch (e) {
+      console.error('❌ Erreur nettoyage:', e);
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
+
+  const debugFirebase = async () => {
+    console.log('🔍 === DEBUG FIREBASE ===');
+    try {
+      const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
+      console.log('matchState exists:', matchStateSnap.exists());
+      console.log('matchState value:', matchStateSnap.val());
+      
+      const matchesSnap = await get(ref(db, `bars/${barId}/matches`));
+      console.log('matches exists:', matchesSnap.exists());
+      console.log('matches value:', matchesSnap.val());
+      
+      if (currentMatchId) {
+        const currentMatchSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}`));
+        console.log('currentMatch exists:', currentMatchSnap.exists());
+        console.log('currentMatch value:', currentMatchSnap.val());
+        
+        const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
+        console.log('players exists:', playersSnap.exists());
+        console.log('players value:', playersSnap.val());
+      }
+      
+      alert('✅ Debug terminé - voir la console');
+    } catch (e) {
+      console.error('Erreur debug:', e);
+      alert('❌ Erreur: ' + e.message);
     }
   };
 
@@ -1011,84 +1134,11 @@ export default function App() {
     console.log('🎮 Affichage écran ADMIN');
     console.log('📊 État actuel - matchState:', matchState, 'currentMatchId:', currentMatchId, 'players:', players.length);
     
-    const forceCleanup = async () => {
-      if (!window.confirm('⚠️ ATTENTION : Ceci va supprimer TOUS les matchs et réinitialiser complètement Firebase. Continuer ?')) {
-        return;
-      }
-      
-      console.log('🧹 NETTOYAGE FORCÉ DE FIREBASE...');
-      
-      try {
-        // Supprimer TOUT
-        await remove(ref(db, `bars/${barId}/matches`));
-        await remove(ref(db, `bars/${barId}/matchState`));
-        await remove(ref(db, `bars/${barId}/currentQuestion`));
-        await remove(ref(db, `bars/${barId}/answers`));
-        await remove(ref(db, `bars/${barId}/notifications`));
-        
-        console.log('✅ Firebase nettoyé');
-        
-        // Reset local
-        setMatchState(null);
-        setCurrentMatchId(null);
-        setPlayers([]);
-        setCurrentQuestion(null);
-        usedQuestionsRef.current = [];
-        isProcessingRef.current = false;
-        
-        if (nextQuestionTimer.current) {
-          clearInterval(nextQuestionTimer.current);
-          nextQuestionTimer.current = null;
-        }
-        
-        console.log('✅ État local réinitialisé');
-        
-        // Vérification
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const verifyState = await get(ref(db, `bars/${barId}/matchState`));
-        console.log('🔍 Vérification après nettoyage - matchState exists:', verifyState.exists());
-        
-        alert('✅ Nettoyage complet terminé ! Vous pouvez maintenant démarrer un nouveau match.');
-      } catch (e) {
-        console.error('❌ Erreur nettoyage:', e);
-        alert('❌ Erreur: ' + e.message);
-      }
-    };
-    
-    const debugFirebase = async () => {
-      console.log('🔍 === DEBUG FIREBASE ===');
-      try {
-        const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
-        console.log('matchState exists:', matchStateSnap.exists());
-        console.log('matchState value:', matchStateSnap.val());
-        
-        const matchesSnap = await get(ref(db, `bars/${barId}/matches`));
-        console.log('matches exists:', matchesSnap.exists());
-        console.log('matches value:', matchesSnap.val());
-        
-        if (currentMatchId) {
-          const currentMatchSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}`));
-          console.log('currentMatch exists:', currentMatchSnap.exists());
-          console.log('currentMatch value:', currentMatchSnap.val());
-          
-          const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
-          console.log('players exists:', playersSnap.exists());
-          console.log('players value:', playersSnap.val());
-        }
-        
-        alert('✅ Debug terminé - voir la console');
-      } catch (e) {
-        console.error('Erreur debug:', e);
-        alert('❌ Erreur: ' + e.message);
-      }
-    };
-
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl font-bold mb-8">🎮 Admin - Gestion du Match</h1>
           
-          {/* Section Recherche de matchs */}
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
             <div className="flex gap-4 mb-4">
@@ -1169,7 +1219,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Section Contrôle du Match */}
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
             
