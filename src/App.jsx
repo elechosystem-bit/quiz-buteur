@@ -1135,16 +1135,28 @@ export default function App() {
         
         if (clockStartTime) {
           const elapsed = Math.floor((Date.now() - clockStartTime) / 60000);
-          const mins = elapsed; // Pas de limite, peut aller au-delà de 90'
           const secs = Math.floor((Date.now() - clockStartTime) / 1000) % 60;
           
-          setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
+          let displayTime;
+          if (elapsed < 45) {
+            // 1ère mi-temps : 0' à 44'59"
+            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+          } else if (elapsed >= 45 && elapsed < 90) {
+            // 2ème mi-temps : 45' à 89'59"
+            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+          } else {
+            // Temps additionnel : 90'+1, 90'+2, etc.
+            const additionalMins = elapsed - 90 + 1;
+            displayTime = `90'+${additionalMins}`;
+          }
+          
+          setTime(displayTime);
           
           if (clockHalf === 'HT') {
             setPhase('MI-TEMPS');
           } else if (clockHalf === 'FT') {
             setPhase('TERMINÉ');
-          } else if (mins >= 45 && clockHalf !== '1H') {
+          } else if (elapsed >= 45 && clockHalf !== '1H') {
             setPhase('2MT');
           } else {
             setPhase('1MT');
