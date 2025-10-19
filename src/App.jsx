@@ -19,7 +19,6 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 
 const QUESTION_INTERVAL = 300000;
-const ADMIN_CODE = '1234';
 
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
@@ -59,7 +58,7 @@ const QUESTIONS = [
 
 export default function App() {
   const [screen, setScreen] = useState('barLogin');
-  const [barId] = useState('default_bar'); // Bar unique par défaut
+  const [barId] = useState('default_bar');
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -75,24 +74,9 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [pseudo, setPseudo] = useState('');
   const [authMode, setAuthMode] = useState('login');
-  const [adminCode, setAdminCode] = useState('');
-  const [barIdInput, setBarIdInput] = useState('');
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
-
-  // Charger les infos du bar au démarrage
-  useEffect(() => {
-    loadBarInfo(barId);
-  }, []);
-
-  // Détecter si on arrive via un QR code (URL avec /play)
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (path === '/play') {
-      setScreen('auth');
-    }
-  }, []);
 
   const loadBarInfo = async (id) => {
     try {
@@ -101,7 +85,6 @@ export default function App() {
       if (snap.exists()) {
         setBarInfo(snap.val());
       } else {
-        // Créer le bar par défaut
         const defaultInfo = {
           name: "Quiz Buteur Live",
           createdAt: Date.now()
@@ -113,6 +96,15 @@ export default function App() {
       console.error('Erreur chargement bar:', e);
     }
   };
+
+  useEffect(() => {
+    loadBarInfo(barId);
+    
+    const path = window.location.pathname;
+    if (path === '/play' || path.includes('/play')) {
+      setScreen('auth');
+    }
+  }, [barId]);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
@@ -280,18 +272,6 @@ export default function App() {
     };
   }, [barId, matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
 
-  const handleBarLogin = async () => {
-    if (!barIdInput.trim()) {
-      alert('Entrez le code du bar');
-      return;
-    }
-    
-    const id = barIdInput.trim().toLowerCase().replace(/\s+/g, '_');
-    setBarId(id);
-    await loadBarInfo(id);
-    setScreen('tv');
-  };
-
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
       alert('Remplissez tous les champs');
@@ -306,7 +286,6 @@ export default function App() {
         matchesPlayed: 0,
         createdAt: Date.now()
       });
-      // Après inscription → TOUJOURS aller sur Mobile (Jouer)
       setScreen('mobile');
     } catch (e) {
       alert('Erreur: ' + e.message);
@@ -320,7 +299,6 @@ export default function App() {
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // Après connexion → TOUJOURS aller sur Mobile (Jouer)
       setScreen('mobile');
     } catch (e) {
       alert('Erreur: ' + e.message);
@@ -545,7 +523,6 @@ export default function App() {
     );
   };
 
-  // Page d'accueil simple avec bouton ADMIN
   if (screen === 'barLogin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
@@ -565,7 +542,6 @@ export default function App() {
     );
   }
 
-  // Écran d'authentification JOUEUR
   if (screen === 'auth') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
@@ -623,13 +599,11 @@ export default function App() {
     );
   }
 
-  // Rediriger vers auth UNIQUEMENT si c'est un joueur (pas admin)
   if (!user && screen === 'mobile') {
     setScreen('auth');
     return null;
   }
 
-  // Écran MOBILE (Joueur)
   if (screen === 'mobile' && user) {
     const myScore = players.find(p => p.id === user.uid)?.score || 0;
 
@@ -685,7 +659,6 @@ export default function App() {
     );
   }
 
-  // Écran TV (Bar)
   if (screen === 'tv') {
     const qrUrl = `${window.location.origin}/play`;
     
@@ -694,7 +667,7 @@ export default function App() {
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
-            <p className="text-2xl text-green-300">{barInfo?.name || barId}</p>
+            <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             {matchState?.active && countdown && (
               <p className="text-xl text-yellow-400 mt-2">⏱️ Prochaine question: {countdown}</p>
             )}
