@@ -958,6 +958,50 @@ export default function App() {
     console.log('🎮 Affichage écran ADMIN');
     console.log('📊 État actuel - matchState:', matchState, 'currentMatchId:', currentMatchId, 'players:', players.length);
     
+    const forceCleanup = async () => {
+      if (!window.confirm('⚠️ ATTENTION : Ceci va supprimer TOUS les matchs et réinitialiser complètement Firebase. Continuer ?')) {
+        return;
+      }
+      
+      console.log('🧹 NETTOYAGE FORCÉ DE FIREBASE...');
+      
+      try {
+        // Supprimer TOUT
+        await remove(ref(db, `bars/${barId}/matches`));
+        await remove(ref(db, `bars/${barId}/matchState`));
+        await remove(ref(db, `bars/${barId}/currentQuestion`));
+        await remove(ref(db, `bars/${barId}/answers`));
+        await remove(ref(db, `bars/${barId}/notifications`));
+        
+        console.log('✅ Firebase nettoyé');
+        
+        // Reset local
+        setMatchState(null);
+        setCurrentMatchId(null);
+        setPlayers([]);
+        setCurrentQuestion(null);
+        usedQuestionsRef.current = [];
+        isProcessingRef.current = false;
+        
+        if (nextQuestionTimer.current) {
+          clearInterval(nextQuestionTimer.current);
+          nextQuestionTimer.current = null;
+        }
+        
+        console.log('✅ État local réinitialisé');
+        
+        // Vérification
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const verifyState = await get(ref(db, `bars/${barId}/matchState`));
+        console.log('🔍 Vérification après nettoyage - matchState exists:', verifyState.exists());
+        
+        alert('✅ Nettoyage complet terminé ! Vous pouvez maintenant démarrer un nouveau match.');
+      } catch (e) {
+        console.error('❌ Erreur nettoyage:', e);
+        alert('❌ Erreur: ' + e.message);
+      }
+    };
+    
     const debugFirebase = async () => {
       console.log('🔍 === DEBUG FIREBASE ===');
       try {
@@ -997,12 +1041,18 @@ export default function App() {
             {!matchState || !matchState.active ? (
               <div>
                 <p className="text-gray-400 mb-4">Aucun match en cours</p>
-                <div className="flex gap-4">
+                <div className="flex gap-4 flex-wrap">
                   <button
                     onClick={startMatch}
                     className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700"
                   >
                     ⚽ Démarrer le match
+                  </button>
+                  <button
+                    onClick={forceCleanup}
+                    className="bg-orange-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-orange-700"
+                  >
+                    🧹 Nettoyage forcé
                   </button>
                   <button
                     onClick={debugFirebase}
@@ -1027,7 +1077,7 @@ export default function App() {
                 ) : (
                   countdown && <p className="text-gray-400 mb-4">⏱️ Prochaine: {countdown}</p>
                 )}
-                <div className="flex gap-4">
+                <div className="flex gap-4 flex-wrap">
                   <button
                     onClick={stopMatch}
                     className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700"
@@ -1046,6 +1096,12 @@ export default function App() {
                     className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
                   >
                     🎲 Question maintenant
+                  </button>
+                  <button
+                    onClick={forceCleanup}
+                    className="bg-orange-600 px-6 py-4 rounded-lg text-lg font-bold hover:bg-orange-700"
+                  >
+                    🧹 Nettoyage
                   </button>
                   <button
                     onClick={debugFirebase}
