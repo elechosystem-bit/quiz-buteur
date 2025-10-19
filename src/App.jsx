@@ -431,7 +431,7 @@ export default function App() {
   }, [barId, currentQuestion]);
 
   useEffect(() => {
-    if (!barId || screen !== 'tv') return;
+  if (!barId) return;
     
     const notifRef = ref(db, `bars/${barId}/notifications`);
     const unsub = onValue(notifRef, (snap) => {
