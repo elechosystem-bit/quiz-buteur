@@ -1202,6 +1202,12 @@ export default function App() {
   if (screen === 'tv') {
     const qrUrl = `${window.location.origin}/play`;
     
+    // Infos du match depuis matchState
+    const matchInfo = matchState?.matchInfo;
+    const hasMatchInfo = matchInfo && matchInfo.homeTeam && matchInfo.awayTeam;
+    
+    console.log('📺 Écran TV - matchInfo:', matchInfo);
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
         {notification && (
@@ -1219,12 +1225,12 @@ export default function App() {
         <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
-            {matchState?.matchInfo ? (
+            {hasMatchInfo ? (
               <div className="mb-3">
-                <p className="text-3xl font-bold text-yellow-400">
-                  {matchState.matchInfo.homeTeam} <span className="text-white">{matchState.matchInfo.score}</span> {matchState.matchInfo.awayTeam}
+                <p className="text-4xl font-bold text-yellow-400">
+                  {matchInfo.homeTeam} <span className="text-white mx-3">{matchInfo.score}</span> {matchInfo.awayTeam}
                 </p>
-                <p className="text-lg text-green-300">{matchState.matchInfo.league}</p>
+                <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
               </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo ? barInfo.name : 'Quiz Buteur Live'}</p>
