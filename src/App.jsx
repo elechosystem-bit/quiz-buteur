@@ -713,6 +713,14 @@ export default function App() {
       const matchId = `match_${now}`;
       console.log('✨ Création du nouveau match:', matchId);
       
+      // Calculer le startTime du chrono basé sur l'elapsed du match sélectionné
+      let clockStartTime = now; // Par défaut, on démarre maintenant
+      if (selectedMatch && selectedMatch.elapsed !== undefined) {
+        // Si le match a déjà commencé, on recule le startTime
+        clockStartTime = now - (selectedMatch.elapsed * 60000);
+        console.log(`⏱️ Match déjà en cours depuis ${selectedMatch.elapsed} min, startTime ajusté`);
+      }
+      
       const newMatchState = {
         active: true,
         startTime: now,
@@ -728,9 +736,9 @@ export default function App() {
           score: selectedMatch.score
         } : null,
         matchClock: {
-          startTime: matchStartTime,
-          elapsedMinutes: matchElapsedMinutes,
-          half: matchHalf
+          startTime: clockStartTime, // Temps calculé pour le chrono
+          elapsedMinutes: selectedMatch?.elapsed || 0,
+          half: selectedMatch?.half || matchHalf || '1H'
         }
       };
       
@@ -1045,18 +1053,13 @@ export default function App() {
     
     useEffect(() => {
       const updateTime = () => {
-        // Priorité 1 : matchState.matchClock
-        // Priorité 2 : selectedMatch
-        // Priorité 3 : variables locales
-        let clockStartTime = matchState?.matchClock?.startTime || matchStartTime;
+        // Utiliser matchState.matchClock en priorité (fixé au démarrage du match)
+        let clockStartTime = matchState?.matchClock?.startTime;
         let clockHalf = matchState?.matchClock?.half || matchHalf;
-        let clockElapsed = matchState?.matchClock?.elapsedMinutes || matchElapsedMinutes;
         
-        // Si on a un selectedMatch avec elapsed, on l'utilise
-        if (selectedMatch && selectedMatch.elapsed !== undefined) {
-          clockElapsed = selectedMatch.elapsed;
-          clockStartTime = Date.now() - (selectedMatch.elapsed * 60000);
-          clockHalf = selectedMatch.half || '1H';
+        // Si pas de matchClock dans matchState, utiliser les variables locales
+        if (!clockStartTime) {
+          clockStartTime = matchStartTime;
         }
         
         if (clockStartTime) {
@@ -1076,6 +1079,7 @@ export default function App() {
             setPhase('1MT');
           }
         } else {
+          // Fallback: générer un temps fictif
           const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
           const secs = Math.floor((Date.now() / 1000) % 60);
           setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
@@ -1086,7 +1090,7 @@ export default function App() {
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchStartTime, matchHalf, matchState, selectedMatch]);
+    }, [matchState, matchStartTime, matchHalf]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
