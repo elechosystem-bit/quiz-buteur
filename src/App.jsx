@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+const startMatch = async () => {
+    if (!barId) {
+      alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
+      return;
+    }
+    
+    // 🔥 BLOQUER si le match n'a pas encore commencé
+    if (!selectedMatch || !selectedMatch.elapsed || selectedMatch.elapsed === 0) {
+      alert('⚠️ IMPOSSIBLE DE DÉMARRER\n\nLe match n\'a pas encore commencé.\n\nAttimport React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
@@ -650,6 +658,12 @@ export default function App() {
   const startMatch = async () => {
     if (!barId) {
       alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
+      return;
+    }
+    
+    // 🔥 BLOQUER COMPLÈTEMENT si le match n'a pas encore commencé
+    if (!selectedMatch || !selectedMatch.elapsed || selectedMatch.elapsed === 0) {
+      alert('⚠️ IMPOSSIBLE DE DÉMARRER\n\nLe match n\'a pas encore commencé.\n\nAttendez le coup d\'envoi ou sélectionnez un match déjà en cours.');
       return;
     }
     
