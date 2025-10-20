@@ -73,7 +73,6 @@ export default function App() {
   const wakeLockRef = useRef(null);
   const matchCheckInterval = useRef(null);
 
-  // searchMatches: corrected syntax around fetch headers and ensured no stray characters
   const searchMatches = async () => {
     setLoadingMatches(true);
 
@@ -86,7 +85,6 @@ export default function App() {
         return;
       }
 
-      // Cleanly formatted fetch with proper object delimiters
       const response = await fetch('https://v3.football.api-sports.io/fixtures?live=all', {
         method: 'GET',
         headers: {
@@ -119,7 +117,7 @@ export default function App() {
           const matches = dataToday.response
             .filter(fixture => {
               const status = fixture.fixture.status.short;
-              // Exclude finished/cancelled statuses
+              // Exclure les matchs terminés (FT, AET, PEN, etc.)
               return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
             })
             .slice(0, 20)
@@ -148,6 +146,7 @@ export default function App() {
         const matches = data.response
           .filter(fixture => {
             const status = fixture.fixture.status.short;
+            // Exclure les matchs terminés
             return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
           })
           .slice(0, 20)
@@ -171,6 +170,7 @@ export default function App() {
           alert('⚠️ Aucun match disponible (tous les matchs en direct sont terminés)');
         }
       }
+
     } catch (e) {
       alert('❌ Erreur: ' + e.message);
     } finally {
@@ -198,14 +198,16 @@ export default function App() {
         status: match.status,
         elapsed: match.elapsed || 0,
         half: match.half || '1H',
-        autoStartEnabled: true
+        autoStartEnabled: true // Activation du démarrage auto
       };
 
       await set(ref(db, `bars/${barId}/selectedMatch`), matchData);
       await new Promise(resolve => setTimeout(resolve, 500));
       setSelectedMatch(matchData);
 
+      // Lancer la surveillance du match
       startMatchMonitoring(match.id);
+
     } catch (e) {
       alert('❌ Erreur: ' + e.message);
     }
@@ -215,8 +217,10 @@ export default function App() {
 
   const loadMatchLineups = async (fixtureId) => {
     setLoadingPlayers(true);
+
     try {
       const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+
       if (!apiKey) {
         setLoadingPlayers(false);
         return;
@@ -234,6 +238,7 @@ export default function App() {
 
       if (data.response && data.response.length > 0) {
         const allPlayers = [];
+
         data.response.forEach(team => {
           if (team.startXI && Array.isArray(team.startXI)) {
             team.startXI.forEach(playerObj => {
@@ -248,10 +253,12 @@ export default function App() {
             });
           }
         });
+
         setMatchPlayers(allPlayers);
       } else {
         setMatchPlayers([]);
       }
+
     } catch (e) {
       setMatchPlayers([]);
     } finally {
@@ -293,6 +300,7 @@ export default function App() {
       setScreen('playJoin');
     }
 
+    // Nettoyage à la fermeture
     return () => {
       stopMatchMonitoring();
     };
@@ -644,6 +652,7 @@ export default function App() {
     }
 
     try {
+      // 🔥 SYNCHRONISATION AVEC L'API EN TEMPS RÉEL
       console.log('🔄 Synchronisation avec l\'API...');
       let realTimeElapsed = selectedMatch?.elapsed || 0;
       let realTimeHalf = selectedMatch?.half || '1H';
@@ -699,6 +708,7 @@ export default function App() {
       const now = Date.now();
       const matchId = `match_${now}`;
 
+      // 🔥 CALCUL DU TEMPS DE DÉPART BASÉ SUR LE TEMPS RÉEL
       const clockStartTime = now - (realTimeElapsed * 60000);
 
       console.log(`⏱️ Chrono configuré : ${realTimeElapsed}' écoulées, démarrage à ${new Date(clockStartTime).toLocaleTimeString()}`);
@@ -715,12 +725,12 @@ export default function App() {
           homeLogo: selectedMatch.homeLogo,
           awayLogo: selectedMatch.awayLogo,
           league: selectedMatch.league,
-          score: realTimeScore
+          score: realTimeScore // Score en temps réel
         } : null,
         matchClock: {
-          startTime: clockStartTime,
-          elapsedMinutes: realTimeElapsed,
-          half: realTimeHalf
+          startTime: clockStartTime, // Temps calculé avec l'elapsed réel
+          elapsedMinutes: realTimeElapsed, // Minutes réelles
+          half: realTimeHalf // Mi-temps réelle
         }
       };
 
@@ -746,6 +756,7 @@ export default function App() {
       } else {
         throw new Error('Vérification échouée');
       }
+
     } catch (e) {
       alert('❌ Erreur: ' + e.message);
     }
@@ -982,7 +993,6 @@ export default function App() {
     return 'BAR-' + Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
-  // createNewBar: validation, trim and logs
   const createNewBar = async (barName) => {
     const name = (barName || '').trim();
     console.log('[createNewBar] called with:', barName, '-> trimmed:', name);
@@ -1013,7 +1023,6 @@ export default function App() {
     }
   };
 
-  // loadAllBars: supports data.info OR data directly and logs
   const loadAllBars = async () => {
     console.log('[loadAllBars] fetching bars ...');
     try {
@@ -1044,6 +1053,32 @@ export default function App() {
       }
     } catch (e) {
       console.error('[loadAllBars] error:', e);
+    }
+  };
+
+  // New: delete bar function used by SuperAdmin
+  const deleteBar = async (id) => {
+    if (!id) return;
+    if (!window.confirm('⚠️ Supprimer cet établissement et toutes ses données ?')) return;
+
+    try {
+      console.log('[deleteBar] deleting bar:', id);
+      await remove(ref(db, `bars/${id}`));
+
+      // Update local state immediately for snappy UI
+      setAllBars(prev => prev.filter(b => b.id !== id));
+
+      // Try to reload to be sure
+      try {
+        await loadAllBars();
+      } catch (e) {
+        console.warn('[deleteBar] loadAllBars failed after delete:', e);
+      }
+
+      alert('✅ Établissement supprimé');
+    } catch (e) {
+      console.error('[deleteBar] error:', e);
+      alert('❌ Erreur suppression: ' + e.message);
     }
   };
 
@@ -1330,9 +1365,17 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-center bg-white px-6 py-4 rounded-xl border-2 border-yellow-600">
-                      <div className="text-sm text-gray-500 mb-1">Code d'accès</div>
-                      <div className="text-3xl font-black text-yellow-900">{bar.code || bar.id}</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-center bg-white px-6 py-4 rounded-xl border-2 border-yellow-600">
+                        <div className="text-sm text-gray-500 mb-1">Code d'accès</div>
+                        <div className="text-3xl font-black text-yellow-900">{bar.code || bar.id}</div>
+                      </div>
+                      <button
+                        onClick={() => deleteBar(bar.id)}
+                        className="ml-2 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700"
+                      >
+                        Supprimer
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1347,7 +1390,6 @@ export default function App() {
             ← Retour accueil
           </button>
 
-          {/* Debug and cleanup buttons */}
           <div className="mt-4 flex gap-3">
             <button
               onClick={debugFirebase}
@@ -1367,9 +1409,8 @@ export default function App() {
     );
   }
 
-  // ... rest of screens (adminLogin, playJoin, auth, mobile, tv, admin)
-  // For brevity in this response I keep the rest identical to previous behavior.
-  // In your local file ensure the full UI screens are present as needed.
+  // Remaining screens (adminLogin, playJoin, auth, mobile, tv, admin) are unchanged from previous full implementation.
+  // For brevity they are omitted in this response but in your local file ensure the full UI screens are present as needed.
 
   return null;
 }
