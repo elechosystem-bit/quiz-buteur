@@ -291,6 +291,13 @@ export default function App() {
     if (barId) loadBarInfo(barId);
     
     const path = window.location.pathname;
+    const urlParams = new URLSearchParams(window.location.search);
+    const barFromUrl = urlParams.get('bar');
+    
+    if (barFromUrl && !barId) {
+      setBarId(barFromUrl);
+    }
+    
     if (path === '/play' || path.includes('/play')) {
       setScreen('playJoin');
     }
@@ -641,7 +648,10 @@ export default function App() {
   };
 
   const startMatch = async () => {
-    if (!barId) return;
+    if (!barId) {
+      alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
+      return;
+    }
     
     try {
       // 🔥 SYNCHRONISATION AVEC L'API EN TEMPS RÉEL
@@ -1544,12 +1554,28 @@ export default function App() {
     if (!barId) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
-          <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl text-center">
-            <div className="text-6xl mb-4">📺</div>
-            <h2 className="text-3xl font-black text-green-900 mb-4">ÉCRAN TV</h2>
-            <p className="text-gray-600 mb-6">Scannez le QR code depuis l'admin pour afficher ce bar</p>
-            <button onClick={() => setScreen('home')} className="text-green-900 underline">
-              ← Retour
+          <div className="bg-white rounded-3xl p-10 max-w-2xl w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-3xl font-black text-red-900 mb-4">AUCUN BAR SÉLECTIONNÉ</h2>
+            <p className="text-gray-600 mb-6 text-xl">
+              Vous devez accéder à cet écran depuis l'admin avec un code bar valide.
+            </p>
+            <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-6 mb-6">
+              <p className="text-blue-900 font-bold mb-2">💡 Comment faire ?</p>
+              <ol className="text-left text-blue-800 space-y-2">
+                <li>1. Retournez à l'accueil</li>
+                <li>2. Cliquez sur "🎮 ADMIN BAR"</li>
+                <li>3. Entrez votre code (ex: BAR-TEX9MJ)</li>
+                <li>4. Cliquez sur "📺 Voir écran TV"</li>
+              </ol>
+            </div>
+            <button 
+              onClick={() => {
+                window.location.href = '/';
+              }}
+              className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+            >
+              ← Retour à l'accueil
             </button>
           </div>
         </div>
