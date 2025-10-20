@@ -1564,94 +1564,69 @@ export default function App() {
 
   // TV
   if (screen === 'tv') {
-    const qrCodeUrl = barId ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/play?bar=' + barId)}` : null;
-    
+    const qrUrl = `${window.location.origin}/play?bar=${barId || ''}`;
     return (
       <div className="min-h-screen bg-black text-white p-4">
+        {/* QR Code en haut à droite */}
+        {barId && (
+          <div className="fixed top-6 right-6 z-50 bg-white p-2 rounded-xl shadow-2xl">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`}
+              alt="QR Code pour rejoindre"
+              className="w-40 h-40"
+            />
+          </div>
+        )}
+
         <div className="max-w-6xl mx-auto">
-          {/* Header avec QR Code */}
-          <div className="flex justify-between items-start mb-8">
-            <div className="flex-1 text-center">
-              <div className="text-8xl mb-4">⚽</div>
-              <h1 className="text-6xl font-black text-white mb-2">QUIZ BUTEUR</h1>
-              <p className="text-2xl text-green-400">Pronostics en temps réel</p>
-            </div>
-            
-            {/* QR Code */}
-            {qrCodeUrl && (
-              <div className="bg-white p-4 rounded-xl shadow-2xl">
-                <div className="text-center mb-2">
-                  <div className="text-sm font-bold text-gray-800">REJOINDRE LE QUIZ</div>
-                  <div className="text-xs text-gray-600">Scannez avec votre téléphone</div>
-                </div>
-                <img 
-                  src={qrCodeUrl} 
-                  alt="QR Code pour rejoindre le quiz" 
-                  className="w-48 h-48 mx-auto"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'block';
-                  }}
-                />
-                <div className="hidden text-center text-gray-600 text-sm">
-                  QR Code non disponible
-                </div>
-              </div>
-            )}
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="text-8xl mb-4">⚽</div>
+            <h1 className="text-6xl font-black text-white mb-2">QUIZ BUTEUR</h1>
+            <p className="text-2xl text-green-400">Pronostics en temps réel</p>
           </div>
 
-          {/* Match info avec logos et score */}
-          {selectedMatch && (
+          {/* Match info enrichi */}
+          {(selectedMatch || matchState?.matchInfo) && (
             <div className="bg-gray-900 rounded-2xl p-8 mb-8">
-              <div className="text-center mb-6">
-                <div className="text-2xl text-gray-400 mb-2">{selectedMatch.league}</div>
-                {matchState?.active && (
-                  <div className="text-red-500 text-2xl font-bold mb-4">🔴 MATCH EN COURS</div>
-                )}
-              </div>
-              
-              <div className="flex items-center justify-center gap-8">
-                {/* Équipe domicile */}
-                <div className="flex flex-col items-center">
-                  {selectedMatch.homeLogo && (
-                    <img 
-                      src={selectedMatch.homeLogo} 
-                      alt={selectedMatch.homeTeam}
-                      className="w-16 h-16 mb-2"
-                      onError={(e) => e.target.style.display = 'none'}
+              <div className="flex items-center justify-between gap-6">
+                <div className="flex items-center gap-4 flex-1">
+                  { (matchState?.matchInfo?.homeLogo || selectedMatch?.homeLogo) && (
+                    <img
+                      src={matchState?.matchInfo?.homeLogo || selectedMatch?.homeLogo}
+                      alt={matchState?.matchInfo?.homeTeam || selectedMatch?.homeTeam}
+                      className="w-16 h-16 object-contain bg-white rounded-lg"
                     />
                   )}
-                  <div className="text-2xl font-bold text-center">{selectedMatch.homeTeam}</div>
-                </div>
-                
-                {/* Score */}
-                <div className="text-center">
-                  <div className="text-6xl font-black text-white mb-2">
-                    {selectedMatch.score || '0-0'}
+                  <div className="text-2xl font-bold">
+                    {matchState?.matchInfo?.homeTeam || selectedMatch?.homeTeam}
                   </div>
-                  <div className="text-lg text-gray-400">VS</div>
                 </div>
-                
-                {/* Équipe extérieure */}
-                <div className="flex flex-col items-center">
-                  {selectedMatch.awayLogo && (
-                    <img 
-                      src={selectedMatch.awayLogo} 
-                      alt={selectedMatch.awayTeam}
-                      className="w-16 h-16 mb-2"
-                      onError={(e) => e.target.style.display = 'none'}
+
+                <div className="text-center flex-1">
+                  <div className="text-5xl font-black">
+                    {(matchState?.matchInfo?.score || selectedMatch?.score || 'vs')}
+                  </div>
+                  <div className="text-sm text-gray-400 mt-2">
+                    {matchState?.matchInfo?.league || selectedMatch?.league}
+                  </div>
+                  {matchState?.active && (
+                    <div className="text-red-500 text-xl font-bold mt-1">🔴 MATCH EN COURS</div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-4 justify-end flex-1">
+                  <div className="text-2xl font-bold text-right">
+                    {matchState?.matchInfo?.awayTeam || selectedMatch?.awayTeam}
+                  </div>
+                  { (matchState?.matchInfo?.awayLogo || selectedMatch?.awayLogo) && (
+                    <img
+                      src={matchState?.matchInfo?.awayLogo || selectedMatch?.awayLogo}
+                      alt={matchState?.matchInfo?.awayTeam || selectedMatch?.awayTeam}
+                      className="w-16 h-16 object-contain bg-white rounded-lg"
                     />
                   )}
-                  <div className="text-2xl font-bold text-center">{selectedMatch.awayTeam}</div>
                 </div>
-              </div>
-              
-              {/* Informations supplémentaires */}
-              <div className="text-center mt-6 text-gray-400">
-                <div className="text-lg">{selectedMatch.date}</div>
-                {selectedMatch.status && (
-                  <div className="text-sm mt-1">{selectedMatch.status}</div>
-                )}
               </div>
             </div>
           )}
