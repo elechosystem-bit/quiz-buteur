@@ -35,7 +35,7 @@ const QUESTIONS = [
 
 export default function App() {
   const [screen, setScreen] = useState('home');
-  const [barId] = useState('default_bar');
+  const [barId, setBarId] = useState(null); // 🔥 Changé : plus de valeur par défaut
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -288,16 +288,39 @@ export default function App() {
 
   useEffect(() => {
     console.log('📍 Chargement initial - path:', window.location.pathname);
-    loadBarInfo(barId);
     
     const path = window.location.pathname;
-    if (path === '/play' || path.includes('/play')) {
-      console.log('📱 Redirection vers playJoin');
-      setScreen('playJoin');
+    
+    // 🔥 NOUVEAU : Extraction du barId depuis l'URL
+    // Format: /bar/cafe-de-paris ou /bar/cafe-de-lyon/play
+    const barMatch = path.match(/\/bar\/([a-zA-Z0-9-_]+)/);
+    
+    if (barMatch) {
+      const extractedBarId = barMatch[1];
+      console.log('🏪 Bar ID détecté:', extractedBarId);
+      setBarId(extractedBarId);
+      loadBarInfo(extractedBarId);
+      
+      // Déterminer l'écran en fonction du chemin
+      if (path.includes('/play')) {
+        console.log('📱 Redirection vers playJoin');
+        setScreen('playJoin');
+      } else if (path.includes('/tv')) {
+        console.log('📺 Redirection vers TV');
+        setScreen('tv');
+      } else if (path.includes('/admin')) {
+        console.log('🎮 Redirection vers admin');
+        setScreen('admin');
+      } else {
+        console.log('🏠 Écran home du bar');
+        setScreen('barHome');
+      }
     } else {
-      console.log('🏠 Écran home');
+      // Pas de barId dans l'URL → écran de sélection
+      console.log('🏠 Écran de sélection de bar');
+      setScreen('selectBar');
     }
-  }, [barId]);
+  }, []);
 
   // 🔥 Wake Lock : Empêcher l'écran de s'éteindre
   useEffect(() => {
@@ -1220,6 +1243,167 @@ export default function App() {
             className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
           >
             🎮 ADMIN
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 🔥 NOUVEAU : Écran de sélection/création de bar
+  if (screen === 'selectBar') {
+    const [newBarId, setNewBarId] = useState('');
+    const [newBarName, setNewBarName] = useState('');
+    const [existingBarId, setExistingBarId] = useState('');
+
+    const createBar = async () => {
+      if (!newBarId || !newBarName) {
+        alert('Veuillez remplir tous les champs');
+        return;
+      }
+      
+      const sanitizedId = newBarId.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      
+      try {
+        const barRef = ref(db, `bars/${sanitizedId}/info`);
+        const snap = await get(barRef);
+        
+        if (snap.exists()) {
+          alert('❌ Ce nom de bar existe déjà !');
+          return;
+        }
+        
+        await set(barRef, {
+          name: newBarName,
+          createdAt: Date.now(),
+          slug: sanitizedId
+        });
+        
+        alert(`✅ Bar "${newBarName}" créé !`);
+        window.location.href = `/bar/${sanitizedId}/admin`;
+      } catch (e) {
+        alert('❌ Erreur: ' + e.message);
+      }
+    };
+
+    const accessBar = () => {
+      if (!existingBarId) {
+        alert('Veuillez entrer un identifiant de bar');
+        return;
+      }
+      window.location.href = `/bar/${existingBarId}/admin`;
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+        <div className="max-w-4xl w-full">
+          <div className="text-center mb-12">
+            <div className="text-8xl mb-6">⚽</div>
+            <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
+            <p className="text-2xl text-green-200">Gestion multi-établissements</p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* Créer un nouveau bar */}
+            <div className="bg-white rounded-3xl p-8 shadow-2xl">
+              <h2 className="text-3xl font-bold text-green-900 mb-6">🆕 Créer un bar</h2>
+              
+              <input
+                type="text"
+                placeholder="Nom du bar (ex: Café de Paris)"
+                value={newBarName}
+                onChange={(e) => setNewBarName(e.target.value)}
+                className="w-full px-4 py-3 text-lg border-2 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
+              />
+              
+              <input
+                type="text"
+                placeholder="Identifiant unique (ex: cafe-de-paris)"
+                value={newBarId}
+                onChange={(e) => setNewBarId(e.target.value.toLowerCase())}
+                className="w-full px-4 py-3 text-lg border-2 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
+              />
+              
+              <button
+                onClick={createBar}
+                className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+              >
+                Créer mon bar 🍺
+              </button>
+              
+              <p className="text-sm text-gray-600 mt-4">
+                Votre QR code sera : /bar/{newBarId || 'identifiant'}/play
+              </p>
+            </div>
+
+            {/* Accéder à un bar existant */}
+            <div className="bg-white rounded-3xl p-8 shadow-2xl">
+              <h2 className="text-3xl font-bold text-green-900 mb-6">🔑 Accéder à mon bar</h2>
+              
+              <input
+                type="text"
+                placeholder="Identifiant de votre bar"
+                value={existingBarId}
+                onChange={(e) => setExistingBarId(e.target.value.toLowerCase())}
+                className="w-full px-4 py-3 text-lg border-2 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
+              />
+              
+              <button
+                onClick={accessBar}
+                className="w-full bg-blue-600 text-white py-4 rounded-xl text-xl font-bold hover:bg-blue-700"
+              >
+                Accéder à l'admin 🎮
+              </button>
+              
+              <div className="mt-6 p-4 bg-gray-100 rounded-lg">
+                <p className="text-sm font-bold text-gray-700 mb-2">📋 Liens utiles :</p>
+                <p className="text-xs text-gray-600">/bar/{existingBarId || 'id'}/admin → Gestion</p>
+                <p className="text-xs text-gray-600">/bar/{existingBarId || 'id'}/tv → Écran TV</p>
+                <p className="text-xs text-gray-600">/bar/{existingBarId || 'id'}/play → Joueurs</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 🔥 NOUVEAU : Page d'accueil d'un bar spécifique
+  if (screen === 'barHome') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
+        <div className="text-center mb-12">
+          <div className="text-8xl mb-6">⚽</div>
+          <h1 className="text-6xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur'}</h1>
+          <p className="text-2xl text-green-200">Identifiant : {barId}</p>
+        </div>
+        
+        <div className="flex gap-6 flex-wrap justify-center">
+          <button 
+            onClick={() => window.location.href = `/bar/${barId}/tv`}
+            className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
+          >
+            📺 ÉCRAN TV
+          </button>
+          <button 
+            onClick={() => window.location.href = `/bar/${barId}/admin`}
+            className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
+          >
+            🎮 ADMIN
+          </button>
+          <button 
+            onClick={() => window.location.href = `/bar/${barId}/play`}
+            className="bg-blue-600 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-blue-700 transition-all shadow-2xl"
+          >
+            📱 JOUER
+          </button>
+        </div>
+        
+        <div className="mt-12 text-center">
+          <button
+            onClick={() => setScreen('selectBar')}
+            className="text-white underline hover:text-green-200"
+          >
+            ← Changer de bar
           </button>
         </div>
       </div>
