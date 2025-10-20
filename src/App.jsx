@@ -113,7 +113,45 @@ export default function App() {
         const dataToday = await responseToday.json();
 
         if (dataToday.response && dataToday.response.length > 0) {
-          const matches = dataToday.response.slice(0, 20).map(fixture => ({
+          const matches = dataToday.response
+            .filter(fixture => {
+              const status = fixture.fixture.status.short;
+              // Exclure les matchs terminés (FT, AET, PEN, etc.)
+              return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
+            })
+            .slice(0, 20)
+            .map(fixture => ({
+              id: fixture.fixture.id,
+              homeTeam: fixture.teams.home.name,
+              awayTeam: fixture.teams.away.name,
+              homeLogo: fixture.teams.home.logo,
+              awayLogo: fixture.teams.away.logo,
+              league: fixture.league.name,
+              date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
+              status: fixture.fixture.status.long,
+              score: fixture.fixture.status.short === 'NS' 
+                ? 'vs' 
+                : `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+            }));
+
+          setAvailableMatches(matches);
+          
+          if (matches.length === 0) {
+            alert('⚠️ Aucun match disponible (tous les matchs du jour sont terminés)');
+          }
+        } else {
+          alert('⚠️ Aucun match trouvé');
+          setAvailableMatches([]);
+        }
+      } else {
+        const matches = data.response
+          .filter(fixture => {
+            const status = fixture.fixture.status.short;
+            // Exclure les matchs terminés
+            return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
+          })
+          .slice(0, 20)
+          .map(fixture => ({
             id: fixture.fixture.id,
             homeTeam: fixture.teams.home.name,
             awayTeam: fixture.teams.away.name,
@@ -122,32 +160,16 @@ export default function App() {
             league: fixture.league.name,
             date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
             status: fixture.fixture.status.long,
-            score: fixture.fixture.status.short === 'NS' 
-              ? 'vs' 
-              : `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+            score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
+            elapsed: fixture.fixture.status.elapsed || 0,
+            half: fixture.fixture.status.short
           }));
 
-          setAvailableMatches(matches);
-        } else {
-          alert('⚠️ Aucun match trouvé');
-          setAvailableMatches([]);
-        }
-      } else {
-        const matches = data.response.slice(0, 20).map(fixture => ({
-          id: fixture.fixture.id,
-          homeTeam: fixture.teams.home.name,
-          awayTeam: fixture.teams.away.name,
-          homeLogo: fixture.teams.home.logo,
-          awayLogo: fixture.teams.away.logo,
-          league: fixture.league.name,
-          date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
-          status: fixture.fixture.status.long,
-          score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
-          elapsed: fixture.fixture.status.elapsed || 0,
-          half: fixture.fixture.status.short
-        }));
-
         setAvailableMatches(matches);
+        
+        if (matches.length === 0) {
+          alert('⚠️ Aucun match disponible (tous les matchs en direct sont terminés)');
+        }
       }
 
     } catch (e) {
@@ -1582,17 +1604,34 @@ export default function App() {
                   <div
                     key={match.id}
                     onClick={() => selectMatch(match)}
-                    className={`p-4 rounded-lg cursor-pointer ${
-                      selectedMatch?.id === match.id ? 'bg-green-800' : 'bg-gray-700 hover:bg-gray-600'
+                    className={`p-4 rounded-lg cursor-pointer transition-all ${
+                      selectedMatch?.id === match.id 
+                        ? 'bg-green-800 border-2 border-green-500' 
+                        : 'bg-gray-700 hover:bg-gray-600'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       {match.homeLogo && <img src={match.homeLogo} alt="" className="w-8 h-8" />}
                       <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs bg-blue-600 px-2 py-1 rounded">
+                            {match.league}
+                          </span>
+                          {match.status === 'En cours' && (
+                            <span className="text-xs bg-red-600 px-2 py-1 rounded font-bold animate-pulse">
+                              🔴 LIVE
+                            </span>
+                          )}
+                          {match.status === 'À venir' && (
+                            <span className="text-xs bg-yellow-600 px-2 py-1 rounded font-bold">
+                              ⏰ À VENIR
+                            </span>
+                          )}
+                        </div>
                         <div className="text-lg font-bold">
                           {match.homeTeam} {match.score} {match.awayTeam}
                         </div>
-                        <div className="text-sm text-gray-400">{match.league}</div>
+                        <div className="text-sm text-gray-400">{match.date}</div>
                       </div>
                       {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
                     </div>
