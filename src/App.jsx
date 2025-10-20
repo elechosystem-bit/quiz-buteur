@@ -68,37 +68,6 @@ export default function App() {
 
   console.log('🚀 APP DÉMARRÉ - Screen initial:', screen);
 
-  // 🔥 NOUVEAU : Fonction pour mettre à jour le status du match depuis l'API
-  const updateMatchStatus = async (fixtureId) => {
-    try {
-      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-      if (!apiKey) return;
-      
-      const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-rapidapi-host': 'v3.football.api-sports.io'
-        }
-      });
-      
-      const data = await response.json();
-      
-      if (data.response && data.response[0]) {
-        const match = data.response[0];
-        await update(ref(db, `bars/${barId}/selectedMatch`), {
-          status: match.fixture.status.long,
-          elapsed: match.fixture.status.elapsed || 0,
-          half: match.fixture.status.short,
-          score: `${match.goals.home || 0}-${match.goals.away || 0}`
-        });
-        console.log('✅ Status match mis à jour:', match.fixture.status.long);
-      }
-    } catch (e) {
-      console.error('❌ Erreur mise à jour status:', e);
-    }
-  };
-
   const searchMatches = async () => {
     setLoadingMatches(true);
     console.log('🔍 Recherche de matchs via API-Football...');
@@ -225,10 +194,12 @@ export default function App() {
       await set(ref(db, `bars/${barId}/selectedMatch`), matchData);
       console.log('✅ Match sauvegardé dans Firebase');
       
+      // Vérification immédiate
       await new Promise(resolve => setTimeout(resolve, 500));
       const verifySnap = await get(ref(db, `bars/${barId}/selectedMatch`));
       console.log('🔍 Vérification: exists =', verifySnap.exists(), 'data =', verifySnap.val());
       
+      // Mettre à jour le state local APRÈS la sauvegarde
       setSelectedMatch(matchData);
       
     } catch (e) {
@@ -357,6 +328,7 @@ export default function App() {
       requestWakeLock();
     }
 
+    // Re-demander le Wake Lock si l'onglet redevient visible
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && (screen === 'tv' || screen === 'mobile')) {
         requestWakeLock();
@@ -425,7 +397,7 @@ export default function App() {
     };
   }, [barId]);
 
-  // 🔥 Écoute de selectedMatch pour l'écran TV
+  // 🔥 NOUVEAU : Écoute de selectedMatch pour l'écran TV
   useEffect(() => {
     if (!barId || screen !== 'tv') return;
     
@@ -455,25 +427,6 @@ export default function App() {
       unsub();
     };
   }, [barId, screen]);
-
-  // 🔥 NOUVEAU : Mise à jour automatique du status du match toutes les 30 secondes
-  useEffect(() => {
-    if (!selectedMatch?.id || screen !== 'tv') return;
-    
-    console.log('⏰ Démarrage de la mise à jour automatique du status');
-    
-    const interval = setInterval(() => {
-      updateMatchStatus(selectedMatch.id);
-    }, 30000); // Toutes les 30 secondes
-    
-    // Premier appel immédiat
-    updateMatchStatus(selectedMatch.id);
-    
-    return () => {
-      console.log('⏰ Arrêt de la mise à jour automatique');
-      clearInterval(interval);
-    };
-  }, [selectedMatch?.id, screen]);
 
   useEffect(() => {
     if (!barId || !currentMatchId) {
@@ -516,6 +469,7 @@ export default function App() {
         setCurrentQuestion(data);
         setTimeLeft(data.timeLeft || 15);
         
+        // 🔥 Envoyer une notification push quand une nouvelle question arrive
         if (screen === 'mobile' && 'Notification' in window) {
           if (Notification.permission === 'granted') {
             new Notification('⚽ Nouvelle question !', {
@@ -773,6 +727,7 @@ export default function App() {
         alert('✅ Profil créé ! Vous pouvez maintenant jouer.');
       }
       
+      // 🔥 Demander la permission pour les notifications
       if ('Notification' in window && Notification.permission === 'default') {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
@@ -829,8 +784,10 @@ export default function App() {
       const matchId = `match_${now}`;
       console.log('✨ Création du nouveau match:', matchId);
       
-      let clockStartTime = now;
+      // Calculer le startTime du chrono basé sur l'elapsed du match sélectionné
+      let clockStartTime = now; // Par défaut, on démarre maintenant
       if (selectedMatch && selectedMatch.elapsed !== undefined) {
+        // Si le match a déjà commencé, on recule le startTime
         clockStartTime = now - (selectedMatch.elapsed * 60000);
         console.log(`⏱️ Match déjà en cours depuis ${selectedMatch.elapsed} min, startTime ajusté`);
       }
@@ -838,7 +795,7 @@ export default function App() {
       const newMatchState = {
         active: true,
         startTime: now,
-        nextQuestionTime: now + 60000,
+        nextQuestionTime: now + 60000, // Première question dans 1 minute
         questionCount: 0,
         currentMatchId: matchId,
         matchInfo: selectedMatch ? {
@@ -847,11 +804,10 @@ export default function App() {
           homeLogo: selectedMatch.homeLogo,
           awayLogo: selectedMatch.awayLogo,
           league: selectedMatch.league,
-          score: selectedMatch.score,
-          status: selectedMatch.status
+          score: selectedMatch.score
         } : null,
         matchClock: {
-          startTime: clockStartTime,
+          startTime: clockStartTime, // Temps calculé pour le chrono
           elapsedMinutes: selectedMatch?.elapsed || 0,
           half: selectedMatch?.half || matchHalf || '1H'
         }
@@ -1034,7 +990,7 @@ export default function App() {
           if (data.answer === randomWinner) {
             const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
             const playerSnap = await get(playerRef);
-            const bonus = Math.floor((data.timeLeft || 0) / 3);
+            const bonus = Math.floor((data.timeLeft || 0) / 3); // Bonus de rapidité (max 5 pts)
             const total = 10 + bonus;
             
             if (playerSnap.exists()) {
@@ -1162,37 +1118,26 @@ export default function App() {
     }
   };
 
-  // 🔥 COMPOSANT MATCH CLOCK CORRIGÉ
   const MatchClock = () => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
     
     useEffect(() => {
       const updateTime = () => {
+        // Utiliser matchState.matchClock en priorité (fixé au démarrage du match)
         let clockStartTime = matchState?.matchClock?.startTime;
-        let clockHalf = matchState?.matchClock?.half || matchHalf;
+        let clockHalf = matchState?.matchClock?.half || selectedMatch?.half || matchHalf;
         
-        // 🔥 Vérifier le status du match depuis l'API
-        const matchStatus = selectedMatch?.status || matchState?.matchInfo?.status;
-        
-        // 🔥 Si le match est terminé selon l'API, arrêter le chrono
-        if (matchStatus === 'Match Finished' || matchStatus === 'FT' || matchStatus === 'Terminé' || 
-            matchStatus === 'Match terminé' || matchStatus === 'Fin du match') {
-          const finalElapsed = selectedMatch?.elapsed || matchState?.matchInfo?.elapsed || 90;
-          setTime(`${finalElapsed}'00`);
-          setPhase('TERMINÉ');
-          return;
-        }
-        
-        // 🔥 Si mi-temps
-        if (clockHalf === 'HT' || matchStatus === 'Halftime' || matchStatus === 'HT' || matchStatus === 'Mi-temps') {
-          setTime("45'00");
-          setPhase('MI-TEMPS');
-          return;
-        }
-        
+        // Si pas de matchClock dans matchState, utiliser les variables locales
         if (!clockStartTime) {
           clockStartTime = matchStartTime;
+        }
+        
+        // Si le match est terminé, figer le chrono
+        if (clockHalf === 'FT') {
+          setTime('90\'00');
+          setPhase('TERMINÉ');
+          return;
         }
         
         if (clockStartTime) {
@@ -1200,33 +1145,30 @@ export default function App() {
           const secs = Math.floor((Date.now() - clockStartTime) / 1000) % 60;
           
           let displayTime;
-          let displayPhase;
-          
-          // Sécurité : ne jamais dépasser 120 minutes
-          if (elapsed >= 120) {
-            displayTime = "120'00";
-            displayPhase = 'TERMINÉ';
-          }
-          // 1ère mi-temps
-          else if (elapsed < 45) {
+          if (elapsed < 45) {
+            // 1ère mi-temps : 0' à 44'59"
             displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-            displayPhase = '1MT';
-          }
-          // 2ème mi-temps
-          else if (elapsed >= 45 && elapsed < 90) {
+          } else if (elapsed >= 45 && elapsed < 90) {
+            // 2ème mi-temps : 45' à 89'59"
             displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-            displayPhase = '2MT';
-          }
-          // Prolongations
-          else if (elapsed >= 90) {
-            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-            displayPhase = 'PROL.';
+          } else {
+            // Temps additionnel : 90'+1, 90'+2, etc.
+            const additionalMins = elapsed - 90 + 1;
+            displayTime = `90'+${additionalMins}`;
           }
           
           setTime(displayTime);
-          setPhase(displayPhase);
+          
+          if (clockHalf === 'HT') {
+            setPhase('MI-TEMPS');
+          } else if (elapsed >= 45 && clockHalf !== '1H') {
+            setPhase('2MT');
+          } else {
+            setPhase('1MT');
+          }
         } else {
-          const mins = Math.min(Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 120, 90);
+          // Fallback: générer un temps fictif
+          const mins = Math.floor((Date.now() - (Date.now() % 600000)) / 6000) % 90;
           const secs = Math.floor((Date.now() / 1000) % 60);
           setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
           setPhase(mins >= 45 ? "2MT" : "1MT");
@@ -1236,7 +1178,7 @@ export default function App() {
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchState, matchStartTime, matchHalf, selectedMatch]);
+    }, [matchState, matchStartTime, matchHalf, selectedMatch?.half]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
@@ -1442,4 +1384,367 @@ export default function App() {
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
         {notification && (
           <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
-            <div className="bg-gradient-to-r from-green-500 to
+            <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-8 py-6 rounded-2xl shadow-2xl flex items-center gap-4">
+              <div className="text-4xl">🎉</div>
+              <div>
+                <div className="text-2xl font-black">{notification.pseudo}</div>
+                <div className="text-lg">a rejoint la partie !</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-between items-start mb-8">
+          <div className="flex-1">
+            <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
+            
+            {hasMatchInfo ? (
+              <div className="mb-3 bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-4 rounded-xl border-2 border-blue-500">
+                <div className="flex items-center justify-center gap-4">
+                  {matchInfo.homeLogo && (
+                    <img src={matchInfo.homeLogo} alt={matchInfo.homeTeam} className="w-12 h-12 object-contain" />
+                  )}
+                  <div className="text-center">
+                    <p className="text-4xl font-bold text-yellow-400">
+                      {matchInfo.homeTeam} 
+                      <span className="text-white mx-3">{matchInfo.score}</span> 
+                      {matchInfo.awayTeam}
+                    </p>
+                    <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
+                  </div>
+                  {matchInfo.awayLogo && (
+                    <img src={matchInfo.awayLogo} alt={matchInfo.awayTeam} className="w-12 h-12 object-contain" />
+                  )}
+                </div>
+              </div>
+            ) : matchState?.active ? (
+              <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
+                <p className="text-2xl text-yellow-400">⚽ Match en cours</p>
+                <p className="text-lg text-gray-300">En attente des informations...</p>
+              </div>
+            ) : (
+              <p className="text-2xl text-green-300">{barInfo ? barInfo.name : 'Quiz Buteur Live'}</p>
+            )}
+            
+            {matchState && matchState.active && countdown && (
+              <div className="space-y-2">
+                <p className="text-xl text-yellow-400">⏱️ Prochaine question: {countdown}</p>
+                <MatchClock />
+              </div>
+            )}
+            {(!matchState || !matchState.active) && (
+              <p className="text-gray-300 mt-2">Le match n'est pas démarré</p>
+            )}
+          </div>
+          <div className="bg-white p-6 rounded-2xl ml-6">
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`} 
+              alt="QR Code" 
+              className="w-48 h-48" 
+            />
+            <p className="text-center mt-3 font-bold text-green-900">Scanne pour jouer !</p>
+          </div>
+        </div>
+
+        <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
+          <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
+            <div className="col-span-1">#</div>
+            <div className="col-span-7">JOUEUR</div>
+            <div className="col-span-4 text-right">SCORE</div>
+          </div>
+          <div className="space-y-1">
+            {players.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-4xl mb-4">👥</div>
+                <p className="text-xl">En attente de joueurs...</p>
+                <p className="text-sm mt-2">Scannez le QR code pour rejoindre !</p>
+              </div>
+            ) : (
+              players.slice(0, 16).map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
+                    i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                    : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                    : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                    : 'bg-gray-50 text-lg'
+                  }`}
+                >
+                  <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
+                  <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
+                  <div className="col-span-4 text-right font-black">{p.score} pts</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'admin') {
+    console.log('🎮 Affichage écran ADMIN');
+    console.log('📊 État actuel - matchState:', matchState, 'currentMatchId:', currentMatchId, 'players:', players.length);
+    
+    return (
+      <div className="min-h-screen bg-gray-900 text-white p-8">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-4xl font-bold mb-8">🎮 Admin - Gestion du Match</h1>
+          
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
+            <div className="flex gap-4 mb-4">
+              <input
+                type="text"
+                value={matchSearch}
+                onChange={(e) => setMatchSearch(e.target.value)}
+                placeholder="PSG, Real Madrid, Premier League..."
+                className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onKeyPress={(e) => e.key === 'Enter' && searchMatches()}
+              />
+              <button
+                onClick={searchMatches}
+                disabled={loadingMatches}
+                className="bg-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-600"
+              >
+                {loadingMatches ? '⏳ Recherche...' : '🔍 Rechercher'}
+              </button>
+            </div>
+
+            {selectedMatch && (
+              <div className="bg-green-900 border-2 border-green-500 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 flex-1">
+                    {selectedMatch.homeLogo && (
+                      <img src={selectedMatch.homeLogo} alt={selectedMatch.homeTeam} className="w-10 h-10 object-contain" />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-sm text-green-300">{selectedMatch.league}</div>
+                      <div className="text-xl font-bold">
+                        {selectedMatch.homeTeam} <span className="text-green-400">{selectedMatch.score}</span> {selectedMatch.awayTeam}
+                      </div>
+                      <div className="text-sm text-gray-300">{selectedMatch.date}</div>
+                    </div>
+                    {selectedMatch.awayLogo && (
+                      <img src={selectedMatch.awayLogo} alt={selectedMatch.awayTeam} className="w-10 h-10 object-contain" />
+                    )}
+                  </div>
+                  <div className="text-green-400 text-2xl ml-4">✅ Sélectionné</div>
+                </div>
+              </div>
+            )}
+
+            {availableMatches.length > 0 && (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {availableMatches.map(match => (
+                  <div
+                    key={match.id}
+                    onClick={() => selectMatch(match)}
+                    className={`p-4 rounded-lg cursor-pointer transition-all ${
+                      selectedMatch && selectedMatch.id === match.id
+                        ? 'bg-green-800 border-2 border-green-500'
+                        : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1">
+                        {match.homeLogo && (
+                          <img src={match.homeLogo} alt={match.homeTeam} className="w-8 h-8 object-contain" />
+                        )}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs bg-blue-600 px-2 py-1 rounded">{match.league}</span>
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              match.status === 'En cours' ? 'bg-red-600 animate-pulse' :
+                              match.status === 'À venir' ? 'bg-yellow-600' :
+                              'bg-gray-600'
+                            }`}>
+                              {match.status}
+                            </span>
+                          </div>
+                          <div className="text-lg font-bold">
+                            {match.homeTeam} <span className="text-blue-400 mx-2">{match.score}</span> {match.awayTeam}
+                          </div>
+                          <div className="text-sm text-gray-400">{match.date}</div>
+                        </div>
+                        {match.awayLogo && (
+                          <img src={match.awayLogo} alt={match.awayTeam} className="w-8 h-8 object-contain" />
+                        )}
+                      </div>
+                      <div className="text-2xl ml-4">⚽</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {availableMatches.length === 0 && !loadingMatches && (
+              <div className="text-center py-8 text-gray-400">
+                <div className="text-4xl mb-2">🔍</div>
+                <p>Recherchez un match pour commencer</p>
+                <p className="text-sm mt-2">Ex: "PSG", "Premier League", "Real Madrid"</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Contrôle du Match</h2>
+            
+            {!matchState || !matchState.active ? (
+              <div>
+                <p className="text-gray-400 mb-4">
+                  {selectedMatch 
+                    ? `Prêt à démarrer : ${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}`
+                    : 'Sélectionnez un match ci-dessus'}
+                </p>
+                {loadingPlayers && (
+                  <p className="text-yellow-400 mb-4">⏳ Chargement des compositions...</p>
+                )}
+                {matchPlayers.length > 0 && (
+                  <div className="mb-4 p-3 bg-green-900 rounded-lg">
+                    <p className="text-green-300">✅ {matchPlayers.length} joueurs chargés</p>
+                    <p className="text-sm text-gray-300 mt-1">Les questions utiliseront les vrais joueurs du match !</p>
+                  </div>
+                )}
+                <div className="flex gap-4 flex-wrap">
+                  <button
+                    onClick={startMatch}
+                    disabled={!selectedMatch}
+                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                  >
+                    ⚽ Démarrer le match
+                  </button>
+                  <button
+                    onClick={forceCleanup}
+                    className="bg-orange-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-orange-700"
+                  >
+                    🧹 Nettoyage forcé
+                  </button>
+                  <button
+                    onClick={debugFirebase}
+                    className="bg-purple-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-purple-700"
+                  >
+                    🔍 Debug Firebase
+                  </button>
+                </div>
+                {!selectedMatch && (
+                  <p className="text-sm text-yellow-400 mt-3">⚠️ Sélectionnez d'abord un match ci-dessus</p>
+                )}
+                <p className="text-sm text-gray-400 mt-3">⚡ Questions toutes les 1 minute (15 secondes pour répondre)</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
+                {selectedMatch && (
+                  <div className="bg-gray-700 rounded-lg p-3 mb-4 flex items-center gap-3">
+                    {selectedMatch.homeLogo && (
+                      <img src={selectedMatch.homeLogo} alt={selectedMatch.homeTeam} className="w-8 h-8 object-contain" />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-lg font-bold">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</div>
+                      <div className="text-sm text-gray-400">{selectedMatch.league}</div>
+                    </div>
+                    {selectedMatch.awayLogo && (
+                      <img src={selectedMatch.awayLogo} alt={selectedMatch.awayTeam} className="w-8 h-8 object-contain" />
+                    )}
+                  </div>
+                )}
+                <p className="text-lg mb-2">Match ID: {currentMatchId}</p>
+                <p className="text-lg mb-2">Questions: {matchState.questionCount || 0}</p>
+                <p className="text-lg mb-2">Joueurs connectés: {players.length}</p>
+                {currentQuestion && currentQuestion.text ? (
+                  <div className="mb-4">
+                    <p className="text-yellow-400 mb-2">📢 {currentQuestion.text}</p>
+                    <p className="text-gray-400">⏱️ {timeLeft}s</p>
+                  </div>
+                ) : (
+                  countdown && <p className="text-gray-400 mb-4">⏱️ Prochaine: {countdown}</p>
+                )}
+                <div className="flex gap-4 flex-wrap">
+                  <button
+                    onClick={stopMatch}
+                    className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700"
+                  >
+                    ⏹️ Arrêter
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (currentQuestion) {
+                        await autoValidate();
+                        setTimeout(() => createRandomQuestion(), 1000);
+                      } else {
+                        await createRandomQuestion();
+                      }
+                    }}
+                    className="bg-blue-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-blue-700"
+                  >
+                    🎲 Question maintenant
+                  </button>
+                  <button
+                    onClick={forceCleanup}
+                    className="bg-orange-600 px-6 py-4 rounded-lg text-lg font-bold hover:bg-orange-700"
+                  >
+                    🧹 Nettoyage
+                  </button>
+                  <button
+                    onClick={debugFirebase}
+                    className="bg-purple-600 px-6 py-4 rounded-lg text-lg font-bold hover:bg-purple-700"
+                  >
+                    🔍 Debug
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {currentQuestion && currentQuestion.options && (
+            <div className="bg-gray-800 rounded-xl p-6 mb-6">
+              <h2 className="text-2xl font-bold mb-4">Votes en direct</h2>
+              <div className="grid grid-cols-2 gap-4">
+                {currentQuestion.options.map(opt => (
+                  <div key={opt} className="bg-gray-700 p-4 rounded-lg">
+                    <div className="text-lg font-bold">{opt}</div>
+                    <div className="text-3xl font-black text-green-400">{answers[opt] || 0}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <h2 className="text-2xl font-bold mb-4">Joueurs connectés ({players.length})</h2>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {players.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">Aucun joueur pour le moment</p>
+              ) : (
+                players.map(p => (
+                  <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
+                    <span>{p.pseudo}</span>
+                    <span className="text-green-400">{p.score} pts</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <button 
+              onClick={() => setScreen('home')} 
+              className="bg-gray-700 px-6 py-3 rounded-lg hover:bg-gray-600"
+            >
+              ← Retour
+            </button>
+            <button 
+              onClick={() => setScreen('tv')} 
+              className="bg-blue-600 px-6 py-3 rounded-lg hover:bg-blue-700"
+            >
+              📺 Voir écran TV
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
