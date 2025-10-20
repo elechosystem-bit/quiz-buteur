@@ -1,12 +1,4 @@
-const startMatch = async () => {
-    if (!barId) {
-      alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
-      return;
-    }
-    
-    // 🔥 BLOQUER si le match n'a pas encore commencé
-    if (!selectedMatch || !selectedMatch.elapsed || selectedMatch.elapsed === 0) {
-      alert('⚠️ IMPOSSIBLE DE DÉMARRER\n\nLe match n\'a pas encore commencé.\n\nAttimport React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
@@ -658,12 +650,6 @@ export default function App() {
   const startMatch = async () => {
     if (!barId) {
       alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
-      return;
-    }
-    
-    // 🔥 BLOQUER COMPLÈTEMENT si le match n'a pas encore commencé
-    if (!selectedMatch || !selectedMatch.elapsed || selectedMatch.elapsed === 0) {
-      alert('⚠️ IMPOSSIBLE DE DÉMARRER\n\nLe match n\'a pas encore commencé.\n\nAttendez le coup d\'envoi ou sélectionnez un match déjà en cours.');
       return;
     }
     
@@ -1771,12 +1757,12 @@ export default function App() {
                     <div
                       key={match.id}
                       onClick={() => selectMatch(match)}
-                      className={`p-4 rounded-lg cursor-pointer transition-all ${
-                        selectedMatch?.id === match.id 
-                          ? 'bg-green-800 border-2 border-green-500' 
-                          : isUpcoming
-                            ? 'bg-gray-700 hover:bg-gray-600 border-2 border-yellow-600'
-                            : 'bg-gray-700 hover:bg-gray-600'
+                      className={`p-4 rounded-lg transition-all ${
+                        isUpcoming 
+                          ? 'bg-gray-800 opacity-60 cursor-not-allowed'
+                          : selectedMatch?.id === match.id 
+                            ? 'bg-green-800 border-2 border-green-500 cursor-pointer' 
+                            : 'bg-gray-700 hover:bg-gray-600 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -1793,7 +1779,7 @@ export default function App() {
                             )}
                             {isUpcoming && (
                               <span className="text-xs bg-yellow-600 px-2 py-1 rounded font-bold">
-                                ⏰ DÉMARRAGE AUTO
+                                ⏰ À VENIR
                               </span>
                             )}
                           </div>
@@ -1803,6 +1789,7 @@ export default function App() {
                           <div className="text-sm text-gray-400">{match.date}</div>
                         </div>
                         {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
+                        {isUpcoming && <div className="text-2xl ml-4">🔒</div>}
                       </div>
                     </div>
                   );
