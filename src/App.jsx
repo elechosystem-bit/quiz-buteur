@@ -646,47 +646,7 @@ export default function App() {
     await signOut(auth);
     window.location.href = '/';
   };
-<div className="bg-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-2xl font-bold mb-4">Contrôle</h2>
-            
-            {!matchState?.active ? (
-              <div>
-                <p className="text-gray-400 mb-4">
-                  {selectedMatch ? `${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}` : 'Sélectionnez un match'}
-                </p>
-                {loadingPlayers && <p className="text-yellow-400 mb-4">⏳ Chargement...</p>}
-                {matchPlayers.length > 0 && (
-                  <div className="mb-4 p-3 bg-green-900 rounded-lg">
-                    <p className="text-green-300">✅ {matchPlayers.length} joueurs chargés</p>
-                  </div>
-                )}
-                <div className="flex gap-4 flex-wrap">
-                  <button
-                    onClick={startMatch}
-                    disabled={!selectedMatch}
-                    className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700 disabled:bg-gray-600"
-                  >
-                    ⚽ Démarrer
-                  </button>
-                  <button 
-                    onClick={forceCleanup} 
-                    className="bg-orange-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-orange-700"
-                  >
-                    🧹 Nettoyage
-                  </button>
-                  <button 
-                    onClick={debugFirebase} 
-                    className="bg-purple-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-purple-700"
-                  >
-                    🔍 Debug
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
-                <p className="text-lg mb-2">Joueurs: {players.length}</p>
-                {currentQuestion?.text && <p className="text-yellow// ⬆️⬆️⬆️ SUITE DE LA PARTIE 1 ⬆️⬆️⬆️
+// ⬆️⬆️⬆️ SUITE DE LA PARTIE 1 ⬆️⬆️⬆️
 
   const startMatch = async () => {
     if (!barId) {
@@ -1035,63 +995,36 @@ export default function App() {
   };
 
   const createNewBar = async (barName) => {
-    if (!barName || barName.trim() === '') {
-      alert('❌ Veuillez entrer un nom de bar');
-      return;
-    }
-    
     const barCode = generateBarCode();
     const newBarData = {
       code: barCode,
-      name: barName.trim(),
+      name: barName,
       createdAt: Date.now(),
       active: true
     };
     
     try {
-      console.log('🔄 Création du bar:', barCode, newBarData);
       await set(ref(db, `bars/${barCode}/info`), newBarData);
-      console.log('✅ Bar créé dans Firebase');
-      
-      alert(`✅ Bar créé avec succès !\n\n📍 Nom : ${barName}\n🔑 Code : ${barCode}\n\n👉 Donnez ce code à votre client.`);
-      
+      alert(`✅ Bar créé !\n\nNom : ${barName}\nCode : ${barCode}\n\nDonnez ce code à votre client.`);
       await loadAllBars();
     } catch (e) {
-      console.error('❌ Erreur création bar:', e);
-      alert('❌ Erreur lors de la création: ' + e.message);
+      alert('❌ Erreur: ' + e.message);
     }
   };
 
   const loadAllBars = async () => {
     try {
-      console.log('🔄 Chargement de tous les bars...');
       const barsSnap = await get(ref(db, 'bars'));
-      
       if (barsSnap.exists()) {
         const barsData = barsSnap.val();
-        console.log('📊 Données bars brutes:', barsData);
-        
-        const barsList = Object.entries(barsData).map(([id, data]) => {
-          // Gérer les deux formats possibles
-          const barInfo = data.info || data;
-          return {
-            id,
-            code: barInfo.code || id,
-            name: barInfo.name || 'Sans nom',
-            createdAt: barInfo.createdAt || Date.now(),
-            active: barInfo.active !== undefined ? barInfo.active : true
-          };
-        });
-        
-        console.log('✅ Bars chargés:', barsList);
+        const barsList = Object.entries(barsData).map(([id, data]) => ({
+          id,
+          ...data.info
+        }));
         setAllBars(barsList);
-      } else {
-        console.log('⚠️ Aucun bar trouvé');
-        setAllBars([]);
       }
     } catch (e) {
-      console.error('❌ Erreur chargement bars:', e);
-      alert('❌ Erreur lors du chargement: ' + e.message);
+      console.error('Erreur chargement bars:', e);
     }
   };
 
@@ -1395,21 +1328,6 @@ export default function App() {
           >
             ← Retour accueil
           </button>
-
-          <div className="mt-4 flex gap-4">
-            <button
-              onClick={debugFirebase}
-              className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 font-bold"
-            >
-              🔍 Debug Firebase
-            </button>
-            <button
-              onClick={forceCleanup}
-              className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 font-bold"
-            >
-              🧹 Nettoyage Complet
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -1972,4 +1890,4 @@ export default function App() {
 
   return null;
 }
-// ⬇️⬇️⬇️ FIN DE LA PARTIE 1 ⬇️⬇️// CONTINUER AVEC LA PARTIE 2 : startMatch, stopMatch, createRandomQuestion, etc...
+// CONTINUER AVEC LA PARTIE 2 : startMatch, stopMatch, createRandomQuestion, etc...
