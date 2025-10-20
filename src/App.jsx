@@ -1757,12 +1757,12 @@ export default function App() {
                     <div
                       key={match.id}
                       onClick={() => selectMatch(match)}
-                      className={`p-4 rounded-lg transition-all ${
-                        isUpcoming 
-                          ? 'bg-gray-800 opacity-60 cursor-not-allowed'
-                          : selectedMatch?.id === match.id 
-                            ? 'bg-green-800 border-2 border-green-500 cursor-pointer' 
-                            : 'bg-gray-700 hover:bg-gray-600 cursor-pointer'
+                      className={`p-4 rounded-lg cursor-pointer transition-all ${
+                        selectedMatch?.id === match.id 
+                          ? 'bg-green-800 border-2 border-green-500' 
+                          : isUpcoming
+                            ? 'bg-gray-700 hover:bg-gray-600 border-2 border-yellow-600'
+                            : 'bg-gray-700 hover:bg-gray-600'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -1779,7 +1779,7 @@ export default function App() {
                             )}
                             {isUpcoming && (
                               <span className="text-xs bg-yellow-600 px-2 py-1 rounded font-bold">
-                                ⏰ À VENIR
+                                ⏰ DÉMARRAGE AUTO
                               </span>
                             )}
                           </div>
@@ -1789,7 +1789,6 @@ export default function App() {
                           <div className="text-sm text-gray-400">{match.date}</div>
                         </div>
                         {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
-                        {isUpcoming && <div className="text-2xl ml-4">🔒</div>}
                       </div>
                     </div>
                   );
