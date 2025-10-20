@@ -1750,17 +1750,19 @@ export default function App() {
             {availableMatches.length > 0 && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {availableMatches.map(match => {
-                  const isLive = match.elapsed > 0 || match.status === 'En cours';
-                  const isUpcoming = match.elapsed === 0 || match.status === 'À venir' || match.status === 'Not Started';
+                  const isLive = match.elapsed && match.elapsed > 0;
+                  const isUpcoming = !match.elapsed || match.elapsed === 0;
                   
                   return (
                     <div
                       key={match.id}
                       onClick={() => selectMatch(match)}
-                      className={`p-4 rounded-lg cursor-pointer transition-all ${
-                        selectedMatch?.id === match.id 
-                          ? 'bg-green-800 border-2 border-green-500' 
-                          : 'bg-gray-700 hover:bg-gray-600'
+                      className={`p-4 rounded-lg transition-all ${
+                        isUpcoming 
+                          ? 'bg-gray-800 opacity-60 cursor-not-allowed'
+                          : selectedMatch?.id === match.id 
+                            ? 'bg-green-800 border-2 border-green-500 cursor-pointer' 
+                            : 'bg-gray-700 hover:bg-gray-600 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -1787,6 +1789,7 @@ export default function App() {
                           <div className="text-sm text-gray-400">{match.date}</div>
                         </div>
                         {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
+                        {isUpcoming && <div className="text-2xl ml-4">🔒</div>}
                       </div>
                     </div>
                   );
