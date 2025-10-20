@@ -75,10 +75,10 @@ export default function App() {
 
   const searchMatches = async () => {
     setLoadingMatches(true);
-    
+
     try {
       const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-      
+
       if (!apiKey) {
         alert('❌ Clé API non configurée');
         setLoadingMatches(false);
@@ -1417,15 +1417,15 @@ export default function App() {
           <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
-        </div>
+            </div>
         
-        <button 
+            <button
           onClick={() => setScreen('auth')}
           className="bg-white text-green-900 px-16 py-10 rounded-3xl text-4xl font-black hover:bg-green-100 transition-all shadow-2xl"
         >
           📱 JOUER
-        </button>
-      </div>
+            </button>
+          </div>
     );
   }
 
@@ -1443,8 +1443,8 @@ export default function App() {
           </h3>
           
           {authMode === 'signup' && (
-            <input
-              type="text"
+              <input
+                type="text"
               value={pseudo}
               onChange={(e) => setPseudo(e.target.value)}
               placeholder="Pseudo"
@@ -1468,12 +1468,12 @@ export default function App() {
             className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
           />
           
-          <button 
+              <button
             onClick={authMode === 'login' ? handleLogin : handleSignup}
             className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
-          >
+              >
             {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} ⚽
-          </button>
+              </button>
           
           <button
             onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
@@ -1481,8 +1481,8 @@ export default function App() {
           >
             {authMode === 'login' ? "Pas de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
           </button>
-        </div>
-      </div>
+                        </div>
+                      </div>
     );
   }
 
@@ -1506,7 +1506,7 @@ export default function App() {
             <button onClick={handleLogout} className="mt-3 text-red-600 text-sm underline">
               Déconnexion
             </button>
-          </div>
+                      </div>
 
           {currentQuestion?.text && currentQuestion?.options ? (
             <div className="bg-white rounded-3xl p-8 shadow-2xl">
@@ -1514,8 +1514,8 @@ export default function App() {
                 <div className="text-6xl font-black text-green-900 mb-2">{timeLeft}s</div>
                 <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                   <div className="h-full bg-green-600 transition-all" style={{ width: `${(timeLeft / 15) * 100}%` }} />
-                </div>
-              </div>
+                    </div>
+                  </div>
               <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
               <div className="space-y-3">
                 {currentQuestion.options.map((opt, i) => (
@@ -1532,8 +1532,8 @@ export default function App() {
                 ))}
               </div>
               {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
-            </div>
-          ) : (
+              </div>
+            ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
               <div className="text-6xl mb-4">⚽</div>
               <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
@@ -1542,8 +1542,8 @@ export default function App() {
               )}
               {(!matchState || !matchState.active) && (
                 <p className="text-lg text-gray-500">En attente du démarrage</p>
-              )}
-            </div>
+            )}
+          </div>
           )}
         </div>
       </div>
@@ -1595,7 +1595,7 @@ export default function App() {
               <div>
                 <div className="text-2xl font-black">{notification.pseudo}</div>
                 <div className="text-lg">a rejoint la partie !</div>
-              </div>
+                  </div>
             </div>
           </div>
         )}
@@ -1617,16 +1617,16 @@ export default function App() {
                       {matchInfo.awayTeam}
                     </p>
                     <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
-                  </div>
+            </div>
                   {matchInfo.awayLogo && (
                     <img src={matchInfo.awayLogo} alt={matchInfo.awayTeam} className="w-12 h-12 object-contain" />
                   )}
-                </div>
-              </div>
+          </div>
+        </div>
             ) : matchState?.active ? (
               <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
                 <p className="text-2xl text-yellow-400">⚽ Match en cours</p>
-              </div>
+      </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             )}
@@ -1635,7 +1635,7 @@ export default function App() {
               <div className="space-y-2">
                 <p className="text-xl text-yellow-400">⏱️ Prochaine: {countdown}</p>
                 <MatchClock />
-              </div>
+          </div>
             )}
             {(!matchState || !matchState.active) && (
               <p className="text-gray-300 mt-2">Match non démarré</p>
@@ -1710,7 +1710,7 @@ export default function App() {
               🚪 Changer de bar
             </button>
           </div>
-          
+
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
             <div className="flex gap-4 mb-4">
@@ -1738,7 +1738,7 @@ export default function App() {
                   <div className="flex-1">
                     <div className="text-xl font-bold">
                       {selectedMatch.homeTeam} {selectedMatch.score} {selectedMatch.awayTeam}
-                    </div>
+          </div>
                     <div className="text-sm text-gray-300">{selectedMatch.league}</div>
                   </div>
                   {selectedMatch.awayLogo && <img src={selectedMatch.awayLogo} alt="" className="w-10 h-10" />}
@@ -1767,7 +1767,7 @@ export default function App() {
                     >
                       <div className="flex items-center gap-3">
                         {match.homeLogo && <img src={match.homeLogo} alt="" className="w-8 h-8" />}
-                        <div className="flex-1">
+                    <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs bg-blue-600 px-2 py-1 rounded">
                               {match.league}
@@ -1802,15 +1802,15 @@ export default function App() {
             <h2 className="text-2xl font-bold mb-4">Contrôle</h2>
             
             {!matchState?.active ? (
-              <div>
+                        <div>
                 <p className="text-gray-400 mb-4">
                   {selectedMatch ? `${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}` : 'Sélectionnez un match'}
-                </p>
+                          </p>
                 {loadingPlayers && <p className="text-yellow-400 mb-4">⏳ Chargement...</p>}
                 {matchPlayers.length > 0 && (
                   <div className="mb-4 p-3 bg-green-900 rounded-lg">
                     <p className="text-green-300">✅ {matchPlayers.length} joueurs chargés</p>
-                  </div>
+                        </div>
                 )}
                 <div className="flex gap-4 flex-wrap">
                   <button
@@ -1826,8 +1826,8 @@ export default function App() {
                   <button onClick={debugFirebase} className="bg-purple-600 px-8 py-4 rounded-lg font-bold hover:bg-purple-700">
                     🔍 Debug
                   </button>
-                </div>
-              </div>
+                      </div>
+                    </div>
             ) : (
               <div>
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
@@ -1837,7 +1837,7 @@ export default function App() {
                   <button onClick={stopMatch} className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700">
                     ⏹️ Arrêter
                   </button>
-                  <button
+                      <button
                     onClick={async () => {
                       if (currentQuestion) {
                         await autoValidate();
@@ -1849,8 +1849,8 @@ export default function App() {
                     className="bg-blue-600 px-8 py-4 rounded-lg font-bold hover:bg-blue-700"
                   >
                     🎲 Question
-                  </button>
-                </div>
+                      </button>
+                    </div>
               </div>
             )}
           </div>
@@ -1866,8 +1866,8 @@ export default function App() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+              </div>
+            )}
 
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">Joueurs ({players.length})</h2>
@@ -1888,7 +1888,7 @@ export default function App() {
           <div className="flex gap-4">
             <button onClick={() => setScreen('home')} className="bg-gray-700 px-6 py-3 rounded-lg">
               ← Retour
-            </button>
+          </button>
             <button onClick={() => setScreen('tv')} className="bg-blue-600 px-6 py-3 rounded-lg">
               📺 TV
             </button>
