@@ -71,6 +71,7 @@ export default function App() {
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
   const wakeLockRef = useRef(null);
+  const matchCheckInterval = useRef(null);
 
   const searchMatches = async () => {
     setLoadingMatches(true);
@@ -198,12 +199,16 @@ export default function App() {
         date: match.date,
         status: match.status,
         elapsed: match.elapsed || 0,
-        half: match.half || '1H'
+        half: match.half || '1H',
+        autoStartEnabled: true // Activation du démarrage auto
       };
       
       await set(ref(db, `bars/${barId}/selectedMatch`), matchData);
       await new Promise(resolve => setTimeout(resolve, 500));
       setSelectedMatch(matchData);
+      
+      // Lancer la surveillance du match
+      startMatchMonitoring(match.id);
       
     } catch (e) {
       alert('❌ Erreur: ' + e.message);
@@ -289,6 +294,11 @@ export default function App() {
     if (path === '/play' || path.includes('/play')) {
       setScreen('playJoin');
     }
+
+    // Nettoyage à la fermeture
+    return () => {
+      stopMatchMonitoring();
+    };
   }, []);
 
   useEffect(() => {
@@ -742,6 +752,8 @@ export default function App() {
         nextQuestionTimer.current = null;
       }
       
+      stopMatchMonitoring();
+      
       setCurrentMatchId(null);
       setPlayers([]);
       setCurrentQuestion(null);
@@ -978,6 +990,72 @@ export default function App() {
       return barSnap.exists();
     } catch (e) {
       return false;
+    }
+  };
+
+  const startMatchMonitoring = (fixtureId) => {
+    // Arrêter toute surveillance précédente
+    if (matchCheckInterval.current) {
+      clearInterval(matchCheckInterval.current);
+    }
+
+    // Vérifier toutes les 30 secondes si le match a commencé
+    matchCheckInterval.current = setInterval(async () => {
+      try {
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+        if (!apiKey) return;
+
+        const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
+          method: 'GET',
+          headers: {
+            'x-rapidapi-key': apiKey,
+            'x-rapidapi-host': 'v3.football.api-sports.io'
+          }
+        });
+
+        const data = await response.json();
+        
+        if (data.response && data.response.length > 0) {
+          const fixture = data.response[0];
+          const status = fixture.fixture.status.short;
+          const elapsed = fixture.fixture.status.elapsed || 0;
+
+          // Si le match a commencé (statut 1H, 2H, HT, ET, etc.) et qu'il n'y a pas de match actif
+          if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
+            console.log('🚀 Match détecté comme commencé ! Démarrage automatique...');
+            
+            // Mettre à jour les infos du match
+            const updatedMatchData = {
+              ...selectedMatch,
+              elapsed: elapsed,
+              half: status,
+              score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+            };
+            
+            await set(ref(db, `bars/${barId}/selectedMatch`), updatedMatchData);
+            setSelectedMatch(updatedMatchData);
+            setMatchElapsedMinutes(elapsed);
+            setMatchStartTime(Date.now() - (elapsed * 60000));
+            setMatchHalf(status);
+            
+            // Démarrer automatiquement
+            await startMatch();
+            
+            // Arrêter la surveillance
+            clearInterval(matchCheckInterval.current);
+            matchCheckInterval.current = null;
+          }
+        }
+      } catch (e) {
+        console.error('Erreur surveillance match:', e);
+      }
+    }, 30000); // Vérifier toutes les 30 secondes
+  };
+
+  const stopMatchMonitoring = () => {
+    if (matchCheckInterval.current) {
+      clearInterval(matchCheckInterval.current);
+      matchCheckInterval.current = null;
     }
   };
 
