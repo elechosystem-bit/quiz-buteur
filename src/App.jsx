@@ -282,10 +282,15 @@ export default function App() {
 
   // selectMatch, loadMatchLineups, loadBarInfo (kept as before)
   const selectMatch = async (match) => {
+    setSelectedMatch(match);
+    console.log('⚽ Match sélectionné:', match);
+    
+    // Configurer l'horloge du match
     if (match.elapsed !== undefined) {
       setMatchElapsedMinutes(match.elapsed);
       setMatchStartTime(Date.now() - (match.elapsed * 60000));
       setMatchHalf(match.half || '1H');
+      console.log('⏱️ Temps du match configuré:', match.elapsed, 'min -', match.half);
     }
     
     try {
@@ -315,6 +320,7 @@ export default function App() {
       alert('❌ Erreur: ' + e.message);
     }
     
+    // Récupérer les compositions d'équipes
     await loadMatchLineups(match.id);
   };
 
@@ -410,6 +416,132 @@ export default function App() {
       loadAllBars();
     }
   }, [screen]);
+
+  // 🔄 SYNCHRONISATION AUTOMATIQUE AVEC L'API FOOTBALL
+  useEffect(() => {
+    if (!selectedMatch || !matchState?.active) {
+      console.log('⏹️ Pas de synchronisation - match non sélectionné ou inactif');
+      return;
+    }
+
+    console.log('🔄 Démarrage de la synchronisation avec l\'API Football');
+    
+    const syncWithAPI = async () => {
+      try {
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+        
+        if (!apiKey) {
+          console.error('❌ Clé API manquante pour la synchronisation');
+          return;
+        }
+
+        // Récupérer les données en direct du match
+        const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${selectedMatch.id}`, {
+          method: 'GET',
+          headers: {
+            'x-rapidapi-key': apiKey,
+            'x-rapidapi-host': 'v3.football.api-sports.io'
+          }
+        });
+
+        const data = await response.json();
+        
+        if (data.response && data.response.length > 0) {
+          const fixture = data.response[0];
+          console.log('📡 Données match reçues:', fixture);
+
+          // Mettre à jour le score
+          const newScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
+          const oldScore = selectedMatch.score;
+          
+          if (newScore !== oldScore) {
+            console.log('⚽ BUT ! Score mis à jour:', oldScore, '→', newScore);
+            
+            // Mettre à jour le match sélectionné
+            setSelectedMatch(prev => ({
+              ...prev,
+              score: newScore
+            }));
+
+            // Mettre à jour dans Firebase
+            if (currentMatchId && barId) {
+              await update(ref(db, `bars/${barId}/matchState`), {
+                matchInfo: {
+                  ...matchState.matchInfo,
+                  score: newScore
+                }
+              });
+
+              // Envoyer une notification de but
+              const notifRef = push(ref(db, `bars/${barId}/notifications`));
+              await set(notifRef, {
+                type: 'goal',
+                message: `⚽ BUT ! ${fixture.teams.home.name} ${newScore} ${fixture.teams.away.name}`,
+                timestamp: Date.now()
+              });
+
+              console.log('🎉 Notification de but envoyée !');
+            }
+          }
+
+          // Mettre à jour l'horloge du match
+          if (fixture.fixture.status.elapsed !== undefined) {
+            const newElapsed = fixture.fixture.status.elapsed;
+            const newHalf = fixture.fixture.status.short;
+            
+            setMatchElapsedMinutes(newElapsed);
+            setMatchStartTime(Date.now() - (newElapsed * 60000));
+            setMatchHalf(newHalf);
+
+            // Mettre à jour dans Firebase
+            if (currentMatchId && barId) {
+              await update(ref(db, `bars/${barId}/matchState`), {
+                matchClock: {
+                  startTime: Date.now() - (newElapsed * 60000),
+                  elapsedMinutes: newElapsed,
+                  half: newHalf
+                }
+              });
+            }
+
+            console.log('⏱️ Horloge synchronisée:', newElapsed, 'min -', newHalf);
+          }
+
+          // Détecter les événements récents (cartons, remplacements, etc.)
+          if (fixture.events && Array.isArray(fixture.events)) {
+            const recentEvents = fixture.events.slice(-3); // 3 derniers événements
+            
+            recentEvents.forEach(event => {
+              console.log('📢 Événement détecté:', event.type, '-', event.player?.name);
+              
+              // Vous pouvez générer des questions basées sur ces événements
+              if (event.type === 'Card' && event.detail === 'Yellow Card') {
+                console.log('🟨 Carton jaune pour:', event.player?.name);
+              } else if (event.type === 'subst') {
+                console.log('🔄 Remplacement:', event.player?.name, '→', event.assist?.name);
+              }
+            });
+          }
+
+          console.log('✅ Synchronisation terminée');
+        }
+        
+      } catch (e) {
+        console.error('❌ Erreur synchronisation API:', e);
+      }
+    };
+
+    // Synchroniser immédiatement
+    syncWithAPI();
+
+    // Puis toutes les 30 secondes
+    const syncInterval = setInterval(syncWithAPI, 30000);
+
+    return () => {
+      console.log('⏹️ Arrêt de la synchronisation API');
+      clearInterval(syncInterval);
+    };
+  }, [selectedMatch, matchState?.active, currentMatchId, barId]);
 
   // When barId changes, load info and setup matchState listener
   useEffect(() => {
