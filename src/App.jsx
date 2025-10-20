@@ -40,6 +40,8 @@ export default function App() {
     return urlParams.get('bar') || null;
   });
   const [barIdInput, setBarIdInput] = useState('');
+  const [superAdminPassword, setSuperAdminPassword] = useState('');
+  const [allBars, setAllBars] = useState([]);
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -910,6 +912,53 @@ export default function App() {
     }
   };
 
+  const generateBarCode = () => {
+    return 'BAR-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  };
+
+  const createNewBar = async (barName) => {
+    const barCode = generateBarCode();
+    const newBarData = {
+      code: barCode,
+      name: barName,
+      createdAt: Date.now(),
+      active: true
+    };
+    
+    try {
+      await set(ref(db, `bars/${barCode}/info`), newBarData);
+      alert(`✅ Bar créé !\n\nNom : ${barName}\nCode : ${barCode}\n\nDonnez ce code à votre client.`);
+      await loadAllBars();
+    } catch (e) {
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
+
+  const loadAllBars = async () => {
+    try {
+      const barsSnap = await get(ref(db, 'bars'));
+      if (barsSnap.exists()) {
+        const barsData = barsSnap.val();
+        const barsList = Object.entries(barsData).map(([id, data]) => ({
+          id,
+          ...data.info
+        }));
+        setAllBars(barsList);
+      }
+    } catch (e) {
+      console.error('Erreur chargement bars:', e);
+    }
+  };
+
+  const verifyBarCode = async (code) => {
+    try {
+      const barSnap = await get(ref(db, `bars/${code}/info`));
+      return barSnap.exists();
+    } catch (e) {
+      return false;
+    }
+  };
+
   const MatchClock = () => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
@@ -983,7 +1032,156 @@ export default function App() {
             onClick={() => setScreen('adminLogin')}
             className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
           >
-            🎮 ADMIN
+            🎮 ADMIN BAR
+          </button>
+          <button 
+            onClick={() => setScreen('superAdminLogin')}
+            className="bg-yellow-600 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-yellow-500 transition-all shadow-2xl border-4 border-white"
+          >
+            👑 SUPER ADMIN
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'superAdminLogin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-900 via-orange-900 to-red-900 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="text-6xl mb-4">👑</div>
+            <h2 className="text-3xl font-black text-yellow-900 mb-2">SUPER ADMIN</h2>
+            <p className="text-gray-600">Gestion des établissements</p>
+          </div>
+
+          <input
+            type="password"
+            value={superAdminPassword}
+            onChange={(e) => setSuperAdminPassword(e.target.value)}
+            placeholder="Mot de passe super admin"
+            className="w-full px-6 py-4 text-xl border-4 border-yellow-900 rounded-xl mb-6 focus:outline-none focus:border-yellow-600 text-center font-bold"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && superAdminPassword === 'ADMIN2025') {
+                setScreen('superAdmin');
+                loadAllBars();
+              }
+            }}
+          />
+
+          <button
+            onClick={() => {
+              if (superAdminPassword === 'ADMIN2025') {
+                setScreen('superAdmin');
+                loadAllBars();
+              } else {
+                alert('❌ Mot de passe incorrect');
+              }
+            }}
+            className="w-full bg-yellow-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-yellow-800 mb-4"
+          >
+            CONNEXION 🔐
+          </button>
+
+          <button
+            onClick={() => setScreen('home')}
+            className="w-full text-gray-600 py-2 text-sm underline"
+          >
+            ← Retour
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'superAdmin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-900 via-orange-900 to-red-900 p-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-5xl font-black text-white mb-2">👑 SUPER ADMIN</h1>
+              <p className="text-yellow-300 text-xl">Gestion des établissements</p>
+            </div>
+            <button
+              onClick={() => {
+                setSuperAdminPassword('');
+                setScreen('home');
+              }}
+              className="bg-red-600 px-6 py-3 rounded-lg text-white font-bold hover:bg-red-700"
+            >
+              🚪 Déconnexion
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl p-8 mb-6 shadow-2xl">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6">➕ Créer un nouveau bar</h2>
+            <div className="flex gap-4">
+              <input
+                type="text"
+                placeholder="Nom du bar (ex: Le Penalty Paris)"
+                className="flex-1 px-6 py-4 text-xl border-4 border-gray-300 rounded-xl focus:outline-none focus:border-yellow-600"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && e.target.value.trim()) {
+                    createNewBar(e.target.value.trim());
+                    e.target.value = '';
+                  }
+                }}
+                id="newBarName"
+              />
+              <button
+                onClick={() => {
+                  const input = document.getElementById('newBarName');
+                  if (input.value.trim()) {
+                    createNewBar(input.value.trim());
+                    input.value = '';
+                  }
+                }}
+                className="bg-yellow-600 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-yellow-700"
+              >
+                CRÉER 🚀
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-8 shadow-2xl">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6">📋 Liste des bars ({allBars.length})</h2>
+            
+            {allBars.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-6xl mb-4">🏪</div>
+                <p className="text-xl">Aucun bar créé pour le moment</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {allBars.map(bar => (
+                  <div key={bar.id} className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl p-6 flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="text-3xl">🏪</div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-gray-900">{bar.name}</h3>
+                          <p className="text-sm text-gray-500">
+                            Créé le {new Date(bar.createdAt).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-center bg-white px-6 py-4 rounded-xl border-2 border-yellow-600">
+                      <div className="text-sm text-gray-500 mb-1">Code d'accès</div>
+                      <div className="text-3xl font-black text-yellow-900">{bar.code || bar.id}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setScreen('home')}
+            className="mt-6 bg-gray-700 text-white px-6 py-3 rounded-lg hover:bg-gray-600"
+          >
+            ← Retour accueil
           </button>
         </div>
       </div>
@@ -996,36 +1194,49 @@ export default function App() {
         <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
           <div className="text-center mb-8">
             <div className="text-6xl mb-4">🎮</div>
-            <h2 className="text-3xl font-black text-green-900 mb-2">ADMIN</h2>
-            <p className="text-gray-600">Identifiant de votre établissement</p>
+            <h2 className="text-3xl font-black text-green-900 mb-2">ADMIN BAR</h2>
+            <p className="text-gray-600">Entrez votre code d'accès</p>
           </div>
 
           <input
             type="text"
             value={barIdInput}
-            onChange={(e) => setBarIdInput(e.target.value)}
-            placeholder="ex: le-penalty-paris"
-            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600 text-center font-bold"
-            onKeyPress={(e) => {
+            onChange={(e) => setBarIdInput(e.target.value.toUpperCase())}
+            placeholder="BAR-XXXXX"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600 text-center font-bold uppercase"
+            maxLength={10}
+            onKeyPress={async (e) => {
               if (e.key === 'Enter' && barIdInput.trim()) {
-                setBarId(barIdInput.trim().toLowerCase().replace(/\s+/g, '-'));
-                setScreen('admin');
+                const code = barIdInput.trim().toUpperCase();
+                const isValid = await verifyBarCode(code);
+                if (isValid) {
+                  setBarId(code);
+                  setScreen('admin');
+                } else {
+                  alert('❌ Code invalide.\n\nContactez votre fournisseur pour obtenir votre code d\'accès.');
+                }
               }
             }}
           />
 
           <button
-            onClick={() => {
+            onClick={async () => {
               if (barIdInput.trim()) {
-                setBarId(barIdInput.trim().toLowerCase().replace(/\s+/g, '-'));
-                setScreen('admin');
+                const code = barIdInput.trim().toUpperCase();
+                const isValid = await verifyBarCode(code);
+                if (isValid) {
+                  setBarId(code);
+                  setScreen('admin');
+                } else {
+                  alert('❌ Code invalide.\n\nContactez votre fournisseur pour obtenir votre code d\'accès.');
+                }
               } else {
-                alert('Veuillez entrer un identifiant');
+                alert('Veuillez entrer votre code d\'accès');
               }
             }}
             className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
           >
-            ACCÉDER À L'ADMIN 🚀
+            SE CONNECTER 🚀
           </button>
 
           <button
@@ -1035,9 +1246,9 @@ export default function App() {
             ← Retour
           </button>
 
-          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-700">
-            <p className="font-bold mb-2">💡 Astuce :</p>
-            <p>Choisissez un identifiant unique pour votre établissement (ex: "le-penalty-paris", "stade-lyon", etc.)</p>
+          <div className="mt-6 p-4 bg-green-100 rounded-lg text-sm text-gray-700">
+            <p className="font-bold mb-2">💡 Vous n'avez pas de code ?</p>
+            <p>Contactez votre fournisseur Quiz Buteur pour obtenir votre code d'accès unique.</p>
           </div>
         </div>
       </div>
