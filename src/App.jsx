@@ -35,10 +35,11 @@ const QUESTIONS = [
 
 export default function App() {
   const [screen, setScreen] = useState('home');
-  const [barId] = useState(() => {
+  const [barId, setBarId] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('bar') || 'default-bar';
+    return urlParams.get('bar') || null;
   });
+  const [barIdInput, setBarIdInput] = useState('');
   const [barInfo, setBarInfo] = useState(null);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -979,11 +980,65 @@ export default function App() {
             📺 ÉCRAN
           </button>
           <button 
-            onClick={() => setScreen('admin')}
+            onClick={() => setScreen('adminLogin')}
             className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
           >
             🎮 ADMIN
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'adminLogin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="text-6xl mb-4">🎮</div>
+            <h2 className="text-3xl font-black text-green-900 mb-2">ADMIN</h2>
+            <p className="text-gray-600">Identifiant de votre établissement</p>
+          </div>
+
+          <input
+            type="text"
+            value={barIdInput}
+            onChange={(e) => setBarIdInput(e.target.value)}
+            placeholder="ex: le-penalty-paris"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600 text-center font-bold"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && barIdInput.trim()) {
+                setBarId(barIdInput.trim().toLowerCase().replace(/\s+/g, '-'));
+                setScreen('admin');
+              }
+            }}
+          />
+
+          <button
+            onClick={() => {
+              if (barIdInput.trim()) {
+                setBarId(barIdInput.trim().toLowerCase().replace(/\s+/g, '-'));
+                setScreen('admin');
+              } else {
+                alert('Veuillez entrer un identifiant');
+              }
+            }}
+            className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
+          >
+            ACCÉDER À L'ADMIN 🚀
+          </button>
+
+          <button
+            onClick={() => setScreen('home')}
+            className="w-full text-gray-600 py-2 text-sm underline"
+          >
+            ← Retour
+          </button>
+
+          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-sm text-gray-700">
+            <p className="font-bold mb-2">💡 Astuce :</p>
+            <p>Choisissez un identifiant unique pour votre établissement (ex: "le-penalty-paris", "stade-lyon", etc.)</p>
+          </div>
         </div>
       </div>
     );
@@ -1130,7 +1185,22 @@ export default function App() {
   }
 
   if (screen === 'tv') {
-    const qrUrl = `${window.location.origin}/play`;
+    if (!barId) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+          <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">📺</div>
+            <h2 className="text-3xl font-black text-green-900 mb-4">ÉCRAN TV</h2>
+            <p className="text-gray-600 mb-6">Scannez le QR code depuis l'admin pour afficher ce bar</p>
+            <button onClick={() => setScreen('home')} className="text-green-900 underline">
+              ← Retour
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const qrUrl = `${window.location.origin}/play?bar=${barId}`;
     const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo?.homeTeam && matchInfo?.awayTeam;
     
@@ -1235,10 +1305,29 @@ export default function App() {
   }
 
   if (screen === 'admin') {
+    if (!barId) {
+      setScreen('adminLogin');
+      return null;
+    }
+
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-4xl font-bold mb-8">🎮 Admin</h1>
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-4xl font-bold">🎮 Admin</h1>
+              <p className="text-green-400 text-lg mt-2">📍 Bar : <span className="font-bold">{barId}</span></p>
+            </div>
+            <button
+              onClick={() => {
+                setBarId(null);
+                setScreen('home');
+              }}
+              className="bg-red-600 px-6 py-3 rounded-lg hover:bg-red-700"
+            >
+              🚪 Changer de bar
+            </button>
+          </div>
           
           <div className="bg-gray-800 rounded-xl p-6 mb-6">
             <h2 className="text-2xl font-bold mb-4">🔍 Rechercher un match</h2>
