@@ -117,7 +117,6 @@ export default function App() {
           const matches = dataToday.response
             .filter(fixture => {
               const status = fixture.fixture.status.short;
-              // Exclure les matchs terminés (FT, AET, PEN, etc.)
               return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
             })
             .slice(0, 20)
@@ -148,7 +147,6 @@ export default function App() {
         const matches = data.response
           .filter(fixture => {
             const status = fixture.fixture.status.short;
-            // Exclure les matchs terminés
             return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
           })
           .slice(0, 20)
@@ -200,14 +198,13 @@ export default function App() {
         status: match.status,
         elapsed: match.elapsed || 0,
         half: match.half || '1H',
-        autoStartEnabled: true // Activation du démarrage auto
+        autoStartEnabled: true
       };
       
       await set(ref(db, `bars/${barId}/selectedMatch`), matchData);
       await new Promise(resolve => setTimeout(resolve, 500));
       setSelectedMatch(matchData);
       
-      // Lancer la surveillance du match
       startMatchMonitoring(match.id);
       
     } catch (e) {
@@ -287,6 +284,7 @@ export default function App() {
     }
   };
 
+  // 🔥 CORRECTION 1 : Ajout de barId dans les dépendances
   useEffect(() => {
     if (barId) loadBarInfo(barId);
     
@@ -302,11 +300,10 @@ export default function App() {
       setScreen('playJoin');
     }
 
-    // Nettoyage à la fermeture
     return () => {
       stopMatchMonitoring();
     };
-  }, []);
+  }, [barId]);
 
   useEffect(() => {
     const requestWakeLock = async () => {
@@ -515,6 +512,7 @@ export default function App() {
     addPlayerToMatch();
   }, [user, barId, currentMatchId, userProfile, screen]);
 
+  // 🔥 CORRECTION 2 : Ajout de barId et currentMatchId dans les dépendances
   useEffect(() => {
     if (!currentQuestion?.id || !currentQuestion?.createdAt) return;
     
@@ -523,7 +521,7 @@ export default function App() {
       const remaining = Math.max(0, 15 - elapsed);
       setTimeLeft(remaining);
       
-      if (remaining === 0 && !isProcessingRef.current) {
+      if (remaining === 0 && !isProcessingRef.current && barId && currentMatchId) {
         autoValidate();
       }
     };
@@ -531,7 +529,7 @@ export default function App() {
     calculateTimeLeft();
     const interval = setInterval(calculateTimeLeft, 1000);
     return () => clearInterval(interval);
-  }, [currentQuestion]);
+  }, [currentQuestion, barId, currentMatchId]);
 
   useEffect(() => {
     if (!matchState?.nextQuestionTime) {
@@ -555,6 +553,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [matchState]);
 
+  // 🔥 CORRECTION 3 : Dépendances optimisées et nettoyage amélioré
   useEffect(() => {
     if (!barId || !matchState?.active) {
       if (nextQuestionTimer.current) {
@@ -580,9 +579,10 @@ export default function App() {
     return () => {
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
+        nextQuestionTimer.current = null;
       }
     };
-  }, [barId, matchState, currentQuestion]);
+  }, [barId, matchState?.active, matchState?.nextQuestionTime, currentQuestion]);
 
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
@@ -647,6 +647,10 @@ export default function App() {
     window.location.href = '/';
   };
 
+// ⬇️⬇️⬇️ FIN DE LA PARTIE 1 ⬇️⬇️⬇️
+// CONTINUER AVEC LA PARTIE 2 : startMatch, stopMatch, createRandomQuestion, etc...
+// ⬆️⬆️⬆️ SUITE DE LA PARTIE 1 ⬆️⬆️⬆️
+
   const startMatch = async () => {
     if (!barId) {
       alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
@@ -654,7 +658,6 @@ export default function App() {
     }
     
     try {
-      // 🔥 SYNCHRONISATION AVEC L'API EN TEMPS RÉEL
       console.log('🔄 Synchronisation avec l\'API...');
       let realTimeElapsed = selectedMatch?.elapsed || 0;
       let realTimeHalf = selectedMatch?.half || '1H';
@@ -710,7 +713,6 @@ export default function App() {
       const now = Date.now();
       const matchId = `match_${now}`;
       
-      // 🔥 CALCUL DU TEMPS DE DÉPART BASÉ SUR LE TEMPS RÉEL
       const clockStartTime = now - (realTimeElapsed * 60000);
       
       console.log(`⏱️ Chrono configuré : ${realTimeElapsed}' écoulées, démarrage à ${new Date(clockStartTime).toLocaleTimeString()}`);
@@ -727,12 +729,12 @@ export default function App() {
           homeLogo: selectedMatch.homeLogo,
           awayLogo: selectedMatch.awayLogo,
           league: selectedMatch.league,
-          score: realTimeScore // Score en temps réel
+          score: realTimeScore
         } : null,
         matchClock: {
-          startTime: clockStartTime, // Temps calculé avec l'elapsed réel
-          elapsedMinutes: realTimeElapsed, // Minutes réelles
-          half: realTimeHalf // Mi-temps réelle
+          startTime: clockStartTime,
+          elapsedMinutes: realTimeElapsed,
+          half: realTimeHalf
         }
       };
       
@@ -1039,12 +1041,10 @@ export default function App() {
   };
 
   const startMatchMonitoring = (fixtureId) => {
-    // Arrêter toute surveillance précédente
     if (matchCheckInterval.current) {
       clearInterval(matchCheckInterval.current);
     }
 
-    // Vérifier toutes les 30 secondes si le match a commencé
     matchCheckInterval.current = setInterval(async () => {
       try {
         const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
@@ -1065,11 +1065,9 @@ export default function App() {
           const status = fixture.fixture.status.short;
           const elapsed = fixture.fixture.status.elapsed || 0;
 
-          // Si le match a commencé (statut 1H, 2H, HT, ET, etc.) et qu'il n'y a pas de match actif
           if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
             console.log('🚀 Match détecté comme commencé ! Démarrage automatique...');
             
-            // Mettre à jour les infos du match
             const updatedMatchData = {
               ...selectedMatch,
               elapsed: elapsed,
@@ -1083,10 +1081,8 @@ export default function App() {
             setMatchStartTime(Date.now() - (elapsed * 60000));
             setMatchHalf(status);
             
-            // Démarrer automatiquement
             await startMatch();
             
-            // Arrêter la surveillance
             clearInterval(matchCheckInterval.current);
             matchCheckInterval.current = null;
           }
@@ -1094,7 +1090,7 @@ export default function App() {
       } catch (e) {
         console.error('Erreur surveillance match:', e);
       }
-    }, 30000); // Vérifier toutes les 30 secondes
+    }, 30000);
   };
 
   const stopMatchMonitoring = () => {
@@ -1104,15 +1100,15 @@ export default function App() {
     }
   };
 
+  // 🔥 CORRECTION 4 : Dépendances optimisées pour MatchClock
   const MatchClock = () => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
     
     useEffect(() => {
       const updateTime = () => {
-        // 🔥 TOUJOURS utiliser matchState.matchClock en priorité (synchronisé avec l'API)
-        let clockStartTime = matchState?.matchClock?.startTime;
-        let clockHalf = matchState?.matchClock?.half;
+        const clockStartTime = matchState?.matchClock?.startTime;
+        const clockHalf = matchState?.matchClock?.half;
         
         if (clockHalf === 'FT') {
           setTime('90\'00');
@@ -1121,7 +1117,6 @@ export default function App() {
         }
         
         if (clockStartTime) {
-          // Calcul du temps écoulé depuis le startTime synchronisé
           const totalElapsedMs = Date.now() - clockStartTime;
           const elapsed = Math.floor(totalElapsedMs / 60000);
           const secs = Math.floor(totalElapsedMs / 1000) % 60;
@@ -1135,7 +1130,6 @@ export default function App() {
           
           setTime(displayTime);
           
-          // Déterminer la phase
           if (clockHalf === 'HT') {
             setPhase('MI-TEMPS');
           } else if (elapsed >= 45 && (clockHalf === '2H' || elapsed >= 45)) {
@@ -1144,7 +1138,6 @@ export default function App() {
             setPhase('1MT');
           }
         } else {
-          // Fallback si pas de données
           setTime('0\'00');
           setPhase('1MT');
         }
@@ -1153,7 +1146,7 @@ export default function App() {
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchState]);
+    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
