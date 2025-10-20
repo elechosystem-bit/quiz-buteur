@@ -1749,43 +1749,48 @@ export default function App() {
 
             {availableMatches.length > 0 && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {availableMatches.map(match => (
-                  <div
-                    key={match.id}
-                    onClick={() => selectMatch(match)}
-                    className={`p-4 rounded-lg cursor-pointer transition-all ${
-                      selectedMatch?.id === match.id 
-                        ? 'bg-green-800 border-2 border-green-500' 
-                        : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {match.homeLogo && <img src={match.homeLogo} alt="" className="w-8 h-8" />}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs bg-blue-600 px-2 py-1 rounded">
-                            {match.league}
-                          </span>
-                          {match.status === 'En cours' && (
-                            <span className="text-xs bg-red-600 px-2 py-1 rounded font-bold animate-pulse">
-                              🔴 LIVE
+                {availableMatches.map(match => {
+                  const isLive = match.elapsed > 0 || match.status === 'En cours';
+                  const isUpcoming = match.elapsed === 0 || match.status === 'À venir' || match.status === 'Not Started';
+                  
+                  return (
+                    <div
+                      key={match.id}
+                      onClick={() => selectMatch(match)}
+                      className={`p-4 rounded-lg cursor-pointer transition-all ${
+                        selectedMatch?.id === match.id 
+                          ? 'bg-green-800 border-2 border-green-500' 
+                          : 'bg-gray-700 hover:bg-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {match.homeLogo && <img src={match.homeLogo} alt="" className="w-8 h-8" />}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs bg-blue-600 px-2 py-1 rounded">
+                              {match.league}
                             </span>
-                          )}
-                          {match.status === 'À venir' && (
-                            <span className="text-xs bg-yellow-600 px-2 py-1 rounded font-bold">
-                              ⏰ À VENIR
-                            </span>
-                          )}
+                            {isLive && (
+                              <span className="text-xs bg-red-600 px-2 py-1 rounded font-bold animate-pulse">
+                                🔴 LIVE {match.elapsed}'
+                              </span>
+                            )}
+                            {isUpcoming && (
+                              <span className="text-xs bg-yellow-600 px-2 py-1 rounded font-bold">
+                                ⏰ À VENIR
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-lg font-bold">
+                            {match.homeTeam} {match.score} {match.awayTeam}
+                          </div>
+                          <div className="text-sm text-gray-400">{match.date}</div>
                         </div>
-                        <div className="text-lg font-bold">
-                          {match.homeTeam} {match.score} {match.awayTeam}
-                        </div>
-                        <div className="text-sm text-gray-400">{match.date}</div>
+                        {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
                       </div>
-                      {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
