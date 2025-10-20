@@ -404,6 +404,13 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
+  // Load bars when superAdmin screen is accessed
+  useEffect(() => {
+    if (screen === 'superAdmin') {
+      loadAllBars();
+    }
+  }, [screen]);
+
   // When barId changes, load info and setup matchState listener
   useEffect(() => {
     if (barId) loadBarInfo(barId);
@@ -628,6 +635,185 @@ export default function App() {
       }
     };
   }, [barId, matchState, currentQuestion]);
+
+  // startMatch: démarrer le quiz pour le match sélectionné
+  const startMatch = async () => {
+    if (!selectedMatch) {
+      alert('❌ Veuillez d\'abord sélectionner un match');
+      return;
+    }
+
+    try {
+      const matchData = {
+        currentMatchId: selectedMatch.id,
+        active: true,
+        startTime: Date.now(),
+        nextQuestionTime: Date.now() + 30000, // Première question dans 30 secondes
+        questionCount: 0
+      };
+
+      await set(ref(db, `bars/${barId}/matchState`), matchData);
+      
+      // Créer le dossier du match
+      await set(ref(db, `bars/${barId}/matches/${selectedMatch.id}`), {
+        ...selectedMatch,
+        startTime: Date.now(),
+        active: true
+      });
+
+      alert('✅ Match démarré ! Les questions vont commencer dans 30 secondes.');
+    } catch (e) {
+      console.error('Erreur démarrage match:', e);
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
+
+  // stopMatch: arrêter le quiz
+  const stopMatch = async () => {
+    try {
+      await set(ref(db, `bars/${barId}/matchState`), {
+        active: false,
+        endTime: Date.now()
+      });
+
+      // Nettoyer la question courante
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+
+      alert('✅ Match arrêté');
+    } catch (e) {
+      console.error('Erreur arrêt match:', e);
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
+
+  // createRandomQuestion: créer une question aléatoire
+  const createRandomQuestion = async () => {
+    if (!matchState?.active) {
+      alert('❌ Le match n\'est pas actif');
+      return;
+    }
+
+    try {
+      // Trouver une question non utilisée
+      const availableQuestions = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+      
+      if (availableQuestions.length === 0) {
+        // Réinitialiser si toutes les questions ont été utilisées
+        usedQuestionsRef.current = [];
+        const question = QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
+        usedQuestionsRef.current.push(question.text);
+      } else {
+        const question = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+        usedQuestionsRef.current.push(question.text);
+      }
+
+      const questionData = {
+        ...availableQuestions[Math.floor(Math.random() * availableQuestions.length)],
+        id: Date.now(),
+        createdAt: Date.now(),
+        timeLeft: 15
+      };
+
+      await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
+
+      // Programmer la prochaine question
+      const nextTime = Date.now() + QUESTION_INTERVAL;
+      await update(ref(db, `bars/${barId}/matchState`), {
+        nextQuestionTime: nextTime,
+        questionCount: (matchState?.questionCount || 0) + 1
+      });
+
+    } catch (e) {
+      console.error('Erreur création question:', e);
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
+
+  // autoValidate: valider automatiquement la question courante
+  const autoValidate = async () => {
+    if (!currentQuestion) return;
+
+    try {
+      // Trouver la réponse la plus populaire
+      const answerCounts = Object.entries(answers);
+      if (answerCounts.length === 0) {
+        await remove(ref(db, `bars/${barId}/currentQuestion`));
+        return;
+      }
+
+      const correctAnswer = answerCounts.reduce((a, b) => answers[a[0]] > answers[b[0]] ? a : b)[0];
+
+      // Calculer les scores
+      const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+      const playersSnap = await get(playersRef);
+      
+      if (playersSnap.exists()) {
+        const playersData = playersSnap.val();
+        const updates = {};
+
+        // Récupérer les réponses des joueurs
+        const answersRef = ref(db, `bars/${barId}/answers/${currentQuestion.id}`);
+        const answersSnap = await get(answersRef);
+        
+        if (answersSnap.exists()) {
+          const answersData = answersSnap.val();
+          
+          Object.entries(answersData).forEach(([playerId, answerData]) => {
+            if (answerData.answer === correctAnswer && playersData[playerId]) {
+              updates[`${playerId}/score`] = (playersData[playerId].score || 0) + 1;
+            }
+          });
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await update(playersRef, updates);
+        }
+      }
+
+      // Nettoyer la question et les réponses
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/answers/${currentQuestion.id}`));
+
+    } catch (e) {
+      console.error('Erreur validation:', e);
+    }
+  };
+
+  // forceCleanup: nettoyer toutes les données
+  const forceCleanup = async () => {
+    if (!window.confirm('⚠️ Nettoyer toutes les données ? Cette action est irréversible.')) return;
+
+    try {
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/matchState`));
+      await remove(ref(db, `bars/${barId}/selectedMatch`));
+      await remove(ref(db, `bars/${barId}/answers`));
+      await remove(ref(db, `bars/${barId}/notifications`));
+      
+      alert('✅ Nettoyage terminé');
+    } catch (e) {
+      console.error('Erreur nettoyage:', e);
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
+
+  // debugFirebase: afficher les données Firebase
+  const debugFirebase = async () => {
+    try {
+      const barRef = ref(db, `bars/${barId}`);
+      const snap = await get(barRef);
+      
+      if (snap.exists()) {
+        console.log('🔍 Données Firebase:', snap.val());
+        alert('✅ Données affichées dans la console');
+      } else {
+        alert('❌ Aucune donnée trouvée');
+      }
+    } catch (e) {
+      console.error('Erreur debug:', e);
+      alert('❌ Erreur: ' + e.message);
+    }
+  };
 
   // startMatchMonitoring / stopMatchMonitoring
   const startMatchMonitoring = (fixtureId) => {
@@ -960,7 +1146,7 @@ export default function App() {
     );
   }
 
-  // SUPERADMIN screen (kept intact; deleteBar, loadAllBars, debug, forceCleanup present)
+  // SUPERADMIN screen
   if (screen === 'superAdmin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-yellow-900 via-orange-900 to-red-900 p-8">
@@ -1012,12 +1198,26 @@ export default function App() {
           </div>
 
           <div className="bg-white rounded-2xl p-8 shadow-2xl">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">📋 Liste des bars ({allBars.length})</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-bold text-gray-900">📋 Liste des bars ({allBars.length})</h2>
+              <button
+                onClick={loadAllBars}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                🔄 Actualiser
+              </button>
+            </div>
             
             {allBars.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-6xl mb-4">🏪</div>
                 <p className="text-xl">Aucun bar créé pour le moment</p>
+                <button
+                  onClick={loadAllBars}
+                  className="mt-4 bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700"
+                >
+                  🔄 Recharger la liste
+                </button>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1079,7 +1279,371 @@ export default function App() {
     );
   }
 
-  // PLAY JOIN, AUTH, MOBILE, TV screens are intact (kept as in original base) - if you want I can paste the full unchanged remainder too.
+  // PLAY JOIN
+  if (screen === 'playJoin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="text-6xl mb-4">⚽</div>
+            <h2 className="text-3xl font-black text-green-900 mb-2">REJOINDRE LE QUIZ</h2>
+            <p className="text-gray-600">Entrez le code du bar</p>
+          </div>
+
+          <input
+            type="text"
+            value={barIdInput}
+            onChange={(e) => setBarIdInput(e.target.value.toUpperCase())}
+            placeholder="BAR-XXXXX"
+            className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600 text-center font-bold uppercase"
+            maxLength={12}
+            onKeyDown={async (e) => {
+              if (e.key === 'Enter') {
+                const code = (e.target.value || '').trim().toUpperCase();
+                if (!code) { alert('Veuillez entrer le code du bar'); return; }
+                const isValid = await verifyBarCode(code);
+                if (isValid) {
+                  setBarId(code);
+                  setScreen('auth');
+                } else {
+                  alert('❌ Code invalide.\n\nVérifiez le code avec le bar.');
+                }
+              }
+            }}
+          />
+
+          <button
+            onClick={async () => {
+              if (barIdInput.trim()) {
+                const code = barIdInput.trim().toUpperCase();
+                const isValid = await verifyBarCode(code);
+                if (isValid) {
+                  setBarId(code);
+                  setScreen('auth');
+                } else {
+                  alert('❌ Code invalide.\n\nVérifiez le code avec le bar.');
+                }
+              } else {
+                alert('Veuillez entrer le code du bar');
+              }
+            }}
+            className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
+          >
+            REJOINDRE 🚀
+          </button>
+
+          <button
+            onClick={() => setScreen('home')}
+            className="w-full text-gray-600 py-2 text-sm underline"
+          >
+            ← Retour
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // AUTH
+  if (screen === 'auth') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="text-6xl mb-4">🔐</div>
+            <h2 className="text-3xl font-black text-blue-900 mb-2">CONNEXION</h2>
+            <p className="text-gray-600">Créez un compte ou connectez-vous</p>
+          </div>
+
+          <div className="flex mb-6">
+            <button
+              onClick={() => setAuthMode('login')}
+              className={`flex-1 py-3 rounded-t-xl font-bold ${authMode === 'login' ? 'bg-blue-900 text-white' : 'bg-gray-200 text-gray-600'}`}
+            >
+              Connexion
+            </button>
+            <button
+              onClick={() => setAuthMode('register')}
+              className={`flex-1 py-3 rounded-t-xl font-bold ${authMode === 'register' ? 'bg-blue-900 text-white' : 'bg-gray-200 text-gray-600'}`}
+            >
+              Inscription
+            </button>
+          </div>
+
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            className="w-full px-6 py-4 text-xl border-4 border-gray-300 rounded-xl mb-4 focus:outline-none focus:border-blue-600"
+          />
+
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Mot de passe"
+            className="w-full px-6 py-4 text-xl border-4 border-gray-300 rounded-xl mb-4 focus:outline-none focus:border-blue-600"
+          />
+
+          {authMode === 'register' && (
+            <input
+              type="text"
+              value={pseudo}
+              onChange={(e) => setPseudo(e.target.value)}
+              placeholder="Pseudo"
+              className="w-full px-6 py-4 text-xl border-4 border-gray-300 rounded-xl mb-4 focus:outline-none focus:border-blue-600"
+            />
+          )}
+
+          <button
+            onClick={async () => {
+              if (!email || !password) {
+                alert('Veuillez remplir tous les champs');
+                return;
+              }
+
+              if (authMode === 'register' && !pseudo) {
+                alert('Veuillez entrer un pseudo');
+                return;
+              }
+
+              try {
+                if (authMode === 'register') {
+                  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                  await set(ref(db, `users/${userCredential.user.uid}`), {
+                    pseudo: pseudo,
+                    email: email,
+                    createdAt: Date.now()
+                  });
+                  setScreen('mobile');
+                } else {
+                  await signInWithEmailAndPassword(auth, email, password);
+                  setScreen('mobile');
+                }
+              } catch (error) {
+                alert('❌ Erreur: ' + error.message);
+              }
+            }}
+            className="w-full bg-blue-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-blue-800 mb-4"
+          >
+            {authMode === 'register' ? 'S\'INSCRIRE' : 'SE CONNECTER'} 🚀
+          </button>
+
+          <button
+            onClick={() => setScreen('playJoin')}
+            className="w-full text-gray-600 py-2 text-sm underline"
+          >
+            ← Retour
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // MOBILE
+  if (screen === 'mobile') {
+    if (!user || !barId) {
+      setScreen('playJoin');
+      return null;
+    }
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-4">
+        <div className="max-w-md mx-auto">
+          {/* Header */}
+          <div className="bg-white rounded-2xl p-6 mb-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-2xl font-bold text-green-900">⚽ Quiz Buteur</h1>
+                <p className="text-gray-600">{barInfo?.name || barId}</p>
+              </div>
+              <button
+                onClick={() => {
+                  signOut(auth);
+                  setScreen('playJoin');
+                }}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm"
+              >
+                Déconnexion
+              </button>
+            </div>
+
+            {selectedMatch && (
+              <div className="bg-gray-100 rounded-xl p-4">
+                <div className="text-center">
+                  <div className="text-lg font-bold">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</div>
+                  <div className="text-sm text-gray-600">{selectedMatch.league}</div>
+                  {matchState?.active && (
+                    <div className="text-green-600 font-bold mt-2">🔴 EN COURS</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Question courante */}
+          {currentQuestion ? (
+            <div className="bg-white rounded-2xl p-6 mb-4 shadow-xl">
+              <div className="text-center mb-4">
+                <div className="text-2xl font-bold text-gray-900 mb-2">{currentQuestion.text}</div>
+                <div className="text-4xl font-black text-green-600">{timeLeft}s</div>
+              </div>
+
+              <div className="space-y-3">
+                {currentQuestion.options.map((option, index) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      if (!playerAnswer) {
+                        setPlayerAnswer(option);
+                        const answerRef = push(ref(db, `bars/${barId}/answers/${currentQuestion.id}`));
+                        set(answerRef, {
+                          playerId: user.uid,
+                          answer: option,
+                          timestamp: Date.now()
+                        });
+                      }
+                    }}
+                    className={`w-full py-4 rounded-xl text-lg font-bold transition-all ${
+                      playerAnswer === option
+                        ? 'bg-green-600 text-white'
+                        : playerAnswer
+                        ? 'bg-gray-200 text-gray-500'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                    disabled={!!playerAnswer}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+
+              {playerAnswer && (
+                <div className="text-center mt-4 text-green-600 font-bold">
+                  ✅ Réponse enregistrée !
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl p-6 mb-4 shadow-xl text-center">
+              <div className="text-6xl mb-4">⏳</div>
+              <div className="text-xl font-bold text-gray-600">En attente de la prochaine question...</div>
+              {countdown && (
+                <div className="text-green-600 font-bold mt-2">Prochaine question dans : {countdown}</div>
+              )}
+            </div>
+          )}
+
+          {/* Classement */}
+          <div className="bg-white rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">🏆 Classement</h2>
+            {players.length === 0 ? (
+              <div className="text-center text-gray-500 py-4">
+                Aucun joueur pour le moment
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {players.slice(0, 10).map((player, index) => (
+                  <div key={player.id} className={`flex justify-between items-center p-3 rounded-lg ${
+                    player.id === user.uid ? 'bg-green-100 border-2 border-green-500' : 'bg-gray-100'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className="text-lg font-bold">#{index + 1}</div>
+                      <div className="font-bold">{player.pseudo}</div>
+                    </div>
+                    <div className="text-green-600 font-bold">{player.score} pts</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // TV
+  if (screen === 'tv') {
+    return (
+      <div className="min-h-screen bg-black text-white p-4">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="text-8xl mb-4">⚽</div>
+            <h1 className="text-6xl font-black text-white mb-2">QUIZ BUTEUR</h1>
+            <p className="text-2xl text-green-400">Pronostics en temps réel</p>
+          </div>
+
+          {/* Match info */}
+          {selectedMatch && (
+            <div className="bg-gray-900 rounded-2xl p-8 mb-8 text-center">
+              <div className="text-4xl font-bold mb-4">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</div>
+              <div className="text-xl text-gray-400 mb-2">{selectedMatch.league}</div>
+              {matchState?.active && (
+                <div className="text-red-500 text-2xl font-bold">🔴 MATCH EN COURS</div>
+              )}
+            </div>
+          )}
+
+          {/* Question courante */}
+          {currentQuestion ? (
+            <div className="bg-gray-900 rounded-2xl p-8 mb-8">
+              <div className="text-center mb-8">
+                <div className="text-5xl font-bold text-white mb-4">{currentQuestion.text}</div>
+                <div className="text-8xl font-black text-red-500 mb-4">{timeLeft}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                {currentQuestion.options.map((option, index) => (
+                  <div key={index} className="bg-gray-800 rounded-xl p-6 text-center">
+                    <div className="text-3xl font-bold mb-2">{option}</div>
+                    <div className="text-6xl font-black text-green-400">
+                      {answers[option] || 0}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-900 rounded-2xl p-8 mb-8 text-center">
+              <div className="text-8xl mb-4">⏳</div>
+              <div className="text-3xl font-bold text-gray-400">En attente de la prochaine question...</div>
+              {countdown && (
+                <div className="text-green-400 text-2xl font-bold mt-4">Prochaine question dans : {countdown}</div>
+              )}
+            </div>
+          )}
+
+          {/* Classement */}
+          <div className="bg-gray-900 rounded-2xl p-8">
+            <h2 className="text-4xl font-bold text-center mb-8">🏆 CLASSEMENT</h2>
+            {players.length === 0 ? (
+              <div className="text-center text-gray-500 text-2xl py-8">
+                Aucun joueur pour le moment
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {players.slice(0, 12).map((player, index) => (
+                  <div key={player.id} className="bg-gray-800 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold mb-1">#{index + 1}</div>
+                    <div className="text-xl font-bold mb-1">{player.pseudo}</div>
+                    <div className="text-green-400 text-2xl font-bold">{player.score} pts</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Notification */}
+          {notification && (
+            <div className="fixed top-8 right-8 bg-green-600 text-white p-6 rounded-xl shadow-2xl z-50">
+              <div className="text-2xl font-bold">🎉 {notification.pseudo} a rejoint le quiz !</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Fallback
   return null;
