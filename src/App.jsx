@@ -644,6 +644,40 @@ export default function App() {
     if (!barId) return;
     
     try {
+      // 🔥 SYNCHRONISATION AVEC L'API EN TEMPS RÉEL
+      console.log('🔄 Synchronisation avec l\'API...');
+      let realTimeElapsed = selectedMatch?.elapsed || 0;
+      let realTimeHalf = selectedMatch?.half || '1H';
+      let realTimeScore = selectedMatch?.score || 'vs';
+      
+      if (selectedMatch?.id) {
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+        if (apiKey) {
+          try {
+            const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${selectedMatch.id}`, {
+              method: 'GET',
+              headers: {
+                'x-rapidapi-key': apiKey,
+                'x-rapidapi-host': 'v3.football.api-sports.io'
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.response && data.response.length > 0) {
+              const fixture = data.response[0];
+              realTimeElapsed = fixture.fixture.status.elapsed || 0;
+              realTimeHalf = fixture.fixture.status.short;
+              realTimeScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
+              
+              console.log(`✅ Synchro réussie : ${realTimeElapsed}' - ${realTimeHalf} - ${realTimeScore}`);
+            }
+          } catch (apiError) {
+            console.warn('⚠️ Impossible de synchroniser, utilisation des données locales', apiError);
+          }
+        }
+      }
+      
       const allMatchesSnap = await get(ref(db, `bars/${barId}/matches`));
       if (allMatchesSnap.exists()) {
         await remove(ref(db, `bars/${barId}/matches`));
@@ -666,10 +700,10 @@ export default function App() {
       const now = Date.now();
       const matchId = `match_${now}`;
       
-      let clockStartTime = now;
-      if (selectedMatch?.elapsed !== undefined) {
-        clockStartTime = now - (selectedMatch.elapsed * 60000);
-      }
+      // 🔥 CALCUL DU TEMPS DE DÉPART BASÉ SUR LE TEMPS RÉEL
+      const clockStartTime = now - (realTimeElapsed * 60000);
+      
+      console.log(`⏱️ Chrono configuré : ${realTimeElapsed}' écoulées, démarrage à ${new Date(clockStartTime).toLocaleTimeString()}`);
       
       const newMatchState = {
         active: true,
@@ -683,12 +717,12 @@ export default function App() {
           homeLogo: selectedMatch.homeLogo,
           awayLogo: selectedMatch.awayLogo,
           league: selectedMatch.league,
-          score: selectedMatch.score
+          score: realTimeScore // Score en temps réel
         } : null,
         matchClock: {
-          startTime: clockStartTime,
-          elapsedMinutes: selectedMatch?.elapsed || 0,
-          half: selectedMatch?.half || matchHalf || '1H'
+          startTime: clockStartTime, // Temps calculé avec l'elapsed réel
+          elapsedMinutes: realTimeElapsed, // Minutes réelles
+          half: realTimeHalf // Mi-temps réelle
         }
       };
       
@@ -698,7 +732,8 @@ export default function App() {
       await set(ref(db, `bars/${barId}/matches/${matchId}`), {
         info: {
           startedAt: now,
-          status: 'active'
+          status: 'active',
+          realElapsed: realTimeElapsed
         },
         players: {}
       });
@@ -709,7 +744,7 @@ export default function App() {
       const verifyMatch = await get(ref(db, `bars/${barId}/matches/${matchId}`));
       
       if (verifyState.exists() && verifyMatch.exists()) {
-        alert('✅ Match démarré !\n\nID: ' + matchId);
+        alert(`✅ Match démarré !\n\n⏱️ Temps synchronisé : ${realTimeElapsed}'\nMi-temps : ${realTimeHalf}\nScore : ${realTimeScore}`);
       } else {
         throw new Error('Vérification échouée');
       }
@@ -1065,8 +1100,9 @@ export default function App() {
     
     useEffect(() => {
       const updateTime = () => {
-        let clockStartTime = matchState?.matchClock?.startTime || matchStartTime;
-        let clockHalf = matchState?.matchClock?.half || selectedMatch?.half || matchHalf;
+        // 🔥 TOUJOURS utiliser matchState.matchClock en priorité (synchronisé avec l'API)
+        let clockStartTime = matchState?.matchClock?.startTime;
+        let clockHalf = matchState?.matchClock?.half;
         
         if (clockHalf === 'FT') {
           setTime('90\'00');
@@ -1075,8 +1111,10 @@ export default function App() {
         }
         
         if (clockStartTime) {
-          const elapsed = Math.floor((Date.now() - clockStartTime) / 60000);
-          const secs = Math.floor((Date.now() - clockStartTime) / 1000) % 60;
+          // Calcul du temps écoulé depuis le startTime synchronisé
+          const totalElapsedMs = Date.now() - clockStartTime;
+          const elapsed = Math.floor(totalElapsedMs / 60000);
+          const secs = Math.floor(totalElapsedMs / 1000) % 60;
           
           let displayTime;
           if (elapsed < 90) {
@@ -1086,19 +1124,26 @@ export default function App() {
           }
           
           setTime(displayTime);
-          setPhase(clockHalf === 'HT' ? 'MI-TEMPS' : elapsed >= 45 ? '2MT' : '1MT');
+          
+          // Déterminer la phase
+          if (clockHalf === 'HT') {
+            setPhase('MI-TEMPS');
+          } else if (elapsed >= 45 && (clockHalf === '2H' || elapsed >= 45)) {
+            setPhase('2MT');
+          } else {
+            setPhase('1MT');
+          }
         } else {
-          const mins = Math.floor((Date.now() % 5400000) / 60000);
-          const secs = Math.floor((Date.now() / 1000) % 60);
-          setTime(`${mins}'${secs.toString().padStart(2, '0')}`);
-          setPhase(mins >= 45 ? "2MT" : "1MT");
+          // Fallback si pas de données
+          setTime('0\'00');
+          setPhase('1MT');
         }
       };
       
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchState, matchStartTime, matchHalf, selectedMatch?.half]);
+    }, [matchState]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
