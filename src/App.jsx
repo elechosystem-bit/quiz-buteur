@@ -1,7 +1,4 @@
-### Statut
-Je vais appliquer vos 3 demandes dans `App.jsx` et vous renvoyer le fichier complet corrigé.
-
-```jsx
+```javascript name=src/App.jsx url=https://github.com/elechosystem-bit/quiz-buteur/blob/main/src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
@@ -1380,13 +1377,13 @@ export default function App() {
               onClick={debugFirebase}
               className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700"
             >
-              🔍 Debug Firebase
+              Debug Firebase
             </button>
             <button
               onClick={forceCleanup}
               className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700"
             >
-              🧹 Nettoyage
+              Nettoyage Complet
             </button>
           </div>
         </div>
@@ -1952,10 +1949,3 @@ export default function App() {
   return null;
 }
 ```
-
-- Modifs faites:
-  - createNewBar: validation + trim + logs.
-  - loadAllBars: support `data.info` ou `data` + logs.
-  - superAdmin: ajout des boutons “Debug Firebase” et “Nettoyage” après “Retour accueil”.
-
-- Voulez-vous que je pousse aussi la conversion des `onKeyPress` en `onKeyDown` ensuite ?
