@@ -425,7 +425,7 @@ export default function App() {
         setTimeLeft(data.timeLeft || 15);
         
         if (screen === 'mobile' && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification('🏀 Nouvelle question !', {
+          new Notification('⚽ Nouvelle question !', {
             body: data.text,
             icon: '/icon-192.png',
             badge: '/icon-192.png',
@@ -1171,7 +1171,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
-          <div className="text-8xl mb-6">🏀</div>
+          <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
@@ -1408,7 +1408,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
-          <div className="text-8xl mb-6">🏀</div>
+          <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
             </div>
@@ -1466,7 +1466,7 @@ export default function App() {
             onClick={authMode === 'login' ? handleLogin : handleSignup}
             className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
               >
-            {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} 🏀
+            {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} ⚽
               </button>
           
           <button
@@ -1529,7 +1529,7 @@ export default function App() {
               </div>
             ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
-              <div className="text-6xl mb-4">🏀</div>
+              <div className="text-6xl mb-4">⚽</div>
               <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
               {matchState?.active && countdown && (
                 <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
@@ -1619,7 +1619,7 @@ export default function App() {
         </div>
             ) : matchState?.active ? (
               <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
-                <p className="text-2xl text-yellow-400">🏀 Match en cours</p>
+                <p className="text-2xl text-yellow-400">⚽ Match en cours</p>
       </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
@@ -1812,7 +1812,7 @@ export default function App() {
                     disabled={!selectedMatch}
                     className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700 disabled:bg-gray-600"
                   >
-                    🏀 Démarrer
+                    ⚽ Démarrer
                   </button>
                   <button onClick={forceCleanup} className="bg-orange-600 px-8 py-4 rounded-lg font-bold hover:bg-orange-700">
                     🧹 Nettoyage
