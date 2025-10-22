@@ -1178,12 +1178,6 @@ export default function App() {
         
         <div className="flex gap-6">
           <button 
-            onClick={() => setScreen('tv')}
-            className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
-          >
-            📺 ÉCRAN
-          </button>
-          <button 
             onClick={() => setScreen('adminLogin')}
             className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
           >
@@ -1891,6 +1885,12 @@ export default function App() {
           </button>
             <button onClick={() => setScreen('tv')} className="bg-blue-600 px-6 py-3 rounded-lg">
               📺 TV
+            </button>
+            <button 
+              onClick={() => setScreen('tv')}
+              className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
+            >
+              📺 ÉCRAN
             </button>
           </div>
         </div>
