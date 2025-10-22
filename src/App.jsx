@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { pickRandomQuestion, evaluateQuestion, calculateTotalPoints, resetRecentQuestions } from './quiz/questions.js';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -14,9 +15,31 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const auth = getAuth(app);
+// Vérification que toutes les variables d'environnement sont présentes
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.databaseURL) {
+  console.error('❌ Configuration Firebase manquante. Vérifiez votre fichier .env.local');
+  console.error('Variables manquantes:', {
+    apiKey: !!firebaseConfig.apiKey,
+    authDomain: !!firebaseConfig.authDomain,
+    databaseURL: !!firebaseConfig.databaseURL
+  });
+  // Ne pas lancer d'erreur pour permettre l'affichage de l'interface
+  // throw new Error('Configuration Firebase manquante');
+}
+
+let app, db, auth;
+
+try {
+  app = initializeApp(firebaseConfig);
+  db = getDatabase(app);
+  auth = getAuth(app);
+} catch (error) {
+  console.error('❌ Erreur d\'initialisation Firebase:', error);
+  // Créer des objets mock pour éviter les erreurs
+  app = null;
+  db = null;
+  auth = null;
+}
 
 const QUESTION_INTERVAL = 60000;
 
@@ -34,6 +57,44 @@ const QUESTIONS = [
 ];
 
 export default function App() {
+  // Vérifier si Firebase est configuré
+  if (!app || !db || !auth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-900 via-orange-900 to-yellow-900 flex flex-col items-center justify-center p-8">
+        <div className="text-center mb-12">
+          <div className="text-8xl mb-6">⚠️</div>
+          <h1 className="text-6xl font-black text-white mb-4">CONFIGURATION REQUISE</h1>
+          <p className="text-2xl text-yellow-200 mb-8">Configuration Firebase manquante</p>
+        </div>
+        
+        <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">🔧 Configuration nécessaire</h2>
+          <div className="space-y-4 text-left">
+            <p className="text-gray-700">
+              Pour utiliser Quiz Buteur, vous devez configurer Firebase :
+            </p>
+            <ol className="list-decimal list-inside space-y-2 text-gray-700">
+              <li>Créez un fichier <code className="bg-gray-100 px-2 py-1 rounded">.env.local</code> à la racine du projet</li>
+              <li>Ajoutez vos clés Firebase :</li>
+            </ol>
+            <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm">
+              <div>VITE_FIREBASE_API_KEY=votre_api_key</div>
+              <div>VITE_FIREBASE_AUTH_DOMAIN=votre_auth_domain</div>
+              <div>VITE_FIREBASE_DATABASE_URL=votre_database_url</div>
+              <div>VITE_FIREBASE_PROJECT_ID=votre_project_id</div>
+              <div>VITE_FIREBASE_STORAGE_BUCKET=votre_storage_bucket</div>
+              <div>VITE_FIREBASE_MESSAGING_SENDER_ID=votre_messaging_sender_id</div>
+              <div>VITE_FIREBASE_APP_ID=votre_app_id</div>
+            </div>
+            <p className="text-gray-700">
+              Une fois configuré, rechargez la page.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [screen, setScreen] = useState('home');
   const [barId, setBarId] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -67,6 +128,7 @@ export default function App() {
   const [matchHalf, setMatchHalf] = useState('1H');
   const [matchPlayers, setMatchPlayers] = useState([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [matchEvents, setMatchEvents] = useState([]);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -77,10 +139,10 @@ export default function App() {
     setLoadingMatches(true);
 
     try {
-      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
 
-      if (!apiKey) {
-        alert('❌ Clé API non configurée');
+      if (!apiKey || apiKey === 'demo_key') {
+        alert('❌ Clé API non configurée\n\nPour utiliser les fonctionnalités de match en direct, configurez VITE_API_FOOTBALL_KEY dans votre fichier .env');
         setLoadingMatches(false);
         return;
       }
@@ -221,9 +283,9 @@ export default function App() {
     setLoadingPlayers(true);
     
     try {
-      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
       
-      if (!apiKey) {
+      if (!apiKey || apiKey === 'demo_key') {
         setLoadingPlayers(false);
         return;
       }
@@ -265,6 +327,34 @@ export default function App() {
       setMatchPlayers([]);
     } finally {
       setLoadingPlayers(false);
+    }
+  };
+
+  const fetchMatchEvents = async (fixtureId) => {
+    if (!fixtureId) return;
+    
+    try {
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
+      
+      const response = await fetch(`https://v3.football.api-sports.io/fixtures/events?fixture=${fixtureId}`, {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'v3.football.api-sports.io'
+        }
+      });
+
+      const data = await response.json();
+      
+      if (data.response && barId) {
+        await set(ref(db, `bars/${barId}/matchEvents`), {
+          events: data.response,
+          lastUpdate: Date.now()
+        });
+        return data.response;
+      }
+    } catch (e) {
+      console.error('Erreur récupération événements:', e);
     }
   };
 
@@ -415,6 +505,20 @@ export default function App() {
     
     return () => unsub();
   }, [barId, currentMatchId]);
+
+  useEffect(() => {
+    if (!barId || screen !== 'tv') return;
+    
+    const eventsRef = ref(db, `bars/${barId}/matchEvents`);
+    const unsub = onValue(eventsRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.val();
+        setMatchEvents(data.events || []);
+      }
+    });
+    
+    return () => unsub();
+  }, [barId, screen]);
 
   useEffect(() => {
     if (!barId) return;
@@ -577,12 +681,20 @@ export default function App() {
       }
     }, 2000);
 
+    // Interval pour rafraîchir les événements toutes les 30 secondes
+    const eventsRefreshInterval = setInterval(async () => {
+      if (selectedMatch?.id) {
+        await fetchMatchEvents(selectedMatch.id);
+      }
+    }, 30000);
+
     return () => {
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
       }
+      clearInterval(eventsRefreshInterval);
     };
-  }, [barId, matchState, currentQuestion]);
+  }, [barId, matchState, currentQuestion, selectedMatch?.id]);
 
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
@@ -661,8 +773,8 @@ export default function App() {
       let realTimeScore = selectedMatch?.score || 'vs';
       
       if (selectedMatch?.id) {
-        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (apiKey) {
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
+        if (apiKey && apiKey !== 'demo_key') {
           try {
             const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${selectedMatch.id}`, {
               method: 'GET',
@@ -699,6 +811,7 @@ export default function App() {
       await remove(ref(db, `bars/${barId}/notifications`));
       
       usedQuestionsRef.current = [];
+      resetRecentQuestions(); // Réinitialiser les questions récentes
       isProcessingRef.current = false;
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
@@ -820,41 +933,21 @@ export default function App() {
         return;
       }
 
-      let questionToUse;
-      
-      if (matchPlayers.length >= 4) {
-        const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
-        const selectedPlayers = shuffled.slice(0, 4);
-        
-        const questionTypes = [
-          { text: "Qui va marquer le prochain but ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-          { text: "Quel joueur va faire la prochaine passe décisive ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-          { text: "Qui va avoir le prochain carton ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-          { text: "Quel joueur va tenter le prochain tir ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) }
-        ];
-        
-        questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
-      } else {
-        const availableQuestions = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
-        
-        if (availableQuestions.length === 0) {
-          usedQuestionsRef.current = [];
-        }
-        
-        questionToUse = availableQuestions.length > 0 
-          ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)]
-          : QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
-      }
-      
-      const qId = Date.now().toString();
-      usedQuestionsRef.current.push(questionToUse.text);
+      // Utiliser le nouveau système de questions avec l'API Football
+      const question = pickRandomQuestion(matchPlayers);
       
       await set(ref(db, `bars/${barId}/currentQuestion`), {
-        id: qId,
-        text: questionToUse.text,
-        options: questionToUse.options,
+        id: question.id,
+        text: question.text,
+        options: question.options,
+        points: question.points,
+        difficulty: question.difficulty,
         timeLeft: 15,
-        createdAt: Date.now()
+        createdAt: question.createdAt,
+        expiresAt: question.expiresAt,
+        templateId: question.templateId,
+        api: question.api,
+        type: question.type
       });
 
       if (matchState?.active) {
@@ -877,30 +970,38 @@ export default function App() {
     const questionId = currentQuestion.id;
     
     try {
-      const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
+      // Évaluer la question avec l'API Football
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
+      const correctAnswer = await evaluateQuestion(currentQuestion, selectedMatch?.id, apiKey);
+      
+      console.log(`🎯 Réponse correcte: ${correctAnswer}`);
+      
       const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
       
       if (answersSnap.exists() && currentMatchId) {
         for (const [userId, data] of Object.entries(answersSnap.val())) {
-          if (data.answer === randomWinner) {
+          if (data.answer === correctAnswer) {
             const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
             const playerSnap = await get(playerRef);
-            const bonus = Math.floor((data.timeLeft || 0) / 3);
-            const total = 10 + bonus;
+            
+            // Calculer les points avec le nouveau système (base + bonus vitesse)
+            const totalPoints = calculateTotalPoints(currentQuestion.points || 10, data.timeLeft || 0);
             
             if (playerSnap.exists()) {
               await update(playerRef, {
-                score: (playerSnap.val().score || 0) + total
+                score: (playerSnap.val().score || 0) + totalPoints
               });
             } else {
               const userSnap = await get(ref(db, `users/${userId}`));
               if (userSnap.exists()) {
                 await set(playerRef, {
                   pseudo: userSnap.val().pseudo,
-                  score: total
+                  score: totalPoints
                 });
               }
             }
+            
+            console.log(`✅ ${data.answer} - ${totalPoints} points attribués`);
           }
         }
       }
@@ -1047,8 +1148,8 @@ export default function App() {
     // Vérifier toutes les 30 secondes si le match a commencé
     matchCheckInterval.current = setInterval(async () => {
       try {
-        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (!apiKey) return;
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
+        if (!apiKey || apiKey === 'demo_key') return;
 
         const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
           method: 'GET',
@@ -1107,60 +1208,54 @@ export default function App() {
   const MatchClock = () => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
+    const [isHalfTime, setIsHalfTime] = useState(false);
     
     useEffect(() => {
       const updateTime = () => {
-        // 🔥 TOUJOURS utiliser matchState.matchClock en priorité (synchronisé avec l'API)
-        let clockStartTime = matchState?.matchClock?.startTime;
-        let clockHalf = matchState?.matchClock?.half;
-        
-        if (clockHalf === 'FT') {
-          setTime('90\'00');
-          setPhase('TERMINÉ');
+        // Vérifier si c'est la mi-temps
+        if (selectedMatch?.half === 'HT') {
+          setIsHalfTime(true);
+          setPhase('MI-TEMPS');
+          setTime('45:00');
           return;
         }
         
-        if (clockStartTime) {
-          // Calcul du temps écoulé depuis le startTime synchronisé
-          const totalElapsedMs = Date.now() - clockStartTime;
-          const elapsed = Math.floor(totalElapsedMs / 60000);
-          const secs = Math.floor(totalElapsedMs / 1000) % 60;
+        setIsHalfTime(false);
+        
+        if (matchStartTime) {
+          const elapsed = Math.floor((Date.now() - matchStartTime) / 60000);
+          const mins = Math.min(elapsed, 90);
+          const secs = Math.floor((Date.now() - matchStartTime) / 1000) % 60;
           
-          let displayTime;
-          if (elapsed < 90) {
-            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-          } else {
-            displayTime = `90'+${elapsed - 90 + 1}`;
-          }
-          
-          setTime(displayTime);
-          
-          // Déterminer la phase
-          if (clockHalf === 'HT') {
-            setPhase('MI-TEMPS');
-          } else if (elapsed >= 45 && (clockHalf === '2H' || elapsed >= 45)) {
-            setPhase('2MT');
-          } else {
-            setPhase('1MT');
-          }
-        } else {
-          // Fallback si pas de données
-          setTime('0\'00');
-          setPhase('1MT');
+          setTime(`${mins}:${secs.toString().padStart(2, '0')}`);
+          setPhase(mins >= 45 ? '2MT' : '1MT');
         }
       };
       
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchState]);
+    }, [matchStartTime, selectedMatch?.half]);
 
     return (
-      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
-        <div className="text-6xl font-mono font-black text-green-400" style={{ letterSpacing: '0.1em' }}>
+      <div className={`rounded-xl px-6 py-3 border-2 shadow-lg ${
+        isHalfTime 
+          ? 'bg-red-600 border-red-800 animate-pulse' 
+          : 'bg-black border-gray-700'
+      }`}>
+        {isHalfTime && (
+          <div className="text-2xl font-bold text-white text-center mb-2">
+            ⏸️ MI-TEMPS
+          </div>
+        )}
+        <div className={`text-6xl font-mono font-black ${
+          isHalfTime ? 'text-white' : 'text-green-400'
+        }`} style={{ letterSpacing: '0.1em' }}>
           {time}
         </div>
-        <div className="text-sm font-bold text-green-500 text-center mt-1">
+        <div className={`text-sm font-bold text-center mt-1 ${
+          isHalfTime ? 'text-white' : 'text-green-500'
+        }`}>
           {phase}
         </div>
       </div>
@@ -1510,6 +1605,12 @@ export default function App() {
                   <div className="h-full bg-green-600 transition-all" style={{ width: `${(timeLeft / 15) * 100}%` }} />
                     </div>
                   </div>
+              {/* Affichage des points sur mobile : au-dessus de la question */}
+              <div className="text-center mb-4">
+                <span className="bg-green-100 text-green-800 px-4 py-2 rounded-full text-lg font-bold">
+                  ({currentQuestion.points || 10} pts)
+                </span>
+              </div>
               <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
               <div className="space-y-3">
                 {currentQuestion.options.map((opt, i) => (
@@ -1826,7 +1927,12 @@ export default function App() {
               <div>
                 <p className="text-xl mb-4 text-green-400">✅ Match en cours</p>
                 <p className="text-lg mb-2">Joueurs: {players.length}</p>
-                {currentQuestion?.text && <p className="text-yellow-400 mb-2">📢 {currentQuestion.text}</p>}
+                {currentQuestion?.text && (
+                  <p className="text-yellow-400 mb-2">
+                    📢 {currentQuestion.text} 
+                    <span className="text-green-400 ml-2">({currentQuestion.points || 10} pts)</span>
+                  </p>
+                )}
                 <div className="flex gap-4 flex-wrap">
                   <button onClick={stopMatch} className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700">
                     ⏹️ Arrêter
@@ -1851,7 +1957,10 @@ export default function App() {
 
           {currentQuestion?.options && (
             <div className="bg-gray-800 rounded-xl p-6 mb-6">
-              <h2 className="text-2xl font-bold mb-4">Votes</h2>
+              <h2 className="text-2xl font-bold mb-4">
+                Votes 
+                <span className="text-green-400 ml-2">({currentQuestion.points || 10} pts)</span>
+              </h2>
               <div className="grid grid-cols-2 gap-4">
                 {currentQuestion.options.map(opt => (
                   <div key={opt} className="bg-gray-700 p-4 rounded-lg">
