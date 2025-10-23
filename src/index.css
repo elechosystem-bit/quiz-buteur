@@ -1,38 +1,232 @@
-:root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-}
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; }
-body {
-  margin: 0;
-  background: #d9f7e3; /* vert clair */
-  color: #0b331a;
-  display: grid;
-  place-items: center;
-}
-a { color: inherit; text-decoration: none; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-.button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 14px;
-  background: #0b331a;
-  color: #d9f7e3;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
+/* Styles personnalisés pour Quiz Buteur */
+.container-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1f2937 0%, #065f46 50%, #1f2937 100%);
 }
 
-.button:hover {
-  background: #1a4d2e;
-  transform: translateY(-1px);
+.btn-primary {
+  @apply bg-green-700 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-600 transition-all shadow-lg;
 }
 
-.button:active {
-  transform: translateY(0);
+.btn-outline {
+  @apply border-2 border-green-700 text-green-700 px-6 py-3 rounded-lg font-bold hover:bg-green-700 hover:text-white transition-all;
+}
+
+.card {
+  @apply bg-white rounded-xl p-6 shadow-lg;
+}
+
+/* Animations personnalisées */
+@keyframes bounce {
+  0%, 20%, 53%, 80%, 100% {
+    transform: translate3d(0,0,0);
+  }
+  40%, 43% {
+    transform: translate3d(0, -30px, 0);
+  }
+  70% {
+    transform: translate3d(0, -15px, 0);
+  }
+  90% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+/* Styles pour les écrans TV */
+.tv-screen {
+  background: linear-gradient(135deg, #111827 0%, #065f46 50%, #111827 100%);
+}
+
+/* Styles pour les notifications */
+.notification {
+  @apply fixed top-8 left-1/2 transform -translate-x-1/2 z-50;
+}
+
+/* Styles pour le QR Code */
+.qr-container {
+  @apply bg-white p-6 rounded-2xl shadow-2xl;
+}
+
+/* Styles pour les classements */
+.leaderboard {
+  @apply bg-white/95 rounded-3xl p-6 shadow-2xl;
+}
+
+.leaderboard-item {
+  @apply grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all;
+}
+
+.leaderboard-first {
+  @apply bg-yellow-400 text-gray-900 font-black text-2xl;
+}
+
+.leaderboard-second {
+  @apply bg-gray-300 text-gray-900 font-bold text-xl;
+}
+
+.leaderboard-third {
+  @apply bg-orange-300 text-gray-900 font-bold text-xl;
+}
+
+.leaderboard-other {
+  @apply bg-gray-50 text-lg;
+}
+
+/* Styles pour les questions */
+.question-container {
+  @apply bg-white rounded-3xl p-8 shadow-2xl;
+}
+
+.question-timer {
+  @apply text-6xl font-black text-green-900 mb-2;
+}
+
+.question-progress {
+  @apply h-3 bg-gray-200 rounded-full overflow-hidden;
+}
+
+.question-progress-bar {
+  @apply h-full bg-green-600 transition-all;
+}
+
+.question-text {
+  @apply text-2xl font-bold text-gray-800 mb-6 text-center;
+}
+
+.question-option {
+  @apply w-full py-4 px-6 rounded-xl text-lg font-bold transition-all;
+}
+
+.question-option-default {
+  @apply bg-gray-100 text-gray-800 hover:bg-gray-200;
+}
+
+.question-option-selected {
+  @apply bg-blue-600 text-white;
+}
+
+/* Styles pour les matchs */
+.match-info {
+  @apply bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-4 rounded-xl border-2 border-blue-500;
+}
+
+.match-clock {
+  @apply bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg;
+}
+
+.match-time {
+  @apply text-6xl font-mono font-black text-green-400;
+}
+
+.match-phase {
+  @apply text-sm font-bold text-green-500 text-center mt-1;
+}
+
+/* Styles pour les formulaires */
+.form-input {
+  @apply w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600;
+}
+
+.form-button {
+  @apply w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4;
+}
+
+/* Styles pour les alertes */
+.alert-success {
+  @apply bg-green-100 border-2 border-green-300 rounded-lg p-4 text-green-800;
+}
+
+.alert-error {
+  @apply bg-red-100 border-2 border-red-300 rounded-lg p-4 text-red-800;
+}
+
+.alert-warning {
+  @apply bg-yellow-100 border-2 border-yellow-300 rounded-lg p-4 text-yellow-800;
+}
+
+/* Styles pour les boutons d'action */
+.action-button {
+  @apply px-8 py-4 rounded-lg text-xl font-bold transition-all;
+}
+
+.action-button-start {
+  @apply bg-green-600 hover:bg-green-700 disabled:bg-gray-600;
+}
+
+.action-button-stop {
+  @apply bg-red-600 hover:bg-red-700;
+}
+
+.action-button-cleanup {
+  @apply bg-orange-600 hover:bg-orange-700;
+}
+
+.action-button-debug {
+  @apply bg-purple-600 hover:bg-purple-700;
+}
+
+/* Styles pour les listes */
+.player-list {
+  @apply space-y-2 max-h-96 overflow-y-auto;
+}
+
+.player-item {
+  @apply flex justify-between bg-gray-700 p-3 rounded;
+}
+
+/* Styles pour les votes */
+.vote-container {
+  @apply bg-gray-800 rounded-xl p-6 mb-6;
+}
+
+.vote-grid {
+  @apply grid grid-cols-2 gap-4;
+}
+
+.vote-option {
+  @apply bg-gray-700 p-4 rounded-lg;
+}
+
+.vote-count {
+  @apply text-3xl font-black text-green-400;
+}
+
+/* Styles responsives */
+@media (max-width: 768px) {
+  .container-page {
+    padding: 1rem;
+  }
+  
+  .question-text {
+    @apply text-xl;
+  }
+  
+  .match-time {
+    @apply text-4xl;
+  }
+}
+
+/* Styles pour les gradients */
+.gradient-green {
+  background: linear-gradient(135deg, #065f46 0%, #10b981 100%);
+}
+
+.gradient-yellow {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+}
+
+.gradient-red {
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+}
+
+.gradient-blue {
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
 }
