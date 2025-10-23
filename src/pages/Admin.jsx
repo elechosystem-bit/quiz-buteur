@@ -37,7 +37,7 @@ export default function App() {
   const [screen, setScreen] = useState('home');
   const [barId, setBarId] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('bar') || null;
+    return urlParams.get('bar') || 'default_bar';
   });
   const [barIdInput, setBarIdInput] = useState('');
   const [superAdminPassword, setSuperAdminPassword] = useState('');
@@ -288,17 +288,26 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (barId) loadBarInfo(barId);
+    console.log('🔍 Initialisation - barId:', barId);
+    
+    if (barId) {
+      console.log('✅ Chargement info bar pour:', barId);
+      loadBarInfo(barId);
+    }
     
     const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
     
-    if (barFromUrl && !barId) {
+    console.log('🌐 URL params - bar:', barFromUrl, 'path:', path);
+    
+    if (barFromUrl && barId === 'default_bar') {
+      console.log('🔄 Mise à jour barId depuis URL:', barFromUrl);
       setBarId(barFromUrl);
     }
     
     if (path === '/play' || path.includes('/play')) {
+      console.log('📱 Redirection vers playJoin');
       setScreen('playJoin');
     }
 
@@ -648,7 +657,10 @@ export default function App() {
   };
 
   const startMatch = async () => {
+    console.log('🏀 Démarrage match - barId:', barId);
+    
     if (!barId) {
+      console.error('❌ ERREUR: barId est null dans startMatch !');
       alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
       return;
     }
@@ -1603,6 +1615,8 @@ export default function App() {
   }
 
   if (screen === 'mobile' && user) {
+    console.log('📱 Écran Mobile - barId:', barId, 'user:', user.uid);
+    
     const myScore = players.find(p => p.id === user.uid);
     const score = myScore?.score || 0;
 
@@ -1662,7 +1676,10 @@ export default function App() {
   }
 
   if (screen === 'tv') {
+    console.log('📺 Écran TV - barId:', barId);
+    
     if (!barId) {
+      console.error('❌ ERREUR: barId est null dans l\'écran TV !');
       return (
         <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
           <div className="bg-white rounded-3xl p-10 max-w-2xl w-full shadow-2xl text-center">
@@ -1799,7 +1816,10 @@ export default function App() {
   }
 
   if (screen === 'admin') {
+    console.log('🎮 Écran Admin - barId:', barId);
+    
     if (!barId) {
+      console.error('❌ ERREUR: barId est null dans l\'écran Admin !');
       setScreen('adminLogin');
       return null;
     }
