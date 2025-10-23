@@ -1,10 +1,38 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+:root {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #d9f7e3; /* vert clair */
+  color: #0b331a;
+  display: grid;
+  place-items: center;
+}
+a { color: inherit; text-decoration: none; }
 
-/* helpers */
-.container-page { @apply min-h-dvh bg-gradient-to-b from-zinc-50 to-white text-zinc-900; }
-.btn { @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 font-medium shadow-sm transition hover:opacity-90; }
-.btn-primary { @apply btn bg-black text-white; }
-.btn-outline { @apply btn border border-zinc-300 bg-white; }
-.card { @apply rounded-2xl border border-zinc-200 bg-white/70 backdrop-blur p-6 shadow-sm; }
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  background: #0b331a;
+  color: #d9f7e3;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.button:hover {
+  background: #1a4d2e;
+  transform: translateY(-1px);
+}
+
+.button:active {
+  transform: translateY(0);
+}
