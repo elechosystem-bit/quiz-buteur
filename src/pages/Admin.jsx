@@ -1107,60 +1107,135 @@ export default function App() {
   const MatchClock = () => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
+    const [isBlinking, setIsBlinking] = useState(false);
+    const [realTimeData, setRealTimeData] = useState(null);
     
+    // 🔥 SYNCHRONISATION AVEC L'API FOOTBALL TOUTES LES 30 SECONDES
     useEffect(() => {
-      const updateTime = () => {
-        // 🔥 TOUJOURS utiliser matchState.matchClock en priorité (synchronisé avec l'API)
-        let clockStartTime = matchState?.matchClock?.startTime;
-        let clockHalf = matchState?.matchClock?.half;
-        
-        if (clockHalf === 'FT') {
-          setTime('90\'00');
-          setPhase('TERMINÉ');
-          return;
-        }
-        
-        if (clockStartTime) {
-          // Calcul du temps écoulé depuis le startTime synchronisé
-          const totalElapsedMs = Date.now() - clockStartTime;
-          const elapsed = Math.floor(totalElapsedMs / 60000);
-          const secs = Math.floor(totalElapsedMs / 1000) % 60;
+      if (!selectedMatch?.id || !matchState?.active) return;
+      
+      const fetchRealTimeData = async () => {
+        try {
+          const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+          if (!apiKey) return;
           
-          let displayTime;
-          if (elapsed < 90) {
-            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-          } else {
-            displayTime = `90'+${elapsed - 90 + 1}`;
+          const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${selectedMatch.id}`, {
+            method: 'GET',
+            headers: {
+              'x-rapidapi-key': apiKey,
+              'x-rapidapi-host': 'v3.football.api-sports.io'
+            }
+          });
+          
+          const data = await response.json();
+          
+          if (data.response && data.response.length > 0) {
+            const fixture = data.response[0];
+            const status = fixture.fixture.status.short;
+            const elapsed = fixture.fixture.status.elapsed || 0;
+            const score = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
+            
+            setRealTimeData({
+              status,
+              elapsed,
+              score,
+              timestamp: Date.now()
+            });
+            
+            console.log(`🔄 Chrono synchronisé: ${elapsed}' - ${status} - ${score}`);
           }
-          
-          setTime(displayTime);
-          
-          // Déterminer la phase
-          if (clockHalf === 'HT') {
-            setPhase('MI-TEMPS');
-          } else if (elapsed >= 45 && (clockHalf === '2H' || elapsed >= 45)) {
-            setPhase('2MT');
-          } else {
-            setPhase('1MT');
-          }
-        } else {
-          // Fallback si pas de données
-          setTime('0\'00');
-          setPhase('1MT');
+        } catch (error) {
+          console.warn('⚠️ Erreur synchronisation chrono:', error);
         }
       };
       
-      updateTime();
-      const iv = setInterval(updateTime, 1000);
-      return () => clearInterval(iv);
-    }, [matchState]);
+      // Première synchronisation immédiate
+      fetchRealTimeData();
+      
+      // Puis toutes les 30 secondes
+      const syncInterval = setInterval(fetchRealTimeData, 30000);
+      
+      return () => clearInterval(syncInterval);
+    }, [selectedMatch?.id, matchState?.active]);
+    
+    useEffect(() => {
+      const updateDisplay = () => {
+        // 🔥 UTILISER LES DONNÉES RÉELLES DE L'API EN PRIORITÉ
+        if (realTimeData) {
+          const { status, elapsed } = realTimeData;
+          
+          // Gestion selon le statut du match
+          if (status === 'FT') {
+            setTime('90\'00');
+            setPhase('⏹️ TERMINÉ');
+            setIsBlinking(false);
+            return;
+          }
+          
+          if (status === 'HT') {
+            setTime('45\'00');
+            setPhase('⏸️ MI-TEMPS');
+            setIsBlinking(true);
+            return;
+          }
+          
+          if (status === '1H') {
+            // Première mi-temps : 0' à 45' + temps additionnel
+            let displayTime;
+            if (elapsed <= 45) {
+              displayTime = `${elapsed}'00`;
+            } else {
+              // Temps additionnel 1ère mi-temps
+              const injuryTime = elapsed - 45;
+              displayTime = `45+${injuryTime}`;
+            }
+            
+            setTime(displayTime);
+            setPhase('1MT');
+            setIsBlinking(false);
+            return;
+          }
+          
+          if (status === '2H') {
+            // Deuxième mi-temps : 46' à 90' + temps additionnel
+            let displayTime;
+            if (elapsed <= 90) {
+              displayTime = `${elapsed}'00`;
+            } else {
+              // Temps additionnel 2ème mi-temps
+              const injuryTime = elapsed - 90;
+              displayTime = `90+${injuryTime}`;
+            }
+            
+            setTime(displayTime);
+            setPhase('2MT');
+            setIsBlinking(false);
+            return;
+          }
+          
+          // Autres statuts (NS, TBD, etc.)
+          setTime('0\'00');
+          setPhase('EN ATTENTE');
+          setIsBlinking(false);
+        } else {
+          // Fallback si pas de données API
+          setTime('0\'00');
+          setPhase('CHARGEMENT...');
+          setIsBlinking(false);
+        }
+      };
+      
+      updateDisplay();
+      const interval = setInterval(updateDisplay, 1000);
+      return () => clearInterval(interval);
+    }, [realTimeData]);
 
     return (
-      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
+      <div className={`bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg ${isBlinking ? 'animate-pulse' : ''}`}>
         <div className="text-6xl font-mono font-black text-green-400" style={{ letterSpacing: '0.1em' }}>
           {time}
         </div>
-        <div className="text-sm font-bold text-green-500 text-center mt-1">
+        <div className={`text-sm font-bold text-center mt-1 ${isBlinking ? 'text-red-500' : 'text-green-500'}`}>
           {phase}
         </div>
       </div>
