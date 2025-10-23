@@ -1732,7 +1732,7 @@ export default function App() {
                   <div className="flex-1">
                     <div className="text-xl font-bold">
                       {selectedMatch.homeTeam} {selectedMatch.score} {selectedMatch.awayTeam}
-          </div>
+                    </div>
                     <div className="text-sm text-gray-300">{selectedMatch.league}</div>
                   </div>
                   {selectedMatch.awayLogo && <img src={selectedMatch.awayLogo} alt="" className="w-10 h-10" />}
@@ -1762,7 +1762,7 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         {match.homeLogo && <img src={match.homeLogo} alt="" className="w-8 h-8" />}
                     <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs bg-blue-600 px-2 py-1 rounded">
                               {match.league}
                             </span>
@@ -1781,8 +1781,8 @@ export default function App() {
                             {match.homeTeam} {match.score} {match.awayTeam}
                           </div>
                           <div className="text-sm text-gray-400">{match.date}</div>
-                        </div>
-                        {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
+                      </div>
+                      {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
                         {isUpcoming && <div className="text-2xl ml-4">🔒</div>}
                       </div>
                     </div>
@@ -1812,7 +1812,7 @@ export default function App() {
                     disabled={!selectedMatch}
                     className="bg-green-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-green-700 disabled:bg-gray-600"
                   >
-                    🏀 Démarrer
+                    ⚽ Démarrer
                   </button>
                   <button onClick={forceCleanup} className="bg-orange-600 px-8 py-4 rounded-lg font-bold hover:bg-orange-700">
                     🧹 Nettoyage
@@ -1882,15 +1882,9 @@ export default function App() {
           <div className="flex gap-4">
             <button onClick={() => setScreen('home')} className="bg-gray-700 px-6 py-3 rounded-lg">
               ← Retour
-          </button>
+            </button>
             <button onClick={() => setScreen('tv')} className="bg-blue-600 px-6 py-3 rounded-lg">
               📺 TV
-            </button>
-            <button 
-              onClick={() => setScreen('tv')}
-              className="bg-white text-green-900 px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-100 transition-all shadow-2xl"
-            >
-              📺 ÉCRAN
             </button>
           </div>
         </div>
