@@ -34,6 +34,7 @@ const QUESTIONS = [
 ];
 
 export default function App() {
+  console.log('🚀 App component rendering - initial path:', window.location.pathname);
   const [screen, setScreen] = useState('home');
   const [barId, setBarId] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -269,42 +270,72 @@ export default function App() {
   };
 
   const loadBarInfo = async (id) => {
+    console.log('🏪 Loading bar info for ID:', id);
     try {
       const barRef = ref(db, `bars/${id}/info`);
+      console.log('🏪 Firebase path:', `bars/${id}/info`);
       const snap = await get(barRef);
+      console.log('🏪 Firebase response:', snap.exists() ? snap.val() : 'No data');
       if (snap.exists()) {
         setBarInfo(snap.val());
+        console.log('🏪 Bar info set:', snap.val());
       } else {
         const defaultInfo = {
           name: "Quiz Buteur Live",
           createdAt: Date.now()
         };
+        console.log('🏪 Creating default bar info:', defaultInfo);
         await set(barRef, defaultInfo);
         setBarInfo(defaultInfo);
       }
     } catch (e) {
-      console.error('Erreur chargement bar:', e);
+      console.error('🏪 Erreur chargement bar:', e);
     }
   };
 
   useEffect(() => {
+    console.log('🔍 useEffect routing - barId:', barId);
     if (barId) loadBarInfo(barId);
     
     const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
     
+    console.log('🔍 Path:', path, 'barFromUrl:', barFromUrl);
+    
     if (barFromUrl && !barId) {
+      console.log('🔍 Setting barId from URL:', barFromUrl);
       setBarId(barFromUrl);
     }
     
     if (path === '/play' || path.includes('/play')) {
+      console.log('🔍 Setting screen to playJoin');
       setScreen('playJoin');
     }
 
     // Nettoyage à la fermeture
     return () => {
       stopMatchMonitoring();
+    };
+  }, [barId]);
+
+  // Nouveau useEffect pour gérer les changements d'URL
+  useEffect(() => {
+    const handleRouteChange = () => {
+      const path = window.location.pathname;
+      console.log('🔍 Route change detected:', path);
+      
+      if (path === '/play' || path.includes('/play')) {
+        console.log('🔍 Setting screen to playJoin from route change');
+        setScreen('playJoin');
+      }
+    };
+
+    // Écouter les changements d'URL
+    window.addEventListener('popstate', handleRouteChange);
+    
+    return () => {
+      window.removeEventListener('popstate', handleRouteChange);
     };
   }, []);
 
@@ -1405,21 +1436,29 @@ export default function App() {
   }
 
   if (screen === 'playJoin') {
+    console.log('🎮 Rendering playJoin screen - barInfo:', barInfo, 'barId:', barId);
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
           <div className="text-8xl mb-6">🏀</div>
           <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
-            </div>
+          {!barInfo && (
+            <p className="text-lg text-green-300 mt-4">Chargement des informations du bar...</p>
+          )}
+        </div>
         
-            <button
-          onClick={() => setScreen('auth')}
+        <button
+          onClick={() => {
+            console.log('🎮 JOUER button clicked - going to auth screen');
+            setScreen('auth');
+          }}
           className="bg-white text-green-900 px-16 py-10 rounded-3xl text-4xl font-black hover:bg-green-100 transition-all shadow-2xl"
         >
           📱 JOUER
-            </button>
-          </div>
+        </button>
+      </div>
     );
   }
 
