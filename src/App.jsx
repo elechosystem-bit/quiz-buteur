@@ -1576,7 +1576,7 @@ export default function App() {
       );
     }
 
-    const qrUrl = `${window.location.origin}/play?bar=${barId}`;
+    const qrUrl = `https://quiz-buteur.vercel.app/play?bar=${barId || 'default_bar'}`;
     const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo?.homeTeam && matchInfo?.awayTeam;
     
