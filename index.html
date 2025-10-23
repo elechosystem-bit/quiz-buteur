@@ -1,13 +1,550 @@
 <!DOCTYPE html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Quiz Buteur Live</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Buteur</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/firebase@10.7.1/dist/firebase-app.js"></script>
+    <script src="https://unpkg.com/firebase@10.7.1/dist/firebase-database.js"></script>
+    <script src="https://unpkg.com/firebase@10.7.1/dist/firebase-auth.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body>
+    <style>
+        body { margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { initializeApp } = firebase;
+        const { getDatabase, ref, onValue, set, update, remove, get, push } = firebase.database;
+        const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } = firebase.auth;
+
+        // Configuration Firebase (mode démo)
+        const firebaseConfig = {
+            apiKey: "demo_key",
+            authDomain: "demo-project.firebaseapp.com",
+            databaseURL: "https://demo-project-default-rtdb.firebaseio.com/",
+            projectId: "demo-project",
+            storageBucket: "demo-project.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456",
+            measurementId: "G-ABCDEF1234"
+        };
+
+        let app, db, auth;
+
+        try {
+            if (firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.databaseURL) {
+                app = initializeApp(firebaseConfig);
+                db = getDatabase(app);
+                auth = getAuth(app);
+            } else {
+                console.warn('⚠️ Configuration Firebase incomplète, utilisation du mode démo');
+                app = null;
+                db = null;
+                auth = null;
+            }
+        } catch (error) {
+            console.error('❌ Erreur d\'initialisation Firebase:', error);
+            app = null;
+            db = null;
+            auth = null;
+        }
+
+        const QUESTIONS = [
+            { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
+            { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
+            { text: "Qui va marquer le prochain but ?", options: ["Haaland", "Salah", "Kane", "De Bruyne"] },
+            { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
+            { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Lautaro", "Rashford"] },
+            { text: "Qui va marquer le prochain but ?", options: ["Saka", "Foden", "Palmer", "Watkins"] },
+            { text: "Quelle équipe aura le prochain corner ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
+            { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] },
+            { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "Peut-être", "VAR"] },
+            { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
+        ];
+
+        function App() {
+            const [screen, setScreen] = useState('home');
+            const [barId, setBarId] = useState(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('bar') || null;
+            });
+            const [barIdInput, setBarIdInput] = useState('');
+            const [superAdminPassword, setSuperAdminPassword] = useState('');
+            const [allBars, setAllBars] = useState([]);
+            const [barInfo, setBarInfo] = useState(null);
+            const [user, setUser] = useState(null);
+            const [userProfile, setUserProfile] = useState(null);
+            const [currentMatchId, setCurrentMatchId] = useState(null);
+            const [players, setPlayers] = useState([]);
+            const [currentQuestion, setCurrentQuestion] = useState(null);
+            const [playerAnswer, setPlayerAnswer] = useState(null);
+            const [timeLeft, setTimeLeft] = useState(0);
+            const [answers, setAnswers] = useState({});
+            const [matchState, setMatchState] = useState(null);
+            const [countdown, setCountdown] = useState('');
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [pseudo, setPseudo] = useState('');
+            const [authMode, setAuthMode] = useState('login');
+            const [notification, setNotification] = useState(null);
+            const [matchSearch, setMatchSearch] = useState('');
+            const [availableMatches, setAvailableMatches] = useState([]);
+            const [selectedMatch, setSelectedMatch] = useState(null);
+            const [loadingMatches, setLoadingMatches] = useState(false);
+            const [matchStartTime, setMatchStartTime] = useState(null);
+            const [matchElapsedMinutes, setMatchElapsedMinutes] = useState(0);
+            const [matchHalf, setMatchHalf] = useState('1H');
+            const [matchPlayers, setMatchPlayers] = useState([]);
+            const [loadingPlayers, setLoadingPlayers] = useState(false);
+            const [matchEvents, setMatchEvents] = useState([]);
+
+            const loadBarInfo = async (id) => {
+                if (!db) {
+                    console.warn('Firebase non configuré, utilisation des données par défaut');
+                    setBarInfo({
+                        name: "Quiz Buteur Live (Mode Démo)",
+                        createdAt: Date.now()
+                    });
+                    return;
+                }
+            };
+
+            useEffect(() => {
+                if (barId) loadBarInfo(barId);
+                
+                const path = window.location.pathname;
+                const urlParams = new URLSearchParams(window.location.search);
+                const barFromUrl = urlParams.get('bar');
+                
+                if (barFromUrl && !barId) {
+                    setBarId(barFromUrl);
+                }
+                
+                if (path === '/play' || path.includes('/play')) {
+                    setScreen('playJoin');
+                }
+            }, []);
+
+            const handleSignup = async () => {
+                if (!email || !password || !pseudo) {
+                    alert('Remplissez tous les champs');
+                    return;
+                }
+                
+                if (!auth || !db) {
+                    alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser l\'authentification, configurez Firebase dans le fichier .env.local');
+                    return;
+                }
+            };
+
+            const handleLogin = async () => {
+                if (!email || !password) {
+                    alert('Email et mot de passe requis');
+                    return;
+                }
+                
+                if (!auth || !db) {
+                    alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser l\'authentification, configurez Firebase dans le fichier .env.local');
+                    return;
+                }
+            };
+
+            const handleLogout = async () => {
+                if (auth) {
+                    await signOut(auth);
+                }
+                window.location.href = '/';
+            };
+
+            const generateBarCode = () => {
+                return 'BAR-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+            };
+
+            const createNewBar = async (barName) => {
+                if (!db) {
+                    alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser les fonctionnalités complètes, configurez Firebase dans le fichier .env.local');
+                    return;
+                }
+            };
+
+            const loadAllBars = async () => {
+                if (!db) {
+                    console.warn('Firebase non configuré, impossible de charger les bars');
+                    setAllBars([]);
+                    return;
+                }
+            };
+
+            const verifyBarCode = async (code) => {
+                if (!db) {
+                    console.warn('Firebase non configuré, impossible de vérifier le code bar');
+                    return false;
+                }
+                return false;
+            };
+
+            if (screen === 'home') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
+                        <div className="text-center mb-12">
+                            <div className="text-8xl mb-6">⚽</div>
+                            <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
+                            <p className="text-2xl text-green-200">Pronostics en temps réel</p>
+                        </div>
+                        
+                        <div className="flex gap-6">
+                            <button 
+                                onClick={() => setScreen('adminLogin')}
+                                className="bg-green-700 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-green-600 transition-all shadow-2xl border-4 border-white"
+                            >
+                                🎮 ADMIN BAR
+                            </button>
+                            <button 
+                                onClick={() => setScreen('superAdminLogin')}
+                                className="bg-yellow-600 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-yellow-500 transition-all shadow-2xl border-4 border-white"
+                            >
+                                👑 SUPER ADMIN
+                            </button>
+                        </div>
+                        
+                        <div className="mt-8 bg-yellow-900/30 border-2 border-yellow-500 rounded-xl p-6 max-w-2xl">
+                            <div className="text-center">
+                                <div className="text-4xl mb-4">⚠️</div>
+                                <h2 className="text-2xl font-bold text-yellow-400 mb-2">MODE DÉMO</h2>
+                                <p className="text-yellow-200 mb-4">
+                                    Cette version fonctionne en mode démo. Pour utiliser toutes les fonctionnalités :
+                                </p>
+                                <ol className="text-left text-yellow-200 space-y-2">
+                                    <li>1. Configurez Firebase dans le fichier .env.local</li>
+                                    <li>2. Redéployez l'application</li>
+                                    <li>3. Profitez de toutes les fonctionnalités !</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (screen === 'superAdminLogin') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-yellow-900 via-orange-900 to-red-900 flex items-center justify-center p-8">
+                        <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
+                            <div className="text-center mb-8">
+                                <div className="text-6xl mb-4">👑</div>
+                                <h2 className="text-3xl font-black text-yellow-900 mb-2">SUPER ADMIN</h2>
+                                <p className="text-gray-600">Gestion des établissements</p>
+                            </div>
+
+                            <input
+                                type="password"
+                                value={superAdminPassword}
+                                onChange={(e) => setSuperAdminPassword(e.target.value)}
+                                placeholder="Mot de passe super admin"
+                                className="w-full px-6 py-4 text-xl border-4 border-yellow-900 rounded-xl mb-6 focus:outline-none focus:border-yellow-600 text-center font-bold"
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter' && superAdminPassword === 'ADMIN2025') {
+                                        setScreen('superAdmin');
+                                        loadAllBars();
+                                    }
+                                }}
+                            />
+
+                            <button
+                                onClick={() => {
+                                    if (superAdminPassword === 'ADMIN2025') {
+                                        setScreen('superAdmin');
+                                        loadAllBars();
+                                    } else {
+                                        alert('❌ Mot de passe incorrect');
+                                    }
+                                }}
+                                className="w-full bg-yellow-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-yellow-800 mb-4"
+                            >
+                                CONNEXION 🔐
+                            </button>
+
+                            <button
+                                onClick={() => setScreen('home')}
+                                className="w-full text-gray-600 py-2 text-sm underline"
+                            >
+                                ← Retour
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (screen === 'superAdmin') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-yellow-900 via-orange-900 to-red-900 p-8">
+                        <div className="max-w-6xl mx-auto">
+                            <div className="flex justify-between items-center mb-8">
+                                <div>
+                                    <h1 className="text-5xl font-black text-white mb-2">👑 SUPER ADMIN</h1>
+                                    <p className="text-yellow-300 text-xl">Gestion des établissements</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setSuperAdminPassword('');
+                                        setScreen('home');
+                                    }}
+                                    className="bg-red-600 px-6 py-3 rounded-lg text-white font-bold hover:bg-red-700"
+                                >
+                                    🚪 Déconnexion
+                                </button>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-8 mb-6 shadow-2xl">
+                                <h2 className="text-3xl font-bold text-gray-900 mb-6">➕ Créer un nouveau bar</h2>
+                                <div className="flex gap-4">
+                                    <input
+                                        type="text"
+                                        placeholder="Nom du bar (ex: Le Penalty Paris)"
+                                        className="flex-1 px-6 py-4 text-xl border-4 border-gray-300 rounded-xl focus:outline-none focus:border-yellow-600"
+                                        onKeyPress={(e) => {
+                                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                                createNewBar(e.target.value.trim());
+                                                e.target.value = '';
+                                            }
+                                        }}
+                                        id="newBarName"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            const input = document.getElementById('newBarName');
+                                            if (input.value.trim()) {
+                                                createNewBar(input.value.trim());
+                                                input.value = '';
+                                            }
+                                        }}
+                                        className="bg-yellow-600 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-yellow-700"
+                                    >
+                                        CRÉER 🚀
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-8 shadow-2xl">
+                                <h2 className="text-3xl font-bold text-gray-900 mb-6">📋 Liste des bars ({allBars.length})</h2>
+                                
+                                {allBars.length === 0 ? (
+                                    <div className="text-center py-12 text-gray-500">
+                                        <div className="text-6xl mb-4">🏪</div>
+                                        <p className="text-xl">Aucun bar créé pour le moment</p>
+                                        <p className="text-sm mt-2 text-gray-400">Configurez Firebase pour créer des bars</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {allBars.map(bar => (
+                                            <div key={bar.id} className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl p-6 flex items-center justify-between">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="text-3xl">🏪</div>
+                                                        <div>
+                                                            <h3 className="text-2xl font-bold text-gray-900">{bar.name}</h3>
+                                                            <p className="text-sm text-gray-500">
+                                                                Créé le {new Date(bar.createdAt).toLocaleDateString('fr-FR')}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-center bg-white px-6 py-4 rounded-xl border-2 border-yellow-600">
+                                                    <div className="text-sm text-gray-500 mb-1">Code d'accès</div>
+                                                    <div className="text-3xl font-black text-yellow-900">{bar.code || bar.id}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => setScreen('home')}
+                                className="mt-6 bg-gray-700 text-white px-6 py-3 rounded-lg hover:bg-gray-600"
+                            >
+                                ← Retour accueil
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (screen === 'adminLogin') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+                        <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl">
+                            <div className="text-center mb-8">
+                                <div className="text-6xl mb-4">🎮</div>
+                                <h2 className="text-3xl font-black text-green-900 mb-2">ADMIN BAR</h2>
+                                <p className="text-gray-600">Entrez votre code d'accès</p>
+                            </div>
+
+                            <input
+                                type="text"
+                                value={barIdInput}
+                                onChange={(e) => setBarIdInput(e.target.value.toUpperCase())}
+                                placeholder="BAR-XXXXX"
+                                className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600 text-center font-bold uppercase"
+                                maxLength={10}
+                                onKeyPress={async (e) => {
+                                    if (e.key === 'Enter' && barIdInput.trim()) {
+                                        const code = barIdInput.trim().toUpperCase();
+                                        const isValid = await verifyBarCode(code);
+                                        if (isValid) {
+                                            setBarId(code);
+                                            setScreen('admin');
+                                        } else {
+                                            alert('❌ Code invalide.\n\nContactez votre fournisseur pour obtenir votre code d\'accès.');
+                                        }
+                                    }
+                                }}
+                            />
+
+                            <button
+                                onClick={async () => {
+                                    if (barIdInput.trim()) {
+                                        const code = barIdInput.trim().toUpperCase();
+                                        const isValid = await verifyBarCode(code);
+                                        if (isValid) {
+                                            setBarId(code);
+                                            setScreen('admin');
+                                        } else {
+                                            alert('❌ Code invalide.\n\nContactez votre fournisseur pour obtenir votre code d\'accès.');
+                                        }
+                                    } else {
+                                        alert('Veuillez entrer votre code d\'accès');
+                                    }
+                                }}
+                                className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
+                            >
+                                SE CONNECTER 🚀
+                            </button>
+
+                            <button
+                                onClick={() => setScreen('home')}
+                                className="w-full text-gray-600 py-2 text-sm underline"
+                            >
+                                ← Retour
+                            </button>
+
+                            <div className="mt-6 p-4 bg-green-100 rounded-lg text-sm text-gray-700">
+                                <p className="font-bold mb-2">💡 Vous n'avez pas de code ?</p>
+                                <p>Contactez votre fournisseur Quiz Buteur pour obtenir votre code d'accès unique.</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (screen === 'playJoin') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
+                        <div className="text-center mb-12">
+                            <div className="text-8xl mb-6">⚽</div>
+                            <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
+                            <p className="text-2xl text-green-200">Pronostics en temps réel</p>
+                        </div>
+                        
+                        <button
+                            onClick={() => setScreen('auth')}
+                            className="bg-white text-green-900 px-16 py-10 rounded-3xl text-4xl font-black hover:bg-green-100 transition-all shadow-2xl"
+                        >
+                            📱 JOUER
+                        </button>
+                    </div>
+                );
+            }
+
+            if (screen === 'auth') {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+                        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+                            <div className="text-center mb-6">
+                                <div className="text-4xl mb-2">🏆</div>
+                                <h2 className="text-2xl font-bold text-green-900">{barInfo?.name || 'Chargement...'}</h2>
+                            </div>
+
+                            <h3 className="text-xl font-bold text-green-900 mb-6 text-center">
+                                {authMode === 'login' ? 'Connexion' : 'Inscription'}
+                            </h3>
+                            
+                            {authMode === 'signup' && (
+                                <input
+                                    type="text"
+                                    value={pseudo}
+                                    onChange={(e) => setPseudo(e.target.value)}
+                                    placeholder="Pseudo"
+                                    className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
+                                />
+                            )}
+                            
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="Email"
+                                className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
+                            />
+                            
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Mot de passe"
+                                className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-6 focus:outline-none focus:border-green-600"
+                            />
+                            
+                            <button
+                                onClick={authMode === 'login' ? handleLogin : handleSignup}
+                                className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
+                            >
+                                {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} ⚽
+                            </button>
+                            
+                            <button
+                                onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                                className="w-full text-green-900 py-2 text-sm underline"
+                            >
+                                {authMode === 'login' ? "Pas de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex items-center justify-center p-8">
+                    <div className="bg-white rounded-3xl p-10 max-w-2xl w-full shadow-2xl text-center">
+                        <div className="text-6xl mb-4">⚽</div>
+                        <h2 className="text-3xl font-black text-green-900 mb-4">QUIZ BUTEUR</h2>
+                        <p className="text-gray-600 mb-6 text-xl">
+                            Application de pronostics football en temps réel
+                        </p>
+                        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-6 mb-6">
+                            <p className="text-yellow-800 font-bold mb-2">⚠️ Mode Démo</p>
+                            <p className="text-yellow-700">
+                                Cette version fonctionne en mode démo. Configurez Firebase pour toutes les fonctionnalités.
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => setScreen('home')}
+                            className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+                        >
+                            Commencer
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
 </html>

@@ -30,9 +30,17 @@ if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.data
 let app, db, auth;
 
 try {
-  app = initializeApp(firebaseConfig);
-  db = getDatabase(app);
-  auth = getAuth(app);
+  // Vérifier si les variables d'environnement sont présentes avant d'initialiser Firebase
+  if (firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.databaseURL) {
+    app = initializeApp(firebaseConfig);
+    db = getDatabase(app);
+    auth = getAuth(app);
+  } else {
+    console.warn('⚠️ Configuration Firebase incomplète, utilisation du mode démo');
+    app = null;
+    db = null;
+    auth = null;
+  }
 } catch (error) {
   console.error('❌ Erreur d\'initialisation Firebase:', error);
   // Créer des objets mock pour éviter les erreurs
@@ -57,43 +65,43 @@ const QUESTIONS = [
 ];
 
 export default function App() {
-  // Vérifier si Firebase est configuré
-  if (!app || !db || !auth) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-900 via-orange-900 to-yellow-900 flex flex-col items-center justify-center p-8">
-        <div className="text-center mb-12">
-          <div className="text-8xl mb-6">⚠️</div>
-          <h1 className="text-6xl font-black text-white mb-4">CONFIGURATION REQUISE</h1>
-          <p className="text-2xl text-yellow-200 mb-8">Configuration Firebase manquante</p>
-        </div>
-        
-        <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">🔧 Configuration nécessaire</h2>
-          <div className="space-y-4 text-left">
-            <p className="text-gray-700">
-              Pour utiliser Quiz Buteur, vous devez configurer Firebase :
-            </p>
-            <ol className="list-decimal list-inside space-y-2 text-gray-700">
-              <li>Créez un fichier <code className="bg-gray-100 px-2 py-1 rounded">.env.local</code> à la racine du projet</li>
-              <li>Ajoutez vos clés Firebase :</li>
-            </ol>
-            <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm">
-              <div>VITE_FIREBASE_API_KEY=votre_api_key</div>
-              <div>VITE_FIREBASE_AUTH_DOMAIN=votre_auth_domain</div>
-              <div>VITE_FIREBASE_DATABASE_URL=votre_database_url</div>
-              <div>VITE_FIREBASE_PROJECT_ID=votre_project_id</div>
-              <div>VITE_FIREBASE_STORAGE_BUCKET=votre_storage_bucket</div>
-              <div>VITE_FIREBASE_MESSAGING_SENDER_ID=votre_messaging_sender_id</div>
-              <div>VITE_FIREBASE_APP_ID=votre_app_id</div>
-            </div>
-            <p className="text-gray-700">
-              Une fois configuré, rechargez la page.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Vérifier si Firebase est configuré - TEMPORAIREMENT DÉSACTIVÉ POUR TEST
+  // if (!app || !db || !auth) {
+  //   return (
+  //     <div className="min-h-screen bg-gradient-to-br from-red-900 via-orange-900 to-yellow-900 flex flex-col items-center justify-center p-8">
+  //       <div className="text-center mb-12">
+  //         <div className="text-8xl mb-6">⚠️</div>
+  //         <h1 className="text-6xl font-black text-white mb-4">CONFIGURATION REQUISE</h1>
+  //         <p className="text-2xl text-yellow-200 mb-8">Configuration Firebase manquante</p>
+  //       </div>
+  //       
+  //       <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl">
+  //         <h2 className="text-2xl font-bold text-gray-900 mb-6">🔧 Configuration nécessaire</h2>
+  //         <div className="space-y-4 text-left">
+  //           <p className="text-gray-700">
+  //             Pour utiliser Quiz Buteur, vous devez configurer Firebase :
+  //           </p>
+  //           <ol className="list-decimal list-inside space-y-2 text-gray-700">
+  //             <li>Créez un fichier <code className="bg-gray-100 px-2 py-1 rounded">.env.local</code> à la racine du projet</li>
+  //             <li>Ajoutez vos clés Firebase :</li>
+  //           </ol>
+  //           <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm">
+  //             <div>VITE_FIREBASE_API_KEY=votre_api_key</div>
+  //             <div>VITE_FIREBASE_AUTH_DOMAIN=votre_auth_domain</div>
+  //             <div>VITE_FIREBASE_DATABASE_URL=votre_database_url</div>
+  //             <div>VITE_FIREBASE_PROJECT_ID=votre_project_id</div>
+  //             <div>VITE_FIREBASE_STORAGE_BUCKET=votre_storage_bucket</div>
+  //             <div>VITE_FIREBASE_MESSAGING_SENDER_ID=votre_messaging_sender_id</div>
+  //             <div>VITE_FIREBASE_APP_ID=votre_app_id</div>
+  //           </div>
+  //           <p className="text-gray-700">
+  //             Une fois configuré, rechargez la page.
+  //           </p>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   const [screen, setScreen] = useState('home');
   const [barId, setBarId] = useState(() => {
@@ -243,6 +251,11 @@ export default function App() {
   };
 
   const selectMatch = async (match) => {
+    if (!db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser les fonctionnalités complètes, configurez Firebase dans le fichier .env.local');
+      return;
+    }
+    
     if (match.elapsed !== undefined) {
       setMatchElapsedMinutes(match.elapsed);
       setMatchStartTime(Date.now() - (match.elapsed * 60000));
@@ -331,7 +344,7 @@ export default function App() {
   };
 
   const fetchMatchEvents = async (fixtureId) => {
-    if (!fixtureId) return;
+    if (!fixtureId || !db) return;
     
     try {
       const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY || 'demo_key';
@@ -359,6 +372,15 @@ export default function App() {
   };
 
   const loadBarInfo = async (id) => {
+    if (!db) {
+      console.warn('Firebase non configuré, utilisation des données par défaut');
+      setBarInfo({
+        name: "Quiz Buteur Live (Mode Démo)",
+        createdAt: Date.now()
+      });
+      return;
+    }
+    
     try {
       const barRef = ref(db, `bars/${id}/info`);
       const snap = await get(barRef);
@@ -436,6 +458,8 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
+    if (!auth || !db) return;
+    
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
@@ -451,7 +475,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!barId) return;
+    if (!barId || !db) return;
     
     const matchStateRef = ref(db, `bars/${barId}/matchState`);
     
@@ -465,7 +489,7 @@ export default function App() {
   }, [barId]);
 
   useEffect(() => {
-    if (!barId || screen !== 'tv') return;
+    if (!barId || screen !== 'tv' || !db) return;
     
     const selectedMatchRef = ref(db, `bars/${barId}/selectedMatch`);
     
@@ -486,7 +510,7 @@ export default function App() {
   }, [barId, screen]);
 
   useEffect(() => {
-    if (!barId || !currentMatchId) {
+    if (!barId || !currentMatchId || !db) {
       setPlayers([]);
       return;
     }
@@ -507,7 +531,7 @@ export default function App() {
   }, [barId, currentMatchId]);
 
   useEffect(() => {
-    if (!barId || screen !== 'tv') return;
+    if (!barId || screen !== 'tv' || !db) return;
     
     const eventsRef = ref(db, `bars/${barId}/matchEvents`);
     const unsub = onValue(eventsRef, (snap) => {
@@ -521,7 +545,7 @@ export default function App() {
   }, [barId, screen]);
 
   useEffect(() => {
-    if (!barId) return;
+    if (!barId || !db) return;
     const unsub = onValue(ref(db, `bars/${barId}/currentQuestion`), (snap) => {
       const data = snap.val();
       if (data && data.text && data.options && Array.isArray(data.options)) {
@@ -547,7 +571,7 @@ export default function App() {
   }, [barId, screen]);
 
   useEffect(() => {
-    if (!barId || !currentQuestion) {
+    if (!barId || !currentQuestion || !db) {
       setAnswers({});
       return;
     }
@@ -564,7 +588,7 @@ export default function App() {
   }, [barId, currentQuestion]);
 
   useEffect(() => {
-    if (!barId || screen !== 'tv') return;
+    if (!barId || screen !== 'tv' || !db) return;
     
     const notifRef = ref(db, `bars/${barId}/notifications`);
     const unsub = onValue(notifRef, (snap) => {
@@ -588,7 +612,7 @@ export default function App() {
 
   useEffect(() => {
     const addPlayerToMatch = async () => {
-      if (!user || !barId || !currentMatchId || !userProfile || screen !== 'mobile') return;
+      if (!user || !barId || !currentMatchId || !userProfile || screen !== 'mobile' || !db) return;
 
       try {
         const playerPath = `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`;
@@ -701,6 +725,12 @@ export default function App() {
       alert('Remplissez tous les champs');
       return;
     }
+    
+    if (!auth || !db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser l\'authentification, configurez Firebase dans le fichier .env.local');
+      return;
+    }
+    
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await set(ref(db, `users/${userCredential.user.uid}`), {
@@ -721,6 +751,12 @@ export default function App() {
       alert('Email et mot de passe requis');
       return;
     }
+    
+    if (!auth || !db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser l\'authentification, configurez Firebase dans le fichier .env.local');
+      return;
+    }
+    
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
@@ -755,13 +791,20 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    if (auth) {
+      await signOut(auth);
+    }
     window.location.href = '/';
   };
 
   const startMatch = async () => {
     if (!barId) {
       alert('❌ Erreur : Aucun bar sélectionné.\n\nRetournez à l\'accueil et connectez-vous avec votre code bar.');
+      return;
+    }
+    
+    if (!db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser les fonctionnalités complètes, configurez Firebase dans le fichier .env.local');
       return;
     }
     
@@ -878,7 +921,7 @@ export default function App() {
   };
 
   const stopMatch = async () => {
-    if (!barId) return;
+    if (!barId || !db) return;
     try {
       if (currentMatchId && matchState?.active) {
         const playersSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/players`));
@@ -923,7 +966,7 @@ export default function App() {
   };
 
   const createRandomQuestion = async () => {
-    if (!barId || isProcessingRef.current) return;
+    if (!barId || isProcessingRef.current || !db) return;
     isProcessingRef.current = true;
 
     try {
@@ -964,7 +1007,7 @@ export default function App() {
   };
 
   const autoValidate = async () => {
-    if (!barId || !currentQuestion?.options || isProcessingRef.current) return;
+    if (!barId || !currentQuestion?.options || isProcessingRef.current || !db) return;
     
     isProcessingRef.current = true;
     const questionId = currentQuestion.id;
@@ -1025,7 +1068,7 @@ export default function App() {
   };
 
   const handleAnswer = async (answer) => {
-    if (!barId || !currentQuestion || playerAnswer || !user) return;
+    if (!barId || !currentQuestion || playerAnswer || !user || !db) return;
     try {
       setPlayerAnswer(answer);
       await set(ref(db, `bars/${barId}/answers/${currentQuestion.id}/${user.uid}`), {
@@ -1040,6 +1083,11 @@ export default function App() {
 
   const forceCleanup = async () => {
     if (!window.confirm('⚠️ Supprimer TOUT et réinitialiser ?')) return;
+    
+    if (!db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser les fonctionnalités complètes, configurez Firebase dans le fichier .env.local');
+      return;
+    }
     
     try {
       await remove(ref(db, `bars/${barId}/matches`));
@@ -1071,6 +1119,12 @@ export default function App() {
 
   const debugFirebase = async () => {
     console.log('🔍 DEBUG FIREBASE');
+    
+    if (!db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser les fonctionnalités complètes, configurez Firebase dans le fichier .env.local');
+      return;
+    }
+    
     try {
       const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
       console.log('matchState:', matchStateSnap.val());
@@ -1097,6 +1151,11 @@ export default function App() {
   };
 
   const createNewBar = async (barName) => {
+    if (!db) {
+      alert('⚠️ Mode démo : Firebase non configuré\n\nPour utiliser les fonctionnalités complètes, configurez Firebase dans le fichier .env.local');
+      return;
+    }
+    
     const barCode = generateBarCode();
     const newBarData = {
       code: barCode,
@@ -1115,6 +1174,12 @@ export default function App() {
   };
 
   const loadAllBars = async () => {
+    if (!db) {
+      console.warn('Firebase non configuré, impossible de charger les bars');
+      setAllBars([]);
+      return;
+    }
+    
     try {
       const barsSnap = await get(ref(db, 'bars'));
       if (barsSnap.exists()) {
@@ -1131,6 +1196,11 @@ export default function App() {
   };
 
   const verifyBarCode = async (code) => {
+    if (!db) {
+      console.warn('Firebase non configuré, impossible de vérifier le code bar');
+      return false;
+    }
+    
     try {
       const barSnap = await get(ref(db, `bars/${code}/info`));
       return barSnap.exists();
