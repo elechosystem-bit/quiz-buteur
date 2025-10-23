@@ -1108,16 +1108,45 @@ export default function App() {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
     const [isBlinking, setIsBlinking] = useState(false);
-    const [realTimeData, setRealTimeData] = useState(null);
+    const [firebaseClockData, setFirebaseClockData] = useState(null);
     
-    // 🔥 SYNCHRONISATION AVEC L'API FOOTBALL TOUTES LES 30 SECONDES
+    // 🔥 ÉCOUTER LES DONNÉES DU CHRONOMÈTRE DEPUIS FIREBASE
     useEffect(() => {
-      if (!selectedMatch?.id || !matchState?.active) return;
+      if (!barId) return;
       
-      const fetchRealTimeData = async () => {
+      console.log('🔄 MatchClock: Écoute Firebase pour barId:', barId);
+      
+      const matchClockRef = ref(db, `bars/${barId}/matchClock`);
+      
+      const unsub = onValue(matchClockRef, (snap) => {
+        if (snap.exists()) {
+          const clockData = snap.val();
+          console.log('📊 MatchClock: Données reçues de Firebase:', clockData);
+          setFirebaseClockData(clockData);
+        } else {
+          console.log('⚠️ MatchClock: Aucune donnée dans Firebase');
+          setFirebaseClockData(null);
+        }
+      });
+      
+      return () => unsub();
+    }, [barId]);
+    
+    // 🔥 SYNCHRONISATION AVEC L'API FOOTBALL ET STOCKAGE DANS FIREBASE
+    useEffect(() => {
+      if (!selectedMatch?.id || !matchState?.active || !barId) return;
+      
+      console.log('🚀 MatchClock: Démarrage synchronisation API pour match:', selectedMatch.id);
+      
+      const fetchAndStoreRealTimeData = async () => {
         try {
           const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-          if (!apiKey) return;
+          if (!apiKey) {
+            console.warn('⚠️ MatchClock: Pas de clé API');
+            return;
+          }
+          
+          console.log('🌐 MatchClock: Appel API Football pour fixture:', selectedMatch.id);
           
           const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${selectedMatch.id}`, {
             method: 'GET',
@@ -1135,34 +1164,46 @@ export default function App() {
             const elapsed = fixture.fixture.status.elapsed || 0;
             const score = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
             
-            setRealTimeData({
-              status,
-              elapsed,
-              score,
-              timestamp: Date.now()
-            });
+            const clockData = {
+              elapsed: elapsed,
+              status: status,
+              score: score,
+              lastSync: Date.now(),
+              fixtureId: selectedMatch.id
+            };
             
-            console.log(`🔄 Chrono synchronisé: ${elapsed}' - ${status} - ${score}`);
+            console.log('💾 MatchClock: Stockage dans Firebase:', clockData);
+            
+            // Stocker immédiatement dans Firebase
+            const matchClockRef = ref(db, `bars/${barId}/matchClock`);
+            await set(matchClockRef, clockData);
+            
+            console.log(`✅ MatchClock: Synchronisé et stocké - ${elapsed}' - ${status} - ${score}`);
           }
         } catch (error) {
-          console.warn('⚠️ Erreur synchronisation chrono:', error);
+          console.error('❌ MatchClock: Erreur synchronisation:', error);
         }
       };
       
       // Première synchronisation immédiate
-      fetchRealTimeData();
+      fetchAndStoreRealTimeData();
       
       // Puis toutes les 30 secondes
-      const syncInterval = setInterval(fetchRealTimeData, 30000);
+      const syncInterval = setInterval(fetchAndStoreRealTimeData, 30000);
       
-      return () => clearInterval(syncInterval);
-    }, [selectedMatch?.id, matchState?.active]);
+      return () => {
+        console.log('🛑 MatchClock: Arrêt synchronisation');
+        clearInterval(syncInterval);
+      };
+    }, [selectedMatch?.id, matchState?.active, barId]);
     
     useEffect(() => {
       const updateDisplay = () => {
-        // 🔥 UTILISER LES DONNÉES RÉELLES DE L'API EN PRIORITÉ
-        if (realTimeData) {
-          const { status, elapsed } = realTimeData;
+        // 🔥 UTILISER LES DONNÉES DEPUIS FIREBASE EN PRIORITÉ
+        if (firebaseClockData) {
+          const { status, elapsed } = firebaseClockData;
+          
+          console.log('🕐 MatchClock: Mise à jour affichage avec données Firebase:', { status, elapsed });
           
           // Gestion selon le statut du match
           if (status === 'FT') {
@@ -1218,7 +1259,8 @@ export default function App() {
           setPhase('EN ATTENTE');
           setIsBlinking(false);
         } else {
-          // Fallback si pas de données API
+          // Fallback si pas de données Firebase
+          console.log('⚠️ MatchClock: Pas de données Firebase, affichage par défaut');
           setTime('0\'00');
           setPhase('CHARGEMENT...');
           setIsBlinking(false);
@@ -1228,7 +1270,7 @@ export default function App() {
       updateDisplay();
       const interval = setInterval(updateDisplay, 1000);
       return () => clearInterval(interval);
-    }, [realTimeData]);
+    }, [firebaseClockData]);
 
     return (
       <div className={`bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg ${isBlinking ? 'animate-pulse' : ''}`}>
