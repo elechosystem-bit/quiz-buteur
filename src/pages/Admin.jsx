@@ -1711,7 +1711,7 @@ export default function App() {
     }
 
     // 🔥 URL de production pour le QR code - ne jamais utiliser localhost en production
-    const qrUrl = `https://quiz-buteur.vercel.app/play?bar=${barId}`;
+    const qrUrl = `https://quiz-buteur-l5o90anen-aurelien-mathieus-projects.vercel.app/play?bar=${barId || 'default_bar'}`;
     const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo?.homeTeam && matchInfo?.awayTeam;
     
