@@ -1693,7 +1693,8 @@ export default function App() {
       );
     }
 
-    const qrUrl = `${window.location.origin}/play?bar=${barId}`;
+    // 🔥 URL de production pour le QR code - ne jamais utiliser localhost en production
+    const qrUrl = `https://quiz-buteur.vercel.app/play?bar=${barId}`;
     const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo?.homeTeam && matchInfo?.awayTeam;
     
