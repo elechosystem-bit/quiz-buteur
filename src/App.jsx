@@ -1064,6 +1064,7 @@ export default function App() {
           const fixture = data.response[0];
           const status = fixture.fixture.status.short;
           const elapsed = fixture.fixture.status.elapsed || 0;
+          const newScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
 
           // Si le match a commencé (statut 1H, 2H, HT, ET, etc.) et qu'il n'y a pas de match actif
           if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
@@ -1074,7 +1075,7 @@ export default function App() {
               ...selectedMatch,
               elapsed: elapsed,
               half: status,
-              score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+              score: newScore
             };
             
             await set(ref(db, `bars/${barId}/selectedMatch`), updatedMatchData);
@@ -1086,9 +1087,48 @@ export default function App() {
             // Démarrer automatiquement
             await startMatch();
             
-            // Arrêter la surveillance
-            clearInterval(matchCheckInterval.current);
-            matchCheckInterval.current = null;
+            // NE PAS ARRÊTER - continuer la surveillance pour mettre à jour pendant le match
+          }
+          
+          // Si le match est actif, mettre à jour le matchClock, le score et la mi-temps
+          if (barId) {
+            const currentMatchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
+            if (currentMatchStateSnap.exists()) {
+              const currentMatchState = currentMatchStateSnap.val();
+              
+              if (currentMatchState?.active) {
+                const currentHalf = currentMatchState?.matchClock?.half || '1H';
+                const clockStartTime = currentMatchState?.matchClock?.startTime || Date.now();
+                
+                // Recalculer startTime si on passe en 2H (ou si c'est la première fois qu'on détecte 2H)
+                let updatedStartTime = clockStartTime;
+                if (status === '2H' && (currentHalf === '1H' || currentHalf === 'HT')) {
+                  // Passage en 2H : réinitialiser le startTime
+                  updatedStartTime = Date.now() - (elapsed * 60000);
+                  console.log('🔄 Passage en 2H détecté, réinitialisation du chrono');
+                } else if (status === '1H' && currentHalf === 'HT') {
+                  // Retour en 1H après la mi-temps (peu probable mais possible)
+                  updatedStartTime = Date.now() - (elapsed * 60000);
+                }
+                
+                // Mettre à jour le matchClock, le score et la mi-temps
+                await update(ref(db, `bars/${barId}/matchState`), {
+                  'matchClock.elapsedMinutes': elapsed,
+                  'matchClock.half': status,
+                  'matchClock.startTime': updatedStartTime,
+                  'matchInfo.score': newScore
+                });
+                
+                // Mettre à jour selectedMatch aussi pour cohérence
+                await update(ref(db, `bars/${barId}/selectedMatch`), {
+                  elapsed: elapsed,
+                  half: status,
+                  score: newScore
+                });
+                
+                console.log(`🔄 MatchClock mis à jour : ${elapsed}' - ${status} - ${newScore}`);
+              }
+            }
           }
         }
       } catch (e) {
