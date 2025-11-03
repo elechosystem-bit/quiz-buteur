@@ -288,17 +288,20 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (barId) loadBarInfo(barId);
-    
     const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
     
+    // Si on a un barId depuis l'URL, le définir d'abord
     if (barFromUrl && !barId) {
       setBarId(barFromUrl);
+      loadBarInfo(barFromUrl);
+    } else if (barId) {
+      loadBarInfo(barId);
     }
     
-    if (path === '/play' || path.includes('/play')) {
+    // Détecter si on vient du QR code (path /play OU paramètre bar présent)
+    if (path === '/play' || path.includes('/play') || barFromUrl) {
       setScreen('playJoin');
     }
 
