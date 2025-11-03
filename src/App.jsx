@@ -301,13 +301,24 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
     
+    console.log('🔍 Initialisation - path:', path, 'barFromUrl:', barFromUrl, 'barId:', barId);
+    
     // Détecter si on vient du QR code (path /play OU paramètre bar présent)
     if (path === '/play' || path.includes('/play') || barFromUrl) {
       // Si on a un barId depuis l'URL, le définir
       if (barFromUrl && (!barId || barId !== barFromUrl)) {
+        console.log('✅ Définition du barId depuis URL:', barFromUrl);
         setBarId(barFromUrl);
+        loadBarInfo(barFromUrl);
+      } else if (barId && !barInfo) {
+        console.log('✅ Chargement des infos du bar:', barId);
+        loadBarInfo(barId);
       }
-      setScreen('playJoin');
+      
+      if (screen !== 'playJoin' && screen !== 'auth' && screen !== 'mobile') {
+        console.log('✅ Passage à l\'écran playJoin');
+        setScreen('playJoin');
+      }
     }
 
     // Nettoyage à la fermeture
@@ -319,6 +330,7 @@ export default function App() {
   // Charger les infos du bar quand barId est disponible
   useEffect(() => {
     if (barId && !barInfo) {
+      console.log('🔄 Chargement barInfo pour barId:', barId);
       loadBarInfo(barId);
     }
   }, [barId]);
@@ -1459,17 +1471,41 @@ export default function App() {
     );
   }
 
+  // Récupérer barId depuis l'URL si manquant (tous les écrans)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const barFromUrl = urlParams.get('bar');
+    
+    // Toujours récupérer barId depuis l'URL s'il est présent et différent
+    if (barFromUrl && barFromUrl !== barId) {
+      console.log('🔧 Récupération du barId depuis URL:', barFromUrl);
+      setBarId(barFromUrl);
+      loadBarInfo(barFromUrl);
+    } else if (!barId && barFromUrl) {
+      // Si pas de barId mais qu'il y en a un dans l'URL
+      console.log('🔧 Définition du barId depuis URL:', barFromUrl);
+      setBarId(barFromUrl);
+      loadBarInfo(barFromUrl);
+    }
+  }, [screen, barId]);
+
   if (screen === 'playJoin') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
-          <div className="text-8xl mb-6">🏀</div>
+          <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
             </div>
         
             <button
-          onClick={() => setScreen('auth')}
+          onClick={() => {
+            if (!barId) {
+              alert('❌ Erreur : Code bar manquant. Veuillez scanner à nouveau le QR code.');
+              return;
+            }
+            setScreen('auth');
+          }}
           className="bg-white text-green-900 px-16 py-10 rounded-3xl text-4xl font-black hover:bg-green-100 transition-all shadow-2xl"
         >
           📱 JOUER
@@ -1479,6 +1515,35 @@ export default function App() {
   }
 
   if (screen === 'auth') {
+    // Si pas de barId et pas de paramètre dans l'URL, afficher un message d'erreur
+    const urlParams = new URLSearchParams(window.location.search);
+    const barFromUrl = urlParams.get('bar');
+    
+    if (!barId && !barFromUrl) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-2xl font-bold text-red-900 mb-4">Code bar manquant</h2>
+            <p className="text-gray-600 mb-6">Veuillez scanner le QR code pour jouer.</p>
+            <button
+              onClick={() => {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('bar')) {
+                  setScreen('playJoin');
+                } else {
+                  window.location.href = '/';
+                }
+              }}
+              className="bg-green-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-800"
+            >
+              Retour
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
@@ -1541,6 +1606,29 @@ export default function App() {
   }
 
   if (screen === 'mobile' && user) {
+    // Vérifier que barId est défini
+    if (!barId) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const barFromUrl = urlParams.get('bar');
+      if (!barFromUrl) {
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+              <div className="text-6xl mb-4">⚠️</div>
+              <h2 className="text-2xl font-bold text-red-900 mb-4">Code bar manquant</h2>
+              <p className="text-gray-600 mb-6">Veuillez scanner le QR code pour jouer.</p>
+              <button
+                onClick={() => window.location.href = '/'}
+                className="bg-green-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-800"
+              >
+                Retour à l'accueil
+              </button>
+            </div>
+          </div>
+        );
+      }
+    }
+    
     const myScore = players.find(p => p.id === user.uid);
     const score = myScore?.score || 0;
 
