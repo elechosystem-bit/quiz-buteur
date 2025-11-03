@@ -1,0 +1,48 @@
+[1mdiff --git a/.env.local b/.env.local[m
+[1mindex 9a820a3..19caa5f 100644[m
+Binary files a/.env.local and b/.env.local differ
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mnew file mode 100644[m
+[1mindex 0000000..87ac14c[m
+[1m--- /dev/null[m
+[1m+++ b/.gitignore[m
+[36m@@ -0,0 +1,39 @@[m
+[32m+[m[32m# Logs[m
+[32m+[m[32mlogs[m
+[32m+[m[32m*.log[m
+[32m+[m[32mnpm-debug.log*[m
+[32m+[m[32myarn-debug.log*[m
+[32m+[m[32myarn-error.log*[m
+[32m+[m[32mpnpm-debug.log*[m
+[32m+[m[32mlerna-debug.log*[m
+[32m+[m
+[32m+[m[32mnode_modules[m
+[32m+[m[32mdist[m
+[32m+[m[32mdist-ssr[m
+[32m+[m[32m*.local[m
+[32m+[m
+[32m+[m[32m# Editor directories and files[m
+[32m+[m[32m.vscode/*[m
+[32m+[m[32m!.vscode/extensions.json[m
+[32m+[m[32m.idea[m
+[32m+[m[32m.DS_Store[m
+[32m+[m[32m*.suo[m
+[32m+[m[32m*.ntvs*[m
+[32m+[m[32m*.njsproj[m
+[32m+[m[32m*.sln[m
+[32m+[m[32m*.sw?[m
+[32m+[m
+[32m+[m[32m# Environment variables[m
+[32m+[m[32m.env[m
+[32m+[m[32m.env.local[m
+[32m+[m[32m.env.development.local[m
+[32m+[m[32m.env.test.local[m
+[32m+[m[32m.env.production.local[m
+[32m+[m
+[32m+[m[32m# Firebase[m
+[32m+[m[32m.firebase/[m
+[32m+[m[32mfirebase-debug.log[m
+[32m+[m[32mfirebase-debug.*.log[m
+[32m+[m
+[32m+[m[32m# Vercel[m
+[32m+[m[32m.vercel[m
