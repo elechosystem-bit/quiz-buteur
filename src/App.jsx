@@ -34,7 +34,16 @@ const QUESTIONS = [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState('home');
+  // Initialiser screen en fonction de l'URL
+  const [screen, setScreen] = useState(() => {
+    const path = window.location.pathname;
+    const urlParams = new URLSearchParams(window.location.search);
+    const barFromUrl = urlParams.get('bar');
+    if (path === '/play' || path.includes('/play') || barFromUrl) {
+      return 'playJoin';
+    }
+    return 'home';
+  });
   const [barId, setBarId] = useState(() => {
     const urlParams = new URLSearchParams(window.location.search);
     return urlParams.get('bar') || null;
@@ -292,16 +301,12 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
     
-    // Si on a un barId depuis l'URL, le définir d'abord
-    if (barFromUrl && !barId) {
-      setBarId(barFromUrl);
-      loadBarInfo(barFromUrl);
-    } else if (barId) {
-      loadBarInfo(barId);
-    }
-    
     // Détecter si on vient du QR code (path /play OU paramètre bar présent)
     if (path === '/play' || path.includes('/play') || barFromUrl) {
+      // Si on a un barId depuis l'URL, le définir
+      if (barFromUrl && (!barId || barId !== barFromUrl)) {
+        setBarId(barFromUrl);
+      }
       setScreen('playJoin');
     }
 
@@ -310,6 +315,13 @@ export default function App() {
       stopMatchMonitoring();
     };
   }, []);
+
+  // Charger les infos du bar quand barId est disponible
+  useEffect(() => {
+    if (barId && !barInfo) {
+      loadBarInfo(barId);
+    }
+  }, [barId]);
 
   useEffect(() => {
     const requestWakeLock = async () => {
