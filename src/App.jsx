@@ -36,10 +36,10 @@ const QUESTIONS = [
 export default function App() {
   // Initialiser screen en fonction de l'URL
   const [screen, setScreen] = useState(() => {
-    const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
-    if (path === '/play' || path.includes('/play') || barFromUrl) {
+    // Vercel redirige toutes les routes vers /, donc on se base uniquement sur le paramètre bar
+    if (barFromUrl) {
       return 'playJoin';
     }
     return 'home';
@@ -297,17 +297,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    const path = window.location.pathname;
     const urlParams = new URLSearchParams(window.location.search);
     const barFromUrl = urlParams.get('bar');
     
-    // Détecter si on vient du QR code (path /play OU paramètre bar présent)
-    if (path === '/play' || path.includes('/play') || barFromUrl) {
+    // Détecter si on vient du QR code (paramètre bar présent)
+    // Vercel redirige toutes les routes vers /, donc on se base uniquement sur le paramètre bar
+    if (barFromUrl) {
       // Si on a un barId depuis l'URL, le définir
-      if (barFromUrl && (!barId || barId !== barFromUrl)) {
+      if (!barId || barId !== barFromUrl) {
         setBarId(barFromUrl);
       }
-      setScreen('playJoin');
+      if (screen !== 'playJoin' && screen !== 'auth' && screen !== 'mobile') {
+        setScreen('playJoin');
+      }
     }
 
     // Nettoyage à la fermeture
@@ -1710,7 +1712,8 @@ export default function App() {
       );
     }
 
-    const qrUrl = `${window.location.origin}/play?bar=${barId}`;
+    // Utiliser simplement ?bar= au lieu de /play?bar= car Vercel redirige tout vers /
+    const qrUrl = `${window.location.origin}/?bar=${barId}`;
     const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo?.homeTeam && matchInfo?.awayTeam;
     
