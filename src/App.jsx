@@ -316,12 +316,23 @@ export default function App() {
     };
   }, []);
 
+  // Récupérer barId depuis l'URL si manquant (pour les écrans playJoin, auth, mobile)
+  useEffect(() => {
+    if (!barId && (screen === 'playJoin' || screen === 'auth' || screen === 'mobile')) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const barFromUrl = urlParams.get('bar');
+      if (barFromUrl) {
+        setBarId(barFromUrl);
+      }
+    }
+  }, [screen, barId]);
+
   // Charger les infos du bar quand barId est disponible
   useEffect(() => {
     if (barId && !barInfo) {
       loadBarInfo(barId);
     }
-  }, [barId]);
+  }, [barId, barInfo]);
 
   useEffect(() => {
     const requestWakeLock = async () => {
@@ -440,7 +451,7 @@ export default function App() {
         setTimeLeft(data.timeLeft || 15);
         
         if (screen === 'mobile' && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification('🏀 Nouvelle question !', {
+          new Notification('⚽ Nouvelle question !', {
             body: data.text,
             icon: '/icon-192.png',
             badge: '/icon-192.png',
@@ -546,6 +557,7 @@ export default function App() {
     calculateTimeLeft();
     const interval = setInterval(calculateTimeLeft, 1000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion]);
 
   useEffect(() => {
@@ -597,6 +609,7 @@ export default function App() {
         clearInterval(nextQuestionTimer.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [barId, matchState, currentQuestion]);
 
   const handleSignup = async () => {
@@ -1226,7 +1239,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
-          <div className="text-8xl mb-6">🏀</div>
+          <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-6xl font-black text-white mb-4">QUIZ BUTEUR</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
         </div>
@@ -1460,10 +1473,30 @@ export default function App() {
   }
 
   if (screen === 'playJoin') {
+    if (!barId) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
+          <div className="bg-white rounded-3xl p-10 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-3xl font-black text-red-900 mb-4">CODE BAR MANQUANT</h2>
+            <p className="text-gray-600 mb-6 text-xl">
+              Le code bar est requis pour rejoindre le quiz.
+            </p>
+            <button 
+              onClick={() => window.location.href = '/'}
+              className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+            >
+              ← Retour à l'accueil
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
         <div className="text-center mb-12">
-          <div className="text-8xl mb-6">🏀</div>
+          <div className="text-8xl mb-6">⚽</div>
           <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
           <p className="text-2xl text-green-200">Pronostics en temps réel</p>
             </div>
@@ -1479,6 +1512,32 @@ export default function App() {
   }
 
   if (screen === 'auth') {
+    if (!barId) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-3xl font-black text-red-900 mb-4">CODE BAR MANQUANT</h2>
+            <p className="text-gray-600 mb-6">
+              Le code bar est requis pour se connecter.
+            </p>
+            <button 
+              onClick={() => setScreen('playJoin')}
+              className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
+            >
+              ← Retour
+            </button>
+            <button 
+              onClick={() => window.location.href = '/'}
+              className="w-full text-gray-600 py-2 text-sm underline"
+            >
+              Retour à l'accueil
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
@@ -1521,7 +1580,7 @@ export default function App() {
             onClick={authMode === 'login' ? handleLogin : handleSignup}
             className="w-full bg-green-900 text-white py-4 rounded-xl text-xl font-bold hover:bg-green-800 mb-4"
               >
-            {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} 🏀
+            {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} ⚽
               </button>
           
           <button
@@ -1541,6 +1600,26 @@ export default function App() {
   }
 
   if (screen === 'mobile' && user) {
+    if (!barId) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-3xl font-black text-red-900 mb-4">CODE BAR MANQUANT</h2>
+            <p className="text-gray-600 mb-6">
+              Le code bar est requis pour jouer.
+            </p>
+            <button 
+              onClick={() => window.location.href = '/'}
+              className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+            >
+              ← Retour à l'accueil
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const myScore = players.find(p => p.id === user.uid);
     const score = myScore?.score || 0;
 
@@ -1584,7 +1663,7 @@ export default function App() {
               </div>
             ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
-              <div className="text-6xl mb-4">🏀</div>
+              <div className="text-6xl mb-4">⚽</div>
               <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
               {matchState?.active && countdown && (
                 <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
@@ -1674,7 +1753,7 @@ export default function App() {
         </div>
             ) : matchState?.active ? (
               <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
-                <p className="text-2xl text-yellow-400">🏀 Match en cours</p>
+                <p className="text-2xl text-yellow-400">⚽ Match en cours</p>
       </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
