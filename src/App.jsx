@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
@@ -19,6 +19,7 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 
 const QUESTION_INTERVAL = 60000;
+const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
 
 const QUESTIONS = [
   { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
@@ -76,6 +77,8 @@ export default function App() {
   const [matchHalf, setMatchHalf] = useState('1H');
   const [matchPlayers, setMatchPlayers] = useState([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('idle'); // 🔥 État de synchronisation
+  const lastSyncRef = useRef(Date.now()); // 🔥 Timestamp dernière sync
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -1074,11 +1077,16 @@ export default function App() {
       clearInterval(matchCheckInterval.current);
     }
 
-    // Vérifier toutes les 30 secondes si le match a commencé
-    matchCheckInterval.current = setInterval(async () => {
+    // Fonction de synchronisation avec l'API
+    const syncMatch = async () => {
       try {
+        setSyncStatus('syncing'); // 🔥 Indiquer synchronisation en cours
+        
         const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (!apiKey) return;
+        if (!apiKey) {
+          setSyncStatus('error');
+          return;
+        }
 
         const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
           method: 'GET',
@@ -1095,6 +1103,9 @@ export default function App() {
           const status = fixture.fixture.status.short;
           const elapsed = fixture.fixture.status.elapsed || 0;
           const newScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
+
+          setSyncStatus('success'); // 🔥 Synchronisation réussie
+          lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
 
           // Si le match a commencé (statut 1H, 2H, HT, ET, etc.) et qu'il n'y a pas de match actif
           if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
@@ -1146,6 +1157,7 @@ export default function App() {
                   'matchClock.elapsedMinutes': elapsed,
                   'matchClock.half': status,
                   'matchClock.startTime': updatedStartTime,
+                  'matchClock.isPaused': status === 'HT', // 🔥 NOUVEAU : Indicateur de pause
                   'matchInfo.score': newScore
                 });
                 
@@ -1163,8 +1175,15 @@ export default function App() {
         }
       } catch (e) {
         console.error('Erreur surveillance match:', e);
+        setSyncStatus('error'); // 🔥 Indiquer erreur
       }
-    }, 30000); // Vérifier toutes les 30 secondes
+    };
+
+    // Vérifier toutes les 10 secondes
+    matchCheckInterval.current = setInterval(syncMatch, API_SYNC_INTERVAL);
+    
+    // Première synchronisation immédiate
+    syncMatch();
   };
 
   const stopMatchMonitoring = () => {
@@ -1174,7 +1193,7 @@ export default function App() {
     }
   };
 
-  const MatchClock = () => {
+  const MatchClock = ({ syncStatus, lastSyncRef }) => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
     
@@ -1191,6 +1210,13 @@ export default function App() {
         }
         
         if (clockStartTime) {
+          // 🔥 Blocage du chrono à 45'00 pendant la mi-temps
+          if (clockHalf === 'HT') {
+            setTime('45\'00');
+            setPhase('MI-TEMPS');
+            return;
+          }
+          
           // Calcul du temps écoulé depuis le startTime synchronisé
           const totalElapsedMs = Date.now() - clockStartTime;
           const elapsed = Math.floor(totalElapsedMs / 60000);
@@ -1226,12 +1252,36 @@ export default function App() {
     }, [matchState]);
 
     return (
-      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
-        <div className="text-6xl font-mono font-black text-green-400" style={{ letterSpacing: '0.1em' }}>
+      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg relative">
+        {/* 🔥 NOUVEAU : Indicateur visuel de pause pendant la mi-temps */}
+        {phase === 'MI-TEMPS' && (
+          <div className="absolute -top-2 -right-2 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+            ⏸️ PAUSE
+          </div>
+        )}
+        
+        <div className={`text-6xl font-mono font-black ${phase === 'MI-TEMPS' ? 'text-yellow-400' : 'text-green-400'}`} 
+             style={{ letterSpacing: '0.1em' }}>
           {time}
         </div>
-        <div className="text-sm font-bold text-green-500 text-center mt-1">
+        <div className={`text-sm font-bold text-center mt-1 ${phase === 'MI-TEMPS' ? 'text-yellow-500' : 'text-green-500'}`}>
           {phase}
+        </div>
+        
+        {/* 🔥 NOUVEAU : Indicateur de synchronisation API */}
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <div className={`w-2 h-2 rounded-full ${
+            syncStatus === 'syncing' ? 'bg-blue-400 animate-pulse' :
+            syncStatus === 'success' ? 'bg-green-400' :
+            syncStatus === 'error' ? 'bg-red-400' :
+            'bg-gray-400'
+          }`} />
+          <span className="text-xs text-gray-400">
+            {syncStatus === 'syncing' ? 'Sync...' :
+             syncStatus === 'success' ? `Sync OK (${Math.floor((Date.now() - lastSyncRef.current) / 1000)}s)` :
+             syncStatus === 'error' ? 'Erreur' :
+             'En attente'}
+          </span>
         </div>
       </div>
     );
@@ -1765,7 +1815,7 @@ export default function App() {
             {matchState?.active && countdown && (
               <div className="space-y-2">
                 <p className="text-xl text-yellow-400">⏱️ Prochaine: {countdown}</p>
-                <MatchClock />
+                <MatchClock syncStatus={syncStatus} lastSyncRef={lastSyncRef} />
           </div>
             )}
             {(!matchState || !matchState.active) && (
