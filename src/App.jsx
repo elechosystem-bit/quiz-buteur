@@ -1217,28 +1217,40 @@ export default function App() {
             return;
           }
           
+          // Récupérer le temps écoulé depuis l'API (plus fiable)
+          const apiElapsed = matchState?.matchClock?.elapsedMinutes || 0;
+          
           // Calcul du temps écoulé depuis le startTime synchronisé
           const totalElapsedMs = Date.now() - clockStartTime;
           const elapsed = Math.floor(totalElapsedMs / 60000);
           const secs = Math.floor(totalElapsedMs / 1000) % 60;
           
           let displayTime;
-          if (elapsed < 90) {
-            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+          let displayPhase;
+          
+          // 🔥 Utiliser l'API elapsed pour la 2H (plus précis car startTime a été réinitialisé)
+          if (clockHalf === '2H') {
+            const realMinutes = apiElapsed;
+            
+            if (realMinutes < 90) {
+              const secondsInCurrentMinute = Math.floor(((Date.now() - clockStartTime) / 1000) % 60);
+              displayTime = `${realMinutes}'${secondsInCurrentMinute.toString().padStart(2, '0')}`;
+            } else {
+              displayTime = `90'+${realMinutes - 90}`;
+            }
+            displayPhase = '2MT';
           } else {
-            displayTime = `90'+${elapsed - 90 + 1}`;
+            // 1H : utiliser le calcul normal
+            if (elapsed < 90) {
+              displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+            } else {
+              displayTime = `90'+${elapsed - 90 + 1}`;
+            }
+            displayPhase = '1MT';
           }
           
           setTime(displayTime);
-          
-          // Déterminer la phase
-          if (clockHalf === 'HT') {
-            setPhase('MI-TEMPS');
-          } else if (elapsed >= 45 && (clockHalf === '2H' || elapsed >= 45)) {
-            setPhase('2MT');
-          } else {
-            setPhase('1MT');
-          }
+          setPhase(displayPhase);
         } else {
           // Fallback si pas de données
           setTime('0\'00');
