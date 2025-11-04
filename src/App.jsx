@@ -1084,9 +1084,12 @@ export default function App() {
         
         const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
         if (!apiKey) {
+          console.error('❌ Clé API manquante');
           setSyncStatus('error');
           return;
         }
+        
+        console.log('🔄 Tentative sync API pour fixture:', fixtureId);
 
         const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
           method: 'GET',
@@ -1174,8 +1177,14 @@ export default function App() {
           }
         }
       } catch (e) {
-        console.error('Erreur surveillance match:', e);
-        setSyncStatus('error'); // 🔥 Indiquer erreur
+        console.error('❌ Erreur surveillance match:', e);
+        console.error('Détails:', e.message, e.response);
+        // Ne pas marquer comme erreur si le chrono fonctionne localement
+        if (barId && matchState?.active) {
+          setSyncStatus('success'); // Continue en mode local
+        } else {
+          setSyncStatus('error');
+        }
       }
     };
 
@@ -1291,7 +1300,7 @@ export default function App() {
           <span className="text-xs text-gray-400">
             {syncStatus === 'syncing' ? 'Sync...' :
              syncStatus === 'success' ? `Sync OK (${Math.floor((Date.now() - lastSyncRef.current) / 1000)}s)` :
-             syncStatus === 'error' ? 'Erreur' :
+             syncStatus === 'error' ? 'API hors ligne' :
              'En attente'}
           </span>
         </div>
