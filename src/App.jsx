@@ -572,13 +572,40 @@ export default function App() {
   }, [currentQuestion]);
 
   useEffect(() => {
-    if (!matchState?.nextQuestionTime) {
-      setCountdown('');
-      return;
-    }
-
-    const updateCountdown = () => {
-      const diff = matchState.nextQuestionTime - Date.now();
+    if (!barId) return;
+    
+    const matchStateRef = ref(db, `bars/${barId}/matchState/nextQuestionTime`);
+    
+    const unsub = onValue(matchStateRef, (snap) => {
+      const nextTime = snap.val();
+      
+      const updateCountdown = () => {
+        if (!nextTime) {
+          setCountdown('');
+          return;
+        }
+        
+        const diff = nextTime - Date.now();
+        if (diff <= 0) {
+          setCountdown('Bientôt...');
+        } else {
+          const mins = Math.floor(diff / 60000);
+          const secs = Math.floor((diff % 60000) / 1000);
+          setCountdown(`${mins}m ${secs}s`);
+        }
+      };
+      
+      updateCountdown();
+    });
+    
+    const interval = setInterval(() => {
+      const nextTimeSnap = matchState?.nextQuestionTime;
+      if (!nextTimeSnap) {
+        setCountdown('');
+        return;
+      }
+      
+      const diff = nextTimeSnap - Date.now();
       if (diff <= 0) {
         setCountdown('Bientôt...');
       } else {
@@ -586,12 +613,13 @@ export default function App() {
         const secs = Math.floor((diff % 60000) / 1000);
         setCountdown(`${mins}m ${secs}s`);
       }
+    }, 1000);
+    
+    return () => {
+      unsub();
+      clearInterval(interval);
     };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [matchState]);
+  }, [barId, matchState]);
 
   useEffect(() => {
     if (!barId || !matchState?.active) {
