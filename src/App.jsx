@@ -144,7 +144,9 @@ export default function App() {
               status: fixture.fixture.status.long,
               score: fixture.fixture.status.short === 'NS' 
                 ? 'vs' 
-                : `${fixture.goals.home || 0}-${fixture.goals.away || 0}`
+                : `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
+              elapsed: fixture.fixture.status.elapsed || 0,
+              half: fixture.fixture.status.short
             }));
 
           setAvailableMatches(matches);
@@ -163,7 +165,7 @@ export default function App() {
             // Exclure les matchs terminés
             return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
           })
-          .slice(0, 20)
+          .slice(0, 100)
           .map(fixture => ({
             id: fixture.fixture.id,
             homeTeam: fixture.teams.home.name,
@@ -1952,15 +1954,17 @@ export default function App() {
             {availableMatches.length > 0 && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {availableMatches.map(match => {
-                  const isLive = match.elapsed && match.elapsed > 0;
-                  const isUpcoming = !match.elapsed || match.elapsed === 0;
+                  const status = match.status || match.half;
+                  const isLive = ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status);
+                  const isFinished = ['FT', 'AET', 'PEN'].includes(status);
+                  const isUpcoming = status === 'NS' || status === 'TBD' || (!isLive && !isFinished);
                   
                   return (
                     <div
                       key={match.id}
-                      onClick={() => selectMatch(match)}
+                      onClick={() => !isUpcoming && !isFinished && selectMatch(match)}
                       className={`p-4 rounded-lg transition-all ${
-                        isUpcoming 
+                        isUpcoming || isFinished
                           ? 'bg-gray-800 opacity-60 cursor-not-allowed'
                           : selectedMatch?.id === match.id 
                             ? 'bg-green-800 border-2 border-green-500 cursor-pointer' 
@@ -1976,12 +1980,17 @@ export default function App() {
                             </span>
                             {isLive && (
                               <span className="text-xs bg-red-600 px-2 py-1 rounded font-bold animate-pulse">
-                                🔴 LIVE {match.elapsed}'
+                                🔴 LIVE {match.elapsed || 0}'
                               </span>
                             )}
                             {isUpcoming && (
                               <span className="text-xs bg-yellow-600 px-2 py-1 rounded font-bold">
                                 ⏰ À VENIR
+                              </span>
+                            )}
+                            {isFinished && (
+                              <span className="text-xs bg-gray-600 px-2 py-1 rounded font-bold">
+                                ✅ TERMINÉ
                               </span>
                             )}
                           </div>
@@ -1991,7 +2000,7 @@ export default function App() {
                           <div className="text-sm text-gray-400">{match.date}</div>
                       </div>
                       {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
-                        {isUpcoming && <div className="text-2xl ml-4">🔒</div>}
+                        {(isUpcoming || isFinished) && <div className="text-2xl ml-4">🔒</div>}
                       </div>
                     </div>
                   );
