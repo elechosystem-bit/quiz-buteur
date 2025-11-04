@@ -954,8 +954,11 @@ export default function App() {
       await remove(ref(db, `bars/${barId}/answers/${questionId}`));
       
       if (matchState?.active) {
+        const nextTime = Date.now() + QUESTION_INTERVAL;
+        console.log(`🕐 Prochaine question programmée à : ${new Date(nextTime).toLocaleTimeString()}`);
+        
         await update(ref(db, `bars/${barId}/matchState`), {
-          nextQuestionTime: Date.now() + QUESTION_INTERVAL
+          nextQuestionTime: nextTime
         });
       }
       
@@ -1289,7 +1292,7 @@ export default function App() {
           <span className="text-xs text-gray-400">
             {syncStatus === 'syncing' ? 'Sync...' :
              syncStatus === 'success' ? `Sync OK (${Math.floor((Date.now() - lastSyncRef.current) / 1000)}s)` :
-             syncStatus === 'error' ? 'API hors ligne' :
+             syncStatus === 'error' ? 'Mode local' :
              'En attente'}
           </span>
         </div>
