@@ -908,6 +908,12 @@ export default function App() {
         });
       }
       
+      if (matchState?.active) {
+        await update(ref(db, `bars/${barId}/matchState`), {
+          nextQuestionTime: Date.now() + QUESTION_INTERVAL
+        });
+      }
+      
     } catch (e) {
       console.error('Erreur:', e);
     } finally {
@@ -955,11 +961,13 @@ export default function App() {
       
       if (matchState?.active) {
         const nextTime = Date.now() + QUESTION_INTERVAL;
-        console.log(`🕐 Prochaine question programmée à : ${new Date(nextTime).toLocaleTimeString()}`);
+        console.log('🕐 Next:', new Date(nextTime).toLocaleTimeString());
         
         await update(ref(db, `bars/${barId}/matchState`), {
           nextQuestionTime: nextTime
         });
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
       
     } catch (e) {
