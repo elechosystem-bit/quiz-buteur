@@ -132,7 +132,7 @@ export default function App() {
               // Exclure les matchs terminés (FT, AET, PEN, etc.)
               return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
             })
-            .slice(0, 20)
+            .slice(0, 100)
             .map(fixture => ({
               id: fixture.fixture.id,
               homeTeam: fixture.teams.home.name,
