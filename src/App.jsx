@@ -754,6 +754,12 @@ export default function App() {
       
       console.log(`⏱️ Chrono configuré : ${realTimeElapsed}' écoulées, démarrage à ${new Date(clockStartTime).toLocaleTimeString()}`);
       
+      console.log('🔍 DEBUG TEMPS:');
+      console.log('- Temps réel elapsed:', realTimeElapsed, 'minutes');
+      console.log('- Now:', now);
+      console.log('- ClockStartTime calculé:', clockStartTime);
+      console.log('- Différence:', Math.floor((now - clockStartTime) / 60000), 'minutes');
+      
       const newMatchState = {
         active: true,
         startTime: now,
@@ -1135,22 +1141,14 @@ export default function App() {
                 const currentHalf = currentMatchState?.matchClock?.half || '1H';
                 const clockStartTime = currentMatchState?.matchClock?.startTime || Date.now();
                 
-                // Recalculer startTime si on passe en 2H (ou si c'est la première fois qu'on détecte 2H)
-                let updatedStartTime = clockStartTime;
-                if (status === '2H' && (currentHalf === '1H' || currentHalf === 'HT')) {
-                  // Passage en 2H : réinitialiser le startTime
-                  updatedStartTime = Date.now() - (elapsed * 60000);
-                  console.log('🔄 Passage en 2H détecté, réinitialisation du chrono');
-                } else if (status === '1H' && currentHalf === 'HT') {
-                  // Retour en 1H après la mi-temps (peu probable mais possible)
-                  updatedStartTime = Date.now() - (elapsed * 60000);
-                }
+                // 🔥 SYNCHRONISATION FORCÉE : Recalculer startTime à chaque sync
+                const correctStartTime = Date.now() - (elapsed * 60000);
                 
                 // Mettre à jour le matchClock, le score et la mi-temps
                 await update(ref(db, `bars/${barId}/matchState`), {
                   'matchClock.elapsedMinutes': elapsed,
                   'matchClock.half': status,
-                  'matchClock.startTime': updatedStartTime,
+                  'matchClock.startTime': correctStartTime, // Toujours recalculer !
                   'matchClock.isPaused': status === 'HT', // 🔥 NOUVEAU : Indicateur de pause
                   'matchInfo.score': newScore
                 });
@@ -1162,7 +1160,7 @@ export default function App() {
                   score: newScore
                 });
                 
-                console.log(`🔄 MatchClock mis à jour : ${elapsed}' - ${status} - ${newScore}`);
+                console.log(`✅ Sync forcée : ${elapsed}' - StartTime: ${new Date(correctStartTime).toLocaleTimeString()} - ${status} - ${newScore}`);
               }
             }
           }
