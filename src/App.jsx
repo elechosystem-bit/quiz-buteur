@@ -142,6 +142,8 @@ export default function App() {
               league: fixture.league.name,
               date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
               status: fixture.fixture.status.long,
+              statusShort: fixture.fixture.status.short,
+              timestamp: new Date(fixture.fixture.date).getTime(),
               score: fixture.fixture.status.short === 'NS' 
                 ? 'vs' 
                 : `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
@@ -175,6 +177,8 @@ export default function App() {
             league: fixture.league.name,
             date: new Date(fixture.fixture.date).toLocaleString('fr-FR'),
             status: fixture.fixture.status.long,
+            statusShort: fixture.fixture.status.short,
+            timestamp: new Date(fixture.fixture.date).getTime(),
             score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
             elapsed: fixture.fixture.status.elapsed || 0,
             half: fixture.fixture.status.short
@@ -1954,10 +1958,13 @@ export default function App() {
             {availableMatches.length > 0 && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {availableMatches.map(match => {
-                  const status = match.status || match.half;
+                  const now = Date.now();
+                  const matchTime = match.timestamp || 0;
+                  const status = match.statusShort || match.half || 'NS';
+                  
+                  const isFinished = ['FT', 'AET', 'PEN'].includes(status) || (matchTime < now - 7200000);
                   const isLive = ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status);
-                  const isFinished = ['FT', 'AET', 'PEN'].includes(status);
-                  const isUpcoming = status === 'NS' || status === 'TBD' || (!isLive && !isFinished);
+                  const isUpcoming = status === 'NS' && matchTime > now;
                   
                   return (
                     <div
