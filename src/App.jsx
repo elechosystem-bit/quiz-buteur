@@ -1116,28 +1116,13 @@ export default function App() {
           setSyncStatus('success'); // 🔥 Synchronisation réussie
           lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
 
-          // Si le match a commencé (statut 1H, 2H, HT, ET, etc.) et qu'il n'y a pas de match actif
-          if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
-            console.log('🚀 Match détecté comme commencé ! Démarrage automatique...');
-            
-            // Mettre à jour les infos du match
-            const updatedMatchData = {
-              ...selectedMatch,
+          // Mettre à jour les infos du match en temps réel
+          if (barId && selectedMatch) {
+            await update(ref(db, `bars/${barId}/selectedMatch`), {
               elapsed: elapsed,
               half: status,
               score: newScore
-            };
-            
-            await set(ref(db, `bars/${barId}/selectedMatch`), updatedMatchData);
-            setSelectedMatch(updatedMatchData);
-            setMatchElapsedMinutes(elapsed);
-            setMatchStartTime(Date.now() - (elapsed * 60000));
-            setMatchHalf(status);
-            
-            // Démarrer automatiquement
-            await startMatch();
-            
-            // NE PAS ARRÊTER - continuer la surveillance pour mettre à jour pendant le match
+            });
           }
           
           // Si le match est actif, mettre à jour le matchClock, le score et la mi-temps
