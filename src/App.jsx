@@ -79,6 +79,7 @@ export default function App() {
   const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [syncStatus, setSyncStatus] = useState('idle'); // 🔥 État de synchronisation
   const lastSyncRef = useRef(Date.now()); // 🔥 Timestamp dernière sync
+  const [lastQuestionResult, setLastQuestionResult] = useState(null);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -426,6 +427,26 @@ export default function App() {
           setMatchStartTime(Date.now() - (match.elapsed * 60000));
           setMatchHalf(match.half || '1H');
         }
+      }
+    });
+    
+    return () => unsub();
+  }, [barId, screen]);
+
+  useEffect(() => {
+    if (!barId || screen !== 'mobile') return;
+    
+    const lastResultRef = ref(db, `bars/${barId}/lastQuestionResult`);
+    
+    const unsub = onValue(lastResultRef, (snap) => {
+      if (snap.exists()) {
+        const result = snap.val();
+        setLastQuestionResult(result);
+        
+        // Effacer le résultat après 5 secondes
+        setTimeout(() => {
+          setLastQuestionResult(null);
+        }, 5000);
       }
     });
     
@@ -959,6 +980,8 @@ export default function App() {
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
       const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
       
+      const winners = [];
+      
       if (answersSnap.exists() && currentMatchId) {
         for (const [userId, data] of Object.entries(answersSnap.val())) {
           if (data.answer === randomWinner) {
@@ -967,22 +990,43 @@ export default function App() {
             const bonus = Math.floor((data.timeLeft || 0) / 3);
             const total = 10 + bonus;
             
+            // Récupérer le pseudo du joueur
+            let playerPseudo = '';
             if (playerSnap.exists()) {
+              playerPseudo = playerSnap.val().pseudo || '';
               await update(playerRef, {
                 score: (playerSnap.val().score || 0) + total
               });
             } else {
               const userSnap = await get(ref(db, `users/${userId}`));
               if (userSnap.exists()) {
+                playerPseudo = userSnap.val().pseudo || '';
                 await set(playerRef, {
-                  pseudo: userSnap.val().pseudo,
+                  pseudo: playerPseudo,
                   score: total
                 });
               }
             }
+            
+            // Ajouter le gagnant à la liste
+            winners.push({
+              userId: userId,
+              pseudo: playerPseudo,
+              points: total,
+              timeLeft: data.timeLeft || 0
+            });
           }
         }
       }
+
+      // Sauvegarder le résultat dans Firebase
+      await set(ref(db, `bars/${barId}/lastQuestionResult`), {
+        questionId: questionId,
+        questionText: currentQuestion.text,
+        correctAnswer: randomWinner,
+        winners: winners,
+        timestamp: Date.now()
+      });
 
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers/${questionId}`));
@@ -1771,6 +1815,50 @@ export default function App() {
                 ))}
               </div>
               {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
+              </div>
+            ) : lastQuestionResult ? (
+              <div className="bg-white rounded-3xl p-8 shadow-2xl">
+                <div className="text-center mb-6">
+                  <div className="text-5xl mb-4">
+                    {lastQuestionResult.winners.some(w => w.userId === user.uid) ? '🎉' : '❌'}
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-4">{lastQuestionResult.questionText}</h3>
+                  <div className="bg-green-100 rounded-xl p-4 mb-4">
+                    <p className="text-lg font-semibold text-green-800">
+                      ✅ Bonne réponse : <span className="font-black">{lastQuestionResult.correctAnswer}</span>
+                    </p>
+                  </div>
+                  {lastQuestionResult.winners.length > 0 ? (
+                    <div className="bg-blue-50 rounded-xl p-4 mb-4">
+                      <p className="text-sm font-semibold text-blue-800 mb-2">🏆 Gagnants :</p>
+                      <div className="space-y-2">
+                        {lastQuestionResult.winners.map((winner, i) => (
+                          <div key={i} className={`flex justify-between items-center p-2 rounded ${
+                            winner.userId === user.uid ? 'bg-yellow-200 font-bold' : 'bg-white'
+                          }`}>
+                            <span className={winner.userId === user.uid ? 'text-yellow-900' : 'text-gray-700'}>
+                              {winner.pseudo || 'Joueur'}
+                            </span>
+                            <span className={`font-bold ${winner.userId === user.uid ? 'text-yellow-900' : 'text-green-600'}`}>
+                              +{winner.points} pts
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-100 rounded-xl p-4 mb-4">
+                      <p className="text-gray-600">Personne n'a trouvé la bonne réponse</p>
+                    </div>
+                  )}
+                  {lastQuestionResult.winners.some(w => w.userId === user.uid) && (
+                    <div className="bg-yellow-100 rounded-xl p-4">
+                      <p className="text-lg font-bold text-yellow-900">
+                        🎊 Bravo ! Vous avez gagné {lastQuestionResult.winners.find(w => w.userId === user.uid)?.points} points !
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
             <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
