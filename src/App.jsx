@@ -989,6 +989,18 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     if (!barId || isProcessingRef.current) return;
+    
+    if (!matchState?.active) {
+      console.error('❌ Le match n\'est pas actif');
+      return;
+    }
+
+    // VÉRIFIER qu'on a assez de joueurs du match
+    if (matchPlayers.length < 4) {
+      console.error('❌ Pas assez de joueurs chargés pour créer une question');
+      return;
+    }
+
     isProcessingRef.current = true;
 
     try {
@@ -998,57 +1010,40 @@ export default function App() {
         return;
       }
 
-      let questionToUse;
+      // Sélectionner 4 joueurs aléatoires du match
+      const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
+      const selectedPlayers = shuffled.slice(0, 4);
       
-      if (matchPlayers.length >= 4) {
-        const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
-        const selectedPlayers = shuffled.slice(0, 4);
-        
-        const questionTypes = [
-          { text: "Qui va marquer le prochain but ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-          { text: "Quel joueur va faire la prochaine passe décisive ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-          { text: "Qui va avoir le prochain carton ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-          { text: "Quel joueur va tenter le prochain tir ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) }
-        ];
-        
-        questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
-      } else {
-        const availableQuestions = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
-        
-        if (availableQuestions.length === 0) {
-          usedQuestionsRef.current = [];
-        }
-        
-        questionToUse = availableQuestions.length > 0 
-          ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)]
-          : QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
-      }
+      // Types de questions possibles
+      const questionTypes = [
+        { text: "Qui va marquer le prochain but ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
+        { text: "Quel joueur va faire la prochaine passe décisive ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
+        { text: "Qui va avoir le prochain carton ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
+        { text: "Quel joueur va tenter le prochain tir ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) }
+      ];
       
-      const qId = Date.now().toString();
-      usedQuestionsRef.current.push(questionToUse.text);
-      
-      await set(ref(db, `bars/${barId}/currentQuestion`), {
-        id: qId,
-        text: questionToUse.text,
-        options: questionToUse.options,
-        timeLeft: 15,
-        createdAt: Date.now()
+      const questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
+
+      const questionData = {
+        ...questionToUse,
+        id: Date.now().toString(),
+        createdAt: Date.now(),
+        timeLeft: 15
+      };
+
+      await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
+
+      // Programmer la prochaine question
+      const nextTime = Date.now() + QUESTION_INTERVAL;
+      await update(ref(db, `bars/${barId}/matchState`), {
+        nextQuestionTime: nextTime,
+        questionCount: (matchState?.questionCount || 0) + 1
       });
 
-      if (matchState?.active) {
-        await update(ref(db, `bars/${barId}/matchState`), {
-          questionCount: (matchState.questionCount || 0) + 1
-        });
-      }
-      
-      if (matchState?.active) {
-        await update(ref(db, `bars/${barId}/matchState`), {
-          nextQuestionTime: Date.now() + QUESTION_INTERVAL
-        });
-      }
-      
+      console.log('✅ Question créée avec les joueurs du match:', questionData);
+
     } catch (e) {
-      console.error('Erreur:', e);
+      console.error('Erreur création question:', e);
     } finally {
       isProcessingRef.current = false;
     }
