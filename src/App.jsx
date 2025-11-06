@@ -978,6 +978,12 @@ export default function App() {
       
       if (verifyState.exists() && verifyMatch.exists()) {
         alert(`✅ Match démarré !\n\n⏱️ Temps synchronisé : ${realTimeElapsed}'\nMi-temps : ${realTimeHalf}\nScore : ${realTimeScore}`);
+        
+        // 🔥 RELANCER la surveillance quand on démarre le match
+        if (selectedMatch?.id) {
+          console.log('🚀 Relance startMatchMonitoring lors du démarrage');
+          startMatchMonitoring(selectedMatch.id);
+        }
       } else {
         throw new Error('Vérification échouée');
       }
