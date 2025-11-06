@@ -531,28 +531,48 @@ export default function App() {
 
   useEffect(() => {
     if (!barId) return;
-    const unsub = onValue(ref(db, `bars/${barId}/currentQuestion`), (snap) => {
-      const data = snap.val();
-      if (data && data.text && data.options && Array.isArray(data.options)) {
-        setCurrentQuestion(data);
-        setTimeLeft(data.timeLeft || 15);
-        
-        if (screen === 'mobile' && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification('⚽ Nouvelle question !', {
-            body: data.text,
-            icon: '/icon-192.png',
-            badge: '/icon-192.png',
-            vibrate: [200, 100, 200],
-            tag: 'quiz-question',
-            requireInteraction: true
-          });
+    
+    try {
+      const unsub = onValue(ref(db, `bars/${barId}/currentQuestion`), (snap) => {
+        try {
+          const data = snap.val();
+          if (data && data.text && data.options && Array.isArray(data.options)) {
+            setCurrentQuestion(data);
+            setTimeLeft(data.timeLeft || 15);
+            
+            if (screen === 'mobile' && 'Notification' in window && Notification.permission === 'granted') {
+              try {
+                new Notification('⚽ Nouvelle question !', {
+                  body: data.text,
+                  icon: '/icon-192.png',
+                  badge: '/icon-192.png',
+                  vibrate: [200, 100, 200],
+                  tag: 'quiz-question',
+                  requireInteraction: true
+                });
+              } catch (e) {
+                console.error('Erreur lors de la création de la notification:', e);
+              }
+            }
+          } else {
+            setCurrentQuestion(null);
+            setPlayerAnswer(null);
+          }
+        } catch (e) {
+          console.error('Erreur dans onValue currentQuestion:', e);
         }
-      } else {
-        setCurrentQuestion(null);
-        setPlayerAnswer(null);
-      }
-    });
-    return () => unsub();
+      });
+      
+      return () => {
+        try {
+          unsub();
+        } catch (e) {
+          console.error('Erreur lors du cleanup currentQuestion:', e);
+        }
+      };
+    } catch (e) {
+      console.error('Erreur dans useEffect currentQuestion:', e);
+    }
   }, [barId, screen]);
 
   useEffect(() => {
