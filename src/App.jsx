@@ -1879,72 +1879,89 @@ export default function App() {
       );
     }
 
-    const myScore = players.find(p => p.id === user.uid);
-    const score = myScore?.score || 0;
+    try {
+      const myScore = players.find(p => p.id === user?.uid);
+      const score = myScore?.score || 0;
 
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
-        <div className="max-w-md mx-auto">
-          <div className="bg-white rounded-2xl p-6 mb-6 text-center">
-            <div className="text-sm text-gray-500">{barInfo?.name || ''}</div>
-            <div className="text-green-700 text-lg font-semibold">{userProfile?.pseudo || ''}</div>
-            <div className="text-4xl font-black text-green-900">{score} pts</div>
-            <div className="text-sm text-gray-500 mt-2">Total: {userProfile?.totalPoints || 0} pts</div>
-            <button onClick={handleLogout} className="mt-3 text-red-600 text-sm underline">
-              Déconnexion
-            </button>
-                      </div>
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
+          <div className="max-w-md mx-auto">
+            <div className="bg-white rounded-2xl p-6 mb-6 text-center">
+              <div className="text-sm text-gray-500">{barInfo?.name || ''}</div>
+              <div className="text-green-700 text-lg font-semibold">{userProfile?.pseudo || ''}</div>
+              <div className="text-4xl font-black text-green-900">{score} pts</div>
+              <div className="text-sm text-gray-500 mt-2">Total: {userProfile?.totalPoints || 0} pts</div>
+              <button onClick={handleLogout} className="mt-3 text-red-600 text-sm underline">
+                Déconnexion
+              </button>
+            </div>
 
-          {currentQuestion?.text && currentQuestion?.options ? (
-            <div className="bg-white rounded-3xl p-8 shadow-2xl">
-              <div className="text-center mb-6">
-                <div className="text-6xl font-black text-green-900 mb-2">{timeLeft}s</div>
-                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-600 transition-all" style={{ width: `${(timeLeft / 15) * 100}%` }} />
-                    </div>
+            {currentQuestion?.text && currentQuestion?.options ? (
+              <div className="bg-white rounded-3xl p-8 shadow-2xl">
+                <div className="text-center mb-6">
+                  <div className="text-6xl font-black text-green-900 mb-2">{timeLeft || 0}s</div>
+                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-600 transition-all" style={{ width: `${((timeLeft || 0) / 15) * 100}%` }} />
                   </div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
-              <div className="space-y-3">
-                {currentQuestion.options.map((opt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleAnswer(opt)}
-                    disabled={playerAnswer !== null}
-                    className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
-                      playerAnswer === opt ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                    }`}
-                  >
-                    {opt} {playerAnswer === opt && '⏳'}
-                  </button>
-                ))}
-              </div>
-              {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
+                </div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
+                <div className="space-y-3">
+                  {currentQuestion.options.map((opt, i) => (
+                    <button
+                      key={i}
+                      onClick={async () => {
+                        if (!playerAnswer && user && barId && currentQuestion) {
+                          try {
+                            setPlayerAnswer(opt);
+                            await set(ref(db, `bars/${barId}/answers/${currentQuestion.id}/${user.uid}`), {
+                              answer: opt,
+                              timestamp: Date.now(),
+                              timeLeft: timeLeft || 0
+                            });
+                            console.log('Mobile: réponse sauvegardée avec succès');
+                          } catch (e) {
+                            console.error('Erreur enregistrement réponse:', e);
+                            alert('Erreur: ' + e.message);
+                            setPlayerAnswer(null);
+                          }
+                        }
+                      }}
+                      disabled={playerAnswer !== null}
+                      className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
+                        playerAnswer === opt ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                      }`}
+                    >
+                      {opt} {playerAnswer === opt && '⏳'}
+                    </button>
+                  ))}
+                </div>
+                {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
               </div>
             ) : lastQuestionResult ? (
               <div className="bg-white rounded-3xl p-8 shadow-2xl">
                 <div className="text-center mb-6">
                   <div className="text-5xl mb-4">
-                    {lastQuestionResult.winners.some(w => w.userId === user.uid) ? '🎉' : '❌'}
+                    {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) ? '🎉' : '❌'}
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-800 mb-4">{lastQuestionResult.questionText}</h3>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-4">{lastQuestionResult.questionText || ''}</h3>
                   <div className="bg-green-100 rounded-xl p-4 mb-4">
                     <p className="text-lg font-semibold text-green-800">
-                      ✅ Bonne réponse : <span className="font-black">{lastQuestionResult.correctAnswer}</span>
+                      ✅ Bonne réponse : <span className="font-black">{lastQuestionResult.correctAnswer || ''}</span>
                     </p>
                   </div>
-                  {lastQuestionResult.winners.length > 0 ? (
+                  {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.length > 0 ? (
                     <div className="bg-blue-50 rounded-xl p-4 mb-4">
                       <p className="text-sm font-semibold text-blue-800 mb-2">🏆 Gagnants :</p>
                       <div className="space-y-2">
                         {lastQuestionResult.winners.map((winner, i) => (
                           <div key={i} className={`flex justify-between items-center p-2 rounded ${
-                            winner.userId === user.uid ? 'bg-yellow-200 font-bold' : 'bg-white'
+                            winner.userId === user?.uid ? 'bg-yellow-200 font-bold' : 'bg-white'
                           }`}>
-                            <span className={winner.userId === user.uid ? 'text-yellow-900' : 'text-gray-700'}>
+                            <span className={winner.userId === user?.uid ? 'text-yellow-900' : 'text-gray-700'}>
                               {winner.pseudo || 'Joueur'}
                             </span>
-                            <span className={`font-bold ${winner.userId === user.uid ? 'text-yellow-900' : 'text-green-600'}`}>
-                              +{winner.points} pts
+                            <span className={`font-bold ${winner.userId === user?.uid ? 'text-yellow-900' : 'text-green-600'}`}>
+                              +{winner.points || 0} pts
                             </span>
                           </div>
                         ))}
@@ -1955,30 +1972,50 @@ export default function App() {
                       <p className="text-gray-600">Personne n'a trouvé la bonne réponse</p>
                     </div>
                   )}
-                  {lastQuestionResult.winners.some(w => w.userId === user.uid) && (
+                  {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) && (
                     <div className="bg-yellow-100 rounded-xl p-4">
                       <p className="text-lg font-bold text-yellow-900">
-                        🎊 Bravo ! Vous avez gagné {lastQuestionResult.winners.find(w => w.userId === user.uid)?.points} points !
+                        🎊 Bravo ! Vous avez gagné {lastQuestionResult.winners.find(w => w.userId === user?.uid)?.points || 0} points !
                       </p>
                     </div>
                   )}
                 </div>
               </div>
             ) : (
-            <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
-              <div className="text-6xl mb-4">⚽</div>
-              <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
-              {matchState?.active && countdown && (
-                <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
-              )}
-              {(!matchState || !matchState.active) && (
-                <p className="text-lg text-gray-500">En attente du démarrage</p>
+              <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
+                <div className="text-6xl mb-4">⚽</div>
+                <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
+                {matchState?.active && countdown && (
+                  <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
+                )}
+                {(!matchState || !matchState.active) && (
+                  <p className="text-lg text-gray-500">En attente du démarrage</p>
+                )}
+              </div>
             )}
           </div>
-          )}
         </div>
-      </div>
-    );
+      );
+    } catch (e) {
+      console.error('Erreur dans le rendu de l\'écran mobile:', e);
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-3xl font-black text-red-900 mb-4">ERREUR</h2>
+            <p className="text-gray-600 mb-6">
+              Une erreur est survenue. Veuillez recharger la page.
+            </p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800"
+            >
+              Recharger
+            </button>
+          </div>
+        </div>
+      );
+    }
   }
 
   if (screen === 'tv') {
