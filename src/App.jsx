@@ -1277,10 +1277,12 @@ export default function App() {
         const fixture = data.response[0];
         const matchData = {
           status: fixture.fixture.status.short,
+          statusLong: fixture.fixture.status.long,
           elapsed: fixture.fixture.status.elapsed || 0,
           score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
           homeGoals: fixture.goals.home || 0,
-          awayGoals: fixture.goals.away || 0
+          awayGoals: fixture.goals.away || 0,
+          statusFull: fixture.fixture.status
         };
         
         console.log('📡 Données récupérées:', matchData);
@@ -1303,10 +1305,58 @@ export default function App() {
     }
 
     const performSync = async () => {
+      console.log('🔍 Vérification match à', new Date().toLocaleTimeString());
+      
       const matchData = await syncMatchData(fixtureId);
       
       if (!matchData) {
         console.warn('⚠️ Pas de données reçues');
+        return;
+      }
+      
+      console.log('📡 Status API:', matchData.status);
+      console.log('📡 Status complet:', matchData.statusFull);
+      
+      // 🔥 VÉRIFIER PLUSIEURS CONDITIONS DE FIN
+      const finishedStatuses = ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'];
+      const isFinished = finishedStatuses.includes(matchData.status);
+      
+      console.log('🏁 Match terminé ?', isFinished);
+      
+      if (isFinished) {
+        console.log('🛑 ARRÊT DU MATCH DÉTECTÉ');
+        
+        const finalScore = matchData.score;
+        
+        // Arrêter immédiatement
+        setMatchHalf('FT');
+        setMatchElapsedMinutes(90);
+        
+        if (barId) {
+          // Arrêter le matchState
+          await update(ref(db, `bars/${barId}/matchState`), {
+            active: false,
+            'matchClock.half': 'FT',
+            'matchClock.elapsedMinutes': 90,
+            'matchInfo.score': finalScore
+          });
+          
+          // Mettre à jour selectedMatch
+          await update(ref(db, `bars/${barId}/selectedMatch`), {
+            half: 'FT',
+            score: finalScore
+          });
+          
+          // Supprimer la question en cours
+          await remove(ref(db, `bars/${barId}/currentQuestion`));
+          
+          console.log('✅ Firebase mis à jour - Match arrêté');
+        }
+        
+        // IMPORTANT : Arrêter la surveillance
+        stopMatchMonitoring();
+        
+        alert('🏁 Match terminé ! Score final : ' + finalScore);
         return;
       }
       
@@ -1346,16 +1396,6 @@ export default function App() {
         
         await update(ref(db, `bars/${barId}`), updates);
         console.log('✅ Firebase mis à jour');
-      }
-      
-      // Vérifier si le match est terminé
-      if (['FT', 'AET', 'PEN'].includes(matchData.status)) {
-        console.log('🏁 Match terminé !');
-        if (barId) {
-          await update(ref(db, `bars/${barId}/matchState/matchClock`), { half: 'FT' });
-        }
-        await stopMatch();
-        stopMatchMonitoring();
       }
     };
 
@@ -1401,6 +1441,25 @@ export default function App() {
         let mins = Math.floor(totalElapsedMs / 60000);
         const secs = Math.floor((totalElapsedMs / 1000) % 60);
         
+        // 🔥 SÉCURITÉ : Si plus de 95 minutes, arrêter
+        if (mins >= 95 && currentHalf !== 'FT') {
+          console.warn('⚠️ Temps dépassé 95 min, arrêt forcé');
+          
+          if (barId) {
+            update(ref(db, `bars/${barId}/matchState`), {
+              active: false,
+              'matchClock.half': 'FT',
+              'matchClock.elapsedMinutes': 90
+            });
+            
+            remove(ref(db, `bars/${barId}/currentQuestion`));
+          }
+          
+          setTime('90:00');
+          setPhase('🏁 TERMINÉ');
+          return;
+        }
+        
         // Gérer les différentes phases
         let displayTime;
         let displayPhase;
@@ -1443,7 +1502,7 @@ export default function App() {
       updateTime();
       const interval = setInterval(updateTime, 1000);
       return () => clearInterval(interval);
-    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half, matchStartTime, matchHalf]);
+    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half, matchStartTime, matchHalf, barId]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-green-500 shadow-lg">
@@ -2297,6 +2356,25 @@ export default function App() {
                 <div className="flex gap-4 flex-wrap">
                   <button onClick={stopMatch} className="bg-red-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-red-700">
                     ⏹️ Arrêter
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      if (!window.confirm('⚠️ Arrêter le match manuellement ?')) return;
+                      
+                      await update(ref(db, `bars/${barId}/matchState`), {
+                        active: false,
+                        'matchClock.half': 'FT'
+                      });
+                      
+                      await remove(ref(db, `bars/${barId}/currentQuestion`));
+                      
+                      stopMatchMonitoring();
+                      
+                      alert('✅ Match arrêté');
+                    }}
+                    className="bg-orange-600 px-8 py-4 rounded-lg text-xl font-bold hover:bg-orange-700"
+                  >
+                    🛑 Arrêter manuellement
                   </button>
                       <button
                     onClick={async () => {
