@@ -214,8 +214,10 @@ export default function App() {
       await new Promise(resolve => setTimeout(resolve, 500));
       setSelectedMatch(matchData);
       
-      // Lancer la surveillance du match
+      // 🔥 C'EST ICI QU'IL FAUT APPELER startMatchMonitoring
+      console.log('🔥 Appel de startMatchMonitoring avec fixture ID:', match.id);
       startMatchMonitoring(match.id);
+      console.log('🔥 startMatchMonitoring appelé');
       
     } catch (e) {
       alert('❌ Erreur: ' + e.message);
