@@ -1064,41 +1064,51 @@ export default function App() {
       
       // Toujours utiliser les questions génériques pour l'instant
       const genericQuestions = [
-        { 
-          text: "Quelle équipe aura le prochain corner ?", 
-          options: ["Domicile", "Extérieur", "Aucune", "Les deux"],
-          validationDelay: 0, // Validation immédiate
-          eventType: null
-        },
-        { 
-          text: "Y aura-t-il un carton jaune dans les 5 prochaines minutes ?", 
-          options: ["Oui", "Non", "2 cartons", "3+"],
-          validationDelay: 300000, // 5 minutes en ms
-          eventType: 'card'
-        },
+        // ✅ BUTS - Validable avec events API
         { 
           text: "Y aura-t-il un but dans les 10 prochaines minutes ?", 
           options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"],
-          validationDelay: 600000, // 10 minutes en ms
+          validationDelay: 600000, // 10 minutes
           eventType: 'goal'
         },
+        
+        // ✅ CARTONS - Validable avec events API
         { 
-          text: "Combien de tirs cadrés dans les 5 prochaines minutes ?", 
+          text: "Y aura-t-il un carton jaune dans les 5 prochaines minutes ?", 
+          options: ["Oui", "Non", "2 cartons", "3+ cartons"],
+          validationDelay: 300000, // 5 minutes
+          eventType: 'yellowCard'
+        },
+        
+        { 
+          text: "Y aura-t-il un carton rouge dans les 10 prochaines minutes ?", 
+          options: ["Oui", "Non"],
+          validationDelay: 600000, // 10 minutes
+          eventType: 'redCard'
+        },
+        
+        // ✅ REMPLACEMENTS - Validable avec events API
+        { 
+          text: "Y aura-t-il un remplacement dans les 5 prochaines minutes ?", 
+          options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"],
+          validationDelay: 300000, // 5 minutes
+          eventType: 'substitution'
+        },
+        
+        // ✅ TIRS CADRÉS - Validable avec statistics API
+        { 
+          text: "Combien de tirs cadrés au total dans les 5 prochaines minutes ?", 
           options: ["0", "1-2", "3-4", "5+"],
           validationDelay: 300000, // 5 minutes
-          eventType: 'shots'
+          eventType: 'shotsOnTarget'
         },
+        
+        // ✅ VAR - Validable avec events API
         { 
-          text: "Quelle équipe fera la prochaine faute ?", 
-          options: ["Domicile", "Extérieur", "Aucune", "Les deux"],
-          validationDelay: 0, // Validation immédiate
-          eventType: null
-        },
-        { 
-          text: "Y aura-t-il un penalty ?", 
-          options: ["Oui", "Non", "VAR", "Peut-être"],
+          text: "Y aura-t-il une intervention de la VAR dans les 10 prochaines minutes ?", 
+          options: ["Oui", "Non"],
           validationDelay: 600000, // 10 minutes
-          eventType: 'penalty'
+          eventType: 'var'
         }
       ];
       
@@ -2263,23 +2273,27 @@ export default function App() {
                             setPlayerAnswer(opt);
                             const timestamp = Date.now();
                             
-                            // Sauvegarder la réponse dans answers
+                            // Enregistrer la réponse
                             await set(ref(db, `bars/${barId}/answers/${currentQuestion.id}/${user.uid}`), {
                               answer: opt,
                               timestamp: timestamp,
                               timeLeft: timeLeft || 0
                             });
                             
-                            // 🔥 SAUVEGARDER DANS L'HISTORIQUE
-                            const historyItemId = `${currentQuestion.id}_${user.uid}`;
-                            await set(ref(db, `bars/${barId}/playerHistory/${user.uid}/${historyItemId}`), {
-                              questionId: currentQuestion.id,
-                              question: currentQuestion.text || '',
+                            // Sauvegarder dans l'historique personnel
+                            await set(ref(db, `bars/${barId}/playerHistory/${user.uid}/${currentQuestion.id}`), {
+                              question: currentQuestion.text,
                               myAnswer: opt,
+                              allOptions: currentQuestion.options,
                               timestamp: timestamp,
-                              isCorrect: null, // En attente de validation
-                              correctAnswer: null
+                              correctAnswer: null,
+                              isCorrect: null,
+                              validationDelay: currentQuestion.validationDelay || 0
                             });
+                            
+                            // 🔥 NOUVEAU : Supprimer la question du state local immédiatement
+                            setCurrentQuestion(null);
+                            setPlayerAnswer(null);
                             
                             console.log('✅ Réponse enregistrée:', opt);
                           } catch (e) {
