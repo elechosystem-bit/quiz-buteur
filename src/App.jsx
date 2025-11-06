@@ -801,6 +801,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [barId, matchState, currentQuestion]);
 
+  // 🔥 VÉRIFIER LES QUESTIONS EN ATTENTE PÉRIODIQUEMENT
+  useEffect(() => {
+    if (!barId || !matchState?.active || !selectedMatch) return;
+    
+    // Vérifier les questions en attente toutes les 10 secondes
+    const interval = setInterval(() => {
+      validatePendingQuestions();
+    }, 10000);
+    
+    return () => clearInterval(interval);
+  }, [barId, matchState?.active, selectedMatch, currentMatchId]);
+
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
       alert('Remplissez tous les champs');
@@ -1052,12 +1064,42 @@ export default function App() {
       
       // Toujours utiliser les questions génériques pour l'instant
       const genericQuestions = [
-        { text: "Quelle équipe aura le prochain corner ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
-        { text: "Y aura-t-il un carton jaune dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Peut-être", "2 cartons"] },
-        { text: "Y aura-t-il un but dans les 10 prochaines minutes ?", options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"] },
-        { text: "Combien de tirs cadrés dans les 5 prochaines minutes ?", options: ["0", "1-2", "3-4", "5+"] },
-        { text: "Quelle équipe fera la prochaine faute ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
-        { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "VAR", "Peut-être"] }
+        { 
+          text: "Quelle équipe aura le prochain corner ?", 
+          options: ["Domicile", "Extérieur", "Aucune", "Les deux"],
+          validationDelay: 0, // Validation immédiate
+          eventType: null
+        },
+        { 
+          text: "Y aura-t-il un carton jaune dans les 5 prochaines minutes ?", 
+          options: ["Oui", "Non", "2 cartons", "3+"],
+          validationDelay: 300000, // 5 minutes en ms
+          eventType: 'card'
+        },
+        { 
+          text: "Y aura-t-il un but dans les 10 prochaines minutes ?", 
+          options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"],
+          validationDelay: 600000, // 10 minutes en ms
+          eventType: 'goal'
+        },
+        { 
+          text: "Combien de tirs cadrés dans les 5 prochaines minutes ?", 
+          options: ["0", "1-2", "3-4", "5+"],
+          validationDelay: 300000, // 5 minutes
+          eventType: 'shots'
+        },
+        { 
+          text: "Quelle équipe fera la prochaine faute ?", 
+          options: ["Domicile", "Extérieur", "Aucune", "Les deux"],
+          validationDelay: 0, // Validation immédiate
+          eventType: null
+        },
+        { 
+          text: "Y aura-t-il un penalty ?", 
+          options: ["Oui", "Non", "VAR", "Peut-être"],
+          validationDelay: 600000, // 10 minutes
+          eventType: 'penalty'
+        }
       ];
       
       const questionToUse = genericQuestions[Math.floor(Math.random() * genericQuestions.length)];
@@ -1067,7 +1109,11 @@ export default function App() {
         options: questionToUse.options,
         id: Date.now(),
         createdAt: Date.now(),
-        timeLeft: 15
+        timeLeft: 15,
+        validationDelay: questionToUse.validationDelay || 0,
+        eventType: questionToUse.eventType || null,
+        validationTime: Date.now() + 15000 + (questionToUse.validationDelay || 0), // Temps de réponse + délai
+        status: 'collecting' // collecting → waiting → validating → validated
       };
 
       console.log('📢 Question créée:', questionData);
@@ -1094,11 +1140,54 @@ export default function App() {
       return;
     }
     
-    console.log('Mobile: autoValidate appelée');
+    console.log('🔄 Auto-validation de la question:', currentQuestion.text);
     isProcessingRef.current = true;
     const questionId = currentQuestion.id;
     
     try {
+      // Si la question a un délai de validation, la déplacer en "attente"
+      if (currentQuestion.validationDelay && currentQuestion.validationDelay > 0) {
+        console.log('⏰ Question avec délai, mise en attente pour', currentQuestion.validationDelay / 60000, 'minutes');
+        
+        // Sauvegarder dans pendingQuestions
+        await set(ref(db, `bars/${barId}/pendingQuestions/${currentQuestion.id}`), currentQuestion);
+        
+        // Mettre à jour l'historique pour tous les joueurs qui ont répondu
+        const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
+        if (answersSnap.exists() && currentMatchId) {
+          const answersData = answersSnap.val();
+          if (answersData && typeof answersData === 'object') {
+            for (const [userId, data] of Object.entries(answersData)) {
+              try {
+                const historyItemId = `${questionId}_${userId}`;
+                await update(ref(db, `bars/${barId}/playerHistory/${userId}/${historyItemId}`), {
+                  validationDelay: currentQuestion.validationDelay,
+                  isCorrect: null, // En attente
+                  correctAnswer: null
+                });
+              } catch (e) {
+                console.error('Erreur lors de la mise à jour de l\'historique:', e);
+              }
+            }
+          }
+        }
+        
+        // Supprimer la question courante
+        await remove(ref(db, `bars/${barId}/currentQuestion`));
+        
+        // Programmer la prochaine question
+        if (matchState?.active) {
+          const nextTime = Date.now() + QUESTION_INTERVAL;
+          await update(ref(db, `bars/${barId}/matchState`), {
+            nextQuestionTime: nextTime
+          });
+        }
+        
+        isProcessingRef.current = false;
+        return;
+      }
+      
+      // Validation immédiate (logique existante)
       if (!currentQuestion.options || !Array.isArray(currentQuestion.options) || currentQuestion.options.length === 0) {
         throw new Error('Options de question invalides');
       }
@@ -1204,6 +1293,147 @@ export default function App() {
         isProcessingRef.current = false;
         console.log('Mobile: isProcessingRef réinitialisé');
       }, 2000);
+    }
+  };
+
+  // 🔥 VALIDATION DES QUESTIONS EN ATTENTE
+  const validatePendingQuestions = async () => {
+    if (!barId || !selectedMatch || !currentMatchId) return;
+    
+    try {
+      // Récupérer les questions en attente de validation
+      const pendingQuestionsRef = ref(db, `bars/${barId}/pendingQuestions`);
+      const snap = await get(pendingQuestionsRef);
+      
+      if (!snap.exists()) return;
+      
+      const questions = snap.val();
+      const now = Date.now();
+      
+      for (const [questionId, question] of Object.entries(questions)) {
+        // Vérifier si le délai est écoulé
+        if (now >= question.validationTime) {
+          console.log('⏰ Validation de la question:', question.text);
+          
+          // Récupérer les événements du match depuis l'API
+          const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+          
+          if (apiKey) {
+            const response = await fetch(`https://v3.football.api-sports.io/fixtures/events?fixture=${selectedMatch.id}`, {
+              method: 'GET',
+              headers: {
+                'x-rapidapi-key': apiKey,
+                'x-rapidapi-host': 'v3.football.api-sports.io'
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.response && Array.isArray(data.response)) {
+              // Filtrer les événements survenus après la création de la question
+              const relevantEvents = data.response.filter(event => {
+                const eventTime = (event.time?.elapsed || 0) * 60000; // Convertir en ms
+                const matchStartTimestamp = matchStartTime || (Date.now() - (matchElapsedMinutes * 60000));
+                const eventTimestamp = matchStartTimestamp + eventTime;
+                return eventTimestamp >= question.createdAt && eventTimestamp <= question.validationTime;
+              });
+              
+              console.log('📊 Événements pertinents:', relevantEvents);
+              
+              // Déterminer la bonne réponse selon le type d'événement
+              let correctAnswer = null;
+              
+              if (question.eventType === 'card') {
+                const cards = relevantEvents.filter(e => e.type === 'Card');
+                if (cards.length === 0) correctAnswer = 'Non';
+                else if (cards.length === 1) correctAnswer = 'Oui';
+                else if (cards.length === 2) correctAnswer = '2 cartons';
+                else correctAnswer = '3+';
+              } else if (question.eventType === 'goal') {
+                const goals = relevantEvents.filter(e => e.type === 'Goal');
+                if (goals.length === 0) correctAnswer = 'Non';
+                else {
+                  const homeGoals = goals.filter(g => g.team?.name === selectedMatch.homeTeam);
+                  const awayGoals = goals.filter(g => g.team?.name === selectedMatch.awayTeam);
+                  if (homeGoals.length > 0 && awayGoals.length > 0) correctAnswer = 'Les deux';
+                  else if (homeGoals.length > 0) correctAnswer = 'Oui domicile';
+                  else if (awayGoals.length > 0) correctAnswer = 'Oui extérieur';
+                  else correctAnswer = 'Non';
+                }
+              } else if (question.eventType === 'penalty') {
+                const penalties = relevantEvents.filter(e => e.type === 'Goal' && e.detail === 'Penalty');
+                if (penalties.length === 0) correctAnswer = 'Non';
+                else correctAnswer = 'Oui';
+              }
+              
+              console.log('✅ Bonne réponse déterminée:', correctAnswer);
+              
+              // Mettre à jour les scores des joueurs et l'historique
+              if (correctAnswer) {
+                const answersRef = ref(db, `bars/${barId}/answers/${questionId}`);
+                const answersSnap = await get(answersRef);
+                
+                if (answersSnap.exists()) {
+                  const answers = answersSnap.val();
+                  const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+                  const playersSnap = await get(playersRef);
+                  
+                  const winners = [];
+                  
+                  if (playersSnap.exists()) {
+                    const players = playersSnap.val();
+                    
+                    for (const [playerId, answerData] of Object.entries(answers)) {
+                      const isCorrect = answerData.answer === correctAnswer;
+                      
+                      if (isCorrect && players[playerId]) {
+                        const bonus = Math.floor((answerData.timeLeft || 0) / 3);
+                        const total = 10 + bonus;
+                        
+                        await update(ref(db, `bars/${barId}/matches/${currentMatchId}/players/${playerId}`), {
+                          score: (players[playerId].score || 0) + total
+                        });
+                        
+                        winners.push({
+                          userId: playerId,
+                          pseudo: players[playerId].pseudo || '',
+                          points: total
+                        });
+                      }
+                      
+                      // Mettre à jour l'historique
+                      try {
+                        const historyItemId = `${questionId}_${playerId}`;
+                        await update(ref(db, `bars/${barId}/playerHistory/${playerId}/${historyItemId}`), {
+                          correctAnswer: correctAnswer,
+                          isCorrect: isCorrect
+                        });
+                      } catch (e) {
+                        console.error('Erreur mise à jour historique:', e);
+                      }
+                    }
+                  }
+                  
+                  // Sauvegarder le résultat
+                  await set(ref(db, `bars/${barId}/lastQuestionResult`), {
+                    questionId: questionId,
+                    questionText: question.text || '',
+                    correctAnswer: correctAnswer,
+                    winners: winners,
+                    timestamp: Date.now()
+                  });
+                }
+              }
+            }
+          }
+          
+          // Supprimer la question des questions en attente
+          await remove(ref(db, `bars/${barId}/pendingQuestions/${questionId}`));
+          await remove(ref(db, `bars/${barId}/answers/${questionId}`);
+        }
+      }
+    } catch (e) {
+      console.error('❌ Erreur validation questions en attente:', e);
     }
   };
 
@@ -2175,6 +2405,15 @@ export default function App() {
                               {item.isCorrect === null && '⏳'}
                             </div>
                           </div>
+                          
+                          {/* 🔥 NOUVEAU : Afficher si en attente de validation */}
+                          {item.isCorrect === null && item.validationDelay > 0 && (
+                            <div className="bg-blue-100 border border-blue-300 rounded-lg p-2 mt-2">
+                              <span className="text-xs text-blue-700">
+                                ⏰ En attente de validation ({Math.floor(item.validationDelay / 60000)} minutes)
+                              </span>
+                            </div>
+                          )}
                           
                           {/* Bonne réponse si incorrecte */}
                           {item.isCorrect === false && item.correctAnswer && (
