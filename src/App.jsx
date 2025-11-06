@@ -442,6 +442,7 @@ export default function App() {
       if (snap.exists()) {
         const result = snap.val();
         setLastQuestionResult(result);
+        setPlayerAnswer(null); // Réinitialiser la réponse du joueur
         
         // Effacer le résultat après 5 secondes
         setTimeout(() => {
