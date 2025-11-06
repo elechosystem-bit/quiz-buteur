@@ -1447,6 +1447,32 @@ export default function App() {
     }
   };
 
+  // ==================== VALIDATION DIFFÉRÉE ====================
+  const validatePendingQuestions = async () => {
+    if (!barId || !selectedMatch || !currentMatchId) return;
+    
+    try {
+      const pendingQuestionsRef = ref(db, `bars/${barId}/pendingQuestions`);
+      const snap = await get(pendingQuestionsRef);
+      
+      if (!snap.exists()) return;
+      
+      const questions = snap.val();
+      const now = Date.now();
+      
+      for (const [questionId, question] of Object.entries(questions)) {
+        if (now >= question.validationTime) {
+          console.log('⏰ Validation question:', question.text);
+          
+          // Pour l'instant, juste supprimer
+          await remove(ref(db, `bars/${barId}/pendingQuestions/${questionId}`));
+        }
+      }
+    } catch (e) {
+      console.error('Erreur validation:', e);
+    }
+  };
+
   const handleAnswer = async (answer) => {
     if (!barId || !currentQuestion || playerAnswer || !user) return;
     
