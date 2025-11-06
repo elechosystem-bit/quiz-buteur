@@ -1406,9 +1406,13 @@ export default function App() {
           // Arrêter le matchState
           await update(ref(db, `bars/${barId}/matchState`), {
             active: false,
-            'matchClock.half': 'FT',
-            'matchClock.elapsedMinutes': 90,
-            'matchInfo.score': finalScore
+            matchClock: {
+              half: 'FT',
+              elapsedMinutes: 90
+            },
+            matchInfo: {
+              score: finalScore
+            }
           });
           
           // Mettre à jour selectedMatch
@@ -1458,10 +1462,14 @@ export default function App() {
         };
         
         if (matchState?.active) {
-          updates['matchState/matchClock/startTime'] = newStartTime;
-          updates['matchState/matchClock/elapsedMinutes'] = matchData.elapsed;
-          updates['matchState/matchClock/half'] = matchData.status;
-          updates['matchState/matchInfo/score'] = matchData.score;
+          updates['matchState/matchClock'] = {
+            startTime: newStartTime,
+            elapsedMinutes: matchData.elapsed,
+            half: matchData.status
+          };
+          updates['matchState/matchInfo'] = {
+            score: matchData.score
+          };
         }
         
         await update(ref(db, `bars/${barId}`), updates);
@@ -1518,8 +1526,10 @@ export default function App() {
           if (barId) {
             update(ref(db, `bars/${barId}/matchState`), {
               active: false,
-              'matchClock.half': 'FT',
-              'matchClock.elapsedMinutes': 90
+              matchClock: {
+                half: 'FT',
+                elapsedMinutes: 90
+              }
             });
             
             remove(ref(db, `bars/${barId}/currentQuestion`));
@@ -2522,7 +2532,9 @@ export default function App() {
                       
                       await update(ref(db, `bars/${barId}/matchState`), {
                         active: false,
-                        'matchClock.half': 'FT'
+                        matchClock: {
+                          half: 'FT'
+                        }
                       });
                       
                       await remove(ref(db, `bars/${barId}/currentQuestion`));
