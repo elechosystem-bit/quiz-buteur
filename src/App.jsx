@@ -1393,10 +1393,19 @@ export default function App() {
     const [phase, setPhase] = useState('');
     
     useEffect(() => {
+      console.log('🕐 MatchClock useEffect - matchState:', matchState?.matchClock);
+      
       const updateTime = () => {
         let clockStartTime = matchState?.matchClock?.startTime;
         let clockHalf = matchState?.matchClock?.half;
         let apiElapsed = matchState?.matchClock?.elapsedMinutes || 0;
+        
+        if (!clockStartTime) {
+          console.log('⚠️ Pas de startTime disponible');
+          setTime('0\'00');
+          setPhase('1ère MT');
+          return;
+        }
         
         // Si le match est terminé
         if (clockHalf === 'FT') {
@@ -1412,65 +1421,62 @@ export default function App() {
           return;
         }
         
-        if (clockStartTime) {
-          // Calcul du temps écoulé depuis le startTime
-          const totalElapsedMs = Date.now() - clockStartTime;
-          let calculatedMinutes = Math.floor(totalElapsedMs / 60000);
-          const secs = Math.floor(totalElapsedMs / 1000) % 60;
-          
-          // Utiliser apiElapsed comme référence si disponible
-          let elapsed = apiElapsed || calculatedMinutes;
-          
-          let displayTime;
-          let displayPhase;
-          
-          // PREMIÈRE MI-TEMPS (0-45 minutes)
-          if (clockHalf === '1H') {
-            if (elapsed < 45) {
-              displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-              displayPhase = '1ère MT';
-            } else {
-              // Temps additionnel 1ère MT
-              const addedTime = elapsed - 45;
-              displayTime = `45'+${addedTime + 1}`;
-              displayPhase = '1ère MT';
-            }
-          }
-          // DEUXIÈME MI-TEMPS (45-90 minutes)
-          else if (clockHalf === '2H') {
-            if (elapsed < 90) {
-              const secondHalfTime = elapsed - 45;
-              displayTime = `${45 + secondHalfTime}'${secs.toString().padStart(2, '0')}`;
-              displayPhase = '2ème MT';
-            } else {
-              // Temps additionnel 2ème MT
-              const addedTime = elapsed - 90;
-              displayTime = `90'+${addedTime + 1}`;
-              displayPhase = '2ème MT';
-            }
-          }
-          // Prolongations
-          else if (['ET', 'BT'].includes(clockHalf)) {
-            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-            displayPhase = 'PROLONGATION';
-          }
-          // Tirs au but
-          else if (clockHalf === 'P') {
-            displayTime = 'TAB';
-            displayPhase = 'TIRS AU BUT';
-          }
-          // Par défaut
-          else {
+        // Calcul du temps écoulé depuis le startTime
+        const totalElapsedMs = Date.now() - clockStartTime;
+        let calculatedMinutes = Math.floor(totalElapsedMs / 60000);
+        const secs = Math.floor(totalElapsedMs / 1000) % 60;
+        
+        // Utiliser apiElapsed comme référence si disponible
+        let elapsed = apiElapsed || calculatedMinutes;
+        
+        let displayTime;
+        let displayPhase;
+        
+        // PREMIÈRE MI-TEMPS (0-45 minutes)
+        if (clockHalf === '1H') {
+          if (elapsed < 45) {
             displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
             displayPhase = '1ère MT';
+          } else {
+            // Temps additionnel 1ère MT
+            const addedTime = elapsed - 45;
+            displayTime = `45'+${addedTime + 1}`;
+            displayPhase = '1ère MT';
           }
-          
-          setTime(displayTime);
-          setPhase(displayPhase);
-        } else {
-          setTime('0\'00');
-          setPhase('1ère MT');
         }
+        // DEUXIÈME MI-TEMPS (45-90 minutes)
+        else if (clockHalf === '2H') {
+          if (elapsed < 90) {
+            const secondHalfTime = elapsed - 45;
+            displayTime = `${45 + secondHalfTime}'${secs.toString().padStart(2, '0')}`;
+            displayPhase = '2ème MT';
+          } else {
+            // Temps additionnel 2ème MT
+            const addedTime = elapsed - 90;
+            displayTime = `90'+${addedTime + 1}`;
+            displayPhase = '2ème MT';
+          }
+        }
+        // Prolongations
+        else if (['ET', 'BT'].includes(clockHalf)) {
+          displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+          displayPhase = 'PROLONGATION';
+        }
+        // Tirs au but
+        else if (clockHalf === 'P') {
+          displayTime = 'TAB';
+          displayPhase = 'TIRS AU BUT';
+        }
+        // Par défaut
+        else {
+          displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+          displayPhase = '1ère MT';
+        }
+        
+        console.log('⏱️ Affichage:', displayTime, '(startTime:', new Date(clockStartTime).toLocaleTimeString(), ', apiElapsed:', apiElapsed, ', calculated:', calculatedMinutes, ')');
+        
+        setTime(displayTime);
+        setPhase(displayPhase);
       };
       
       updateTime();
