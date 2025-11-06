@@ -453,22 +453,41 @@ export default function App() {
   useEffect(() => {
     if (!barId || screen !== 'mobile') return;
     
-    const lastResultRef = ref(db, `bars/${barId}/lastQuestionResult`);
-    
-    const unsub = onValue(lastResultRef, (snap) => {
-      if (snap.exists()) {
-        const result = snap.val();
-        setLastQuestionResult(result);
-        setPlayerAnswer(null); // Réinitialiser la réponse du joueur
-        
-        // Effacer le résultat après 5 secondes
-        setTimeout(() => {
-          setLastQuestionResult(null);
-        }, 5000);
-      }
-    });
-    
-    return () => unsub();
+    try {
+      const lastResultRef = ref(db, `bars/${barId}/lastQuestionResult`);
+      
+      const unsub = onValue(lastResultRef, (snap) => {
+        try {
+          if (snap.exists()) {
+            const result = snap.val();
+            console.log('Mobile: résultat reçu', result);
+            setLastQuestionResult(result);
+            setPlayerAnswer(null); // Réinitialiser la réponse du joueur
+            
+            // Effacer le résultat après 5 secondes
+            setTimeout(() => {
+              try {
+                setLastQuestionResult(null);
+              } catch (e) {
+                console.error('Erreur lors de l\'effacement du résultat:', e);
+              }
+            }, 5000);
+          }
+        } catch (e) {
+          console.error('Erreur dans onValue lastResultRef:', e);
+        }
+      });
+      
+      return () => {
+        try {
+          unsub();
+        } catch (e) {
+          console.error('Erreur lors du cleanup lastResultRef:', e);
+        }
+      };
+    } catch (e) {
+      console.error('Erreur dans useEffect lastQuestionResult:', e);
+    }
   }, [barId, screen]);
 
   useEffect(() => {
@@ -477,19 +496,37 @@ export default function App() {
       return;
     }
     
-    const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
-    
-    const unsub = onValue(playersRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
-        const list = Object.entries(data).map(([id, p]) => ({ id, ...p }));
-        setPlayers(list.sort((a, b) => b.score - a.score));
-      } else {
-        setPlayers([]);
-      }
-    });
-    
-    return () => unsub();
+    try {
+      const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+      
+      const unsub = onValue(playersRef, (snap) => {
+        try {
+          if (snap.exists()) {
+            const data = snap.val();
+            if (data && typeof data === 'object') {
+              const list = Object.entries(data).map(([id, p]) => ({ id, ...p }));
+              setPlayers(list.sort((a, b) => (b.score || 0) - (a.score || 0)));
+            } else {
+              setPlayers([]);
+            }
+          } else {
+            setPlayers([]);
+          }
+        } catch (e) {
+          console.error('Erreur dans onValue playersRef:', e);
+        }
+      });
+      
+      return () => {
+        try {
+          unsub();
+        } catch (e) {
+          console.error('Erreur lors du cleanup playersRef:', e);
+        }
+      };
+    } catch (e) {
+      console.error('Erreur dans useEffect players:', e);
+    }
   }, [barId, currentMatchId]);
 
   useEffect(() => {
@@ -595,12 +632,21 @@ export default function App() {
     if (!currentQuestion?.id || !currentQuestion?.createdAt) return;
     
     const calculateTimeLeft = () => {
-      const elapsed = Math.floor((Date.now() - currentQuestion.createdAt) / 1000);
-      const remaining = Math.max(0, 15 - elapsed);
-      setTimeLeft(remaining);
-      
-      if (remaining === 0 && !isProcessingRef.current) {
-        autoValidate();
+      try {
+        const elapsed = Math.floor((Date.now() - currentQuestion.createdAt) / 1000);
+        const remaining = Math.max(0, 15 - elapsed);
+        setTimeLeft(remaining);
+        
+        if (remaining === 0 && !isProcessingRef.current) {
+          console.log('Mobile: timeLeft = 0, appel autoValidate');
+          try {
+            autoValidate();
+          } catch (e) {
+            console.error('Erreur dans autoValidate depuis calculateTimeLeft:', e);
+          }
+        }
+      } catch (e) {
+        console.error('Erreur dans calculateTimeLeft:', e);
       }
     };
     
@@ -989,50 +1035,65 @@ export default function App() {
   };
 
   const autoValidate = async () => {
-    if (!barId || !currentQuestion?.options || isProcessingRef.current) return;
+    if (!barId || !currentQuestion?.options || isProcessingRef.current) {
+      console.log('Mobile: autoValidate ignorée - conditions non remplies', { barId, hasOptions: !!currentQuestion?.options, isProcessing: isProcessingRef.current });
+      return;
+    }
     
+    console.log('Mobile: autoValidate appelée');
     isProcessingRef.current = true;
     const questionId = currentQuestion.id;
     
     try {
+      if (!currentQuestion.options || !Array.isArray(currentQuestion.options) || currentQuestion.options.length === 0) {
+        throw new Error('Options de question invalides');
+      }
+      
       const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
       const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
       
       const winners = [];
       
       if (answersSnap.exists() && currentMatchId) {
-        for (const [userId, data] of Object.entries(answersSnap.val())) {
-          if (data.answer === randomWinner) {
-            const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
-            const playerSnap = await get(playerRef);
-            const bonus = Math.floor((data.timeLeft || 0) / 3);
-            const total = 10 + bonus;
-            
-            // Récupérer le pseudo du joueur
-            let playerPseudo = '';
-            if (playerSnap.exists()) {
-              playerPseudo = playerSnap.val().pseudo || '';
-              await update(playerRef, {
-                score: (playerSnap.val().score || 0) + total
-              });
-            } else {
-              const userSnap = await get(ref(db, `users/${userId}`));
-              if (userSnap.exists()) {
-                playerPseudo = userSnap.val().pseudo || '';
-                await set(playerRef, {
+        const answersData = answersSnap.val();
+        if (answersData && typeof answersData === 'object') {
+          for (const [userId, data] of Object.entries(answersData)) {
+            try {
+              if (data && data.answer === randomWinner) {
+                const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
+                const playerSnap = await get(playerRef);
+                const bonus = Math.floor((data.timeLeft || 0) / 3);
+                const total = 10 + bonus;
+                
+                // Récupérer le pseudo du joueur
+                let playerPseudo = '';
+                if (playerSnap.exists()) {
+                  playerPseudo = playerSnap.val().pseudo || '';
+                  await update(playerRef, {
+                    score: (playerSnap.val().score || 0) + total
+                  });
+                } else {
+                  const userSnap = await get(ref(db, `users/${userId}`));
+                  if (userSnap.exists()) {
+                    playerPseudo = userSnap.val().pseudo || '';
+                    await set(playerRef, {
+                      pseudo: playerPseudo,
+                      score: total
+                    });
+                  }
+                }
+                
+                // Ajouter le gagnant à la liste
+                winners.push({
+                  userId: userId,
                   pseudo: playerPseudo,
-                  score: total
+                  points: total,
+                  timeLeft: data.timeLeft || 0
                 });
               }
+            } catch (e) {
+              console.error('Erreur lors du traitement d\'un gagnant:', e);
             }
-            
-            // Ajouter le gagnant à la liste
-            winners.push({
-              userId: userId,
-              pseudo: playerPseudo,
-              points: total,
-              timeLeft: data.timeLeft || 0
-            });
           }
         }
       }
@@ -1040,7 +1101,7 @@ export default function App() {
       // Sauvegarder le résultat dans Firebase
       await set(ref(db, `bars/${barId}/lastQuestionResult`), {
         questionId: questionId,
-        questionText: currentQuestion.text,
+        questionText: currentQuestion.text || '',
         correctAnswer: randomWinner,
         winners: winners,
         timestamp: Date.now()
@@ -1060,26 +1121,38 @@ export default function App() {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
       
+      console.log('Mobile: autoValidate terminée avec succès');
     } catch (e) {
-      console.error('Erreur:', e);
+      console.error('Erreur dans autoValidate:', e);
+      console.error('Détails:', e.message, e.stack);
     } finally {
       setTimeout(() => {
         isProcessingRef.current = false;
+        console.log('Mobile: isProcessingRef réinitialisé');
       }, 2000);
     }
   };
 
   const handleAnswer = async (answer) => {
     if (!barId || !currentQuestion || playerAnswer || !user) return;
+    
     try {
+      console.log('Mobile: réponse enregistrée', answer);
+      console.log('Mobile: timeLeft =', timeLeft);
+      console.log('Mobile: currentQuestion =', currentQuestion);
+      
       setPlayerAnswer(answer);
       await set(ref(db, `bars/${barId}/answers/${currentQuestion.id}/${user.uid}`), {
         answer,
         timestamp: Date.now(),
         timeLeft
       });
+      
+      console.log('Mobile: réponse sauvegardée avec succès');
     } catch (e) {
-      console.error(e);
+      console.error('Erreur handleAnswer:', e);
+      alert('Erreur lors de l\'enregistrement de la réponse: ' + e.message);
+      setPlayerAnswer(null); // Réinitialiser en cas d'erreur
     }
   };
 
