@@ -21,19 +21,6 @@ const auth = getAuth(app);
 const QUESTION_INTERVAL = 60000;
 const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
 
-const QUESTIONS = [
-  { text: "Qui va marquer le prochain but ?", options: ["Mbappé", "Griezmann", "Giroud", "Dembélé"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Benzema", "Neymar", "Messi", "Lewandowski"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Haaland", "Salah", "Kane", "De Bruyne"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Ronaldo", "Vinicius", "Rodrygo", "Bellingham"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Osimhen", "Kvaratskhelia", "Lautaro", "Rashford"] },
-  { text: "Qui va marquer le prochain but ?", options: ["Saka", "Foden", "Palmer", "Watkins"] },
-  { text: "Quelle équipe aura le prochain corner ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
-  { text: "Qui va avoir le prochain carton jaune ?", options: ["Défenseur", "Milieu", "Attaquant", "Personne"] },
-  { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "Peut-être", "VAR"] },
-  { text: "Combien de buts dans les 10 prochaines minutes ?", options: ["0", "1", "2", "3+"] },
-];
-
 export default function App() {
   // Initialiser screen en fonction de l'URL
   const [screen, setScreen] = useState(() => {
@@ -988,48 +975,58 @@ export default function App() {
   };
 
   const createRandomQuestion = async () => {
-    if (!barId || isProcessingRef.current) return;
-    
     if (!matchState?.active) {
       console.error('❌ Le match n\'est pas actif');
       return;
     }
 
     // VÉRIFIER qu'on a assez de joueurs du match
-    if (matchPlayers.length < 4) {
-      console.error('❌ Pas assez de joueurs chargés pour créer une question');
+    if (!matchPlayers || matchPlayers.length < 4) {
+      console.error('❌ Pas assez de joueurs chargés (', matchPlayers?.length, '). Impossible de créer une question.');
+      alert('⚠️ Les compositions d\'équipe ne sont pas encore chargées. Veuillez patienter...');
       return;
     }
 
-    isProcessingRef.current = true;
-
     try {
-      const existingQ = await get(ref(db, `bars/${barId}/currentQuestion`));
-      if (existingQ.exists() && existingQ.val()?.text) {
-        isProcessingRef.current = false;
-        return;
-      }
-
+      console.log('🎲 Création question avec', matchPlayers.length, 'joueurs disponibles');
+      
       // Sélectionner 4 joueurs aléatoires du match
       const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
       const selectedPlayers = shuffled.slice(0, 4);
       
+      console.log('✅ Joueurs sélectionnés:', selectedPlayers.map(p => p.name));
+      
       // Types de questions possibles
       const questionTypes = [
-        { text: "Qui va marquer le prochain but ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-        { text: "Quel joueur va faire la prochaine passe décisive ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-        { text: "Qui va avoir le prochain carton ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) },
-        { text: "Quel joueur va tenter le prochain tir ?", options: selectedPlayers.map(p => p.name.split(' ').pop()) }
+        { 
+          text: "Qui va marquer le prochain but ?", 
+          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
+        },
+        { 
+          text: "Quel joueur va faire la prochaine passe décisive ?", 
+          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
+        },
+        { 
+          text: "Qui va avoir le prochain carton ?", 
+          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
+        },
+        { 
+          text: "Quel joueur va tenter le prochain tir ?", 
+          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
+        }
       ];
       
       const questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
 
       const questionData = {
-        ...questionToUse,
-        id: Date.now().toString(),
+        text: questionToUse.text,
+        options: questionToUse.options,
+        id: Date.now(),
         createdAt: Date.now(),
         timeLeft: 15
       };
+
+      console.log('📢 Question créée:', questionData);
 
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
 
@@ -1040,12 +1037,11 @@ export default function App() {
         questionCount: (matchState?.questionCount || 0) + 1
       });
 
-      console.log('✅ Question créée avec les joueurs du match:', questionData);
+      console.log('✅ Question publiée avec succès');
 
     } catch (e) {
-      console.error('Erreur création question:', e);
-    } finally {
-      isProcessingRef.current = false;
+      console.error('❌ Erreur création question:', e);
+      alert('❌ Erreur: ' + e.message);
     }
   };
 
@@ -1913,9 +1909,9 @@ export default function App() {
                               timestamp: Date.now(),
                               timeLeft: timeLeft || 0
                             });
-                            console.log('Mobile: réponse sauvegardée avec succès');
+                            console.log('✅ Réponse enregistrée:', opt);
                           } catch (e) {
-                            console.error('Erreur enregistrement réponse:', e);
+                            console.error('❌ Erreur enregistrement réponse:', e);
                             alert('Erreur: ' + e.message);
                             setPlayerAnswer(null);
                           }
