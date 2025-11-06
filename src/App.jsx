@@ -1363,7 +1363,7 @@ export default function App() {
   };
 
   const startMatchMonitoring = (fixtureId) => {
-    console.log('🚀 Démarrage surveillance match:', fixtureId);
+    console.log('🚀 START MONITORING - fixture:', fixtureId);
     
     if (matchCheckInterval.current) {
       clearInterval(matchCheckInterval.current);
@@ -1371,6 +1371,8 @@ export default function App() {
     }
 
     const performSync = async () => {
+      console.log('⏰ CHECK à', new Date().toLocaleTimeString());
+      
       console.log('🔍 Vérification match à', new Date().toLocaleTimeString());
       
       const matchData = await syncMatchData(fixtureId);
@@ -1466,12 +1468,12 @@ export default function App() {
     };
 
     // Synchroniser immédiatement
-    performSync();
+    performSync(); // Immédiat
     
     // Puis toutes les 10 secondes
-    matchCheckInterval.current = setInterval(performSync, 10000);
+    matchCheckInterval.current = setInterval(performSync, 10000); // Toutes les 10s
     
-    console.log('✅ Surveillance active (intervalle: 10s)');
+    console.log('✅ Interval créé:', matchCheckInterval.current);
   };
 
   const stopMatchMonitoring = () => {
