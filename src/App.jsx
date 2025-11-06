@@ -1123,14 +1123,24 @@ export default function App() {
   };
 
   const startMatchMonitoring = (fixtureId) => {
+    // Arrêter toute surveillance précédente
     if (matchCheckInterval.current) {
       clearInterval(matchCheckInterval.current);
     }
 
-    matchCheckInterval.current = setInterval(async () => {
+    // Fonction de synchronisation avec l'API
+    const syncMatch = async () => {
       try {
+        setSyncStatus('syncing'); // 🔥 Indiquer synchronisation en cours
+        
         const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (!apiKey) return;
+        if (!apiKey) {
+          console.error('❌ Clé API manquante');
+          setSyncStatus('error');
+          return;
+        }
+        
+        console.log('🔄 Tentative sync API pour fixture:', fixtureId);
 
         const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
           method: 'GET',
@@ -1162,22 +1172,19 @@ export default function App() {
             return;
           }
 
-          if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
-            const updatedMatchData = {
-              ...selectedMatch,
+          setSyncStatus('success'); // 🔥 Synchronisation réussie
+          lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
+
+          // Mettre à jour les infos du match en temps réel
+          if (barId && selectedMatch) {
+            await update(ref(db, `bars/${barId}/selectedMatch`), {
               elapsed: elapsed,
               half: status,
               score: newScore
-            };
-            
-            await set(ref(db, `bars/${barId}/selectedMatch`), updatedMatchData);
-            setSelectedMatch(updatedMatchData);
-            setMatchElapsedMinutes(elapsed);
-            setMatchStartTime(Date.now() - (elapsed * 60000));
-            setMatchHalf(status);
-            await startMatch();
+            });
           }
           
+          // Si le match est actif, mettre à jour le matchClock, le score et la mi-temps
           if (barId) {
             const currentMatchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
             if (currentMatchStateSnap.exists()) {
@@ -1187,33 +1194,47 @@ export default function App() {
                 const currentHalf = currentMatchState?.matchClock?.half || '1H';
                 const clockStartTime = currentMatchState?.matchClock?.startTime || Date.now();
                 
-                let updatedStartTime = clockStartTime;
-                if (status === '2H' && (currentHalf === '1H' || currentHalf === 'HT')) {
-                  updatedStartTime = Date.now() - (elapsed * 60000);
-                } else if (status === '1H' && currentHalf === 'HT') {
-                  updatedStartTime = Date.now() - (elapsed * 60000);
-                }
+                // 🔥 SYNCHRONISATION FORCÉE : Recalculer startTime à chaque sync
+                const correctStartTime = Date.now() - (elapsed * 60000);
                 
+                // Mettre à jour le matchClock, le score et la mi-temps
                 await update(ref(db, `bars/${barId}/matchState`), {
                   'matchClock.elapsedMinutes': elapsed,
                   'matchClock.half': status,
-                  'matchClock.startTime': updatedStartTime,
+                  'matchClock.startTime': correctStartTime, // Toujours recalculer !
+                  'matchClock.isPaused': status === 'HT', // 🔥 NOUVEAU : Indicateur de pause
                   'matchInfo.score': newScore
                 });
                 
+                // Mettre à jour selectedMatch aussi pour cohérence
                 await update(ref(db, `bars/${barId}/selectedMatch`), {
                   elapsed: elapsed,
                   half: status,
                   score: newScore
                 });
+                
+                console.log(`✅ Sync forcée : ${elapsed}' - StartTime: ${new Date(correctStartTime).toLocaleTimeString()} - ${status} - ${newScore}`);
               }
             }
           }
         }
       } catch (e) {
-        console.error('Erreur surveillance match:', e);
+        console.error('❌ Erreur surveillance match:', e);
+        console.error('Détails:', e.message, e.response);
+        // Ne pas marquer comme erreur si le chrono fonctionne localement
+        if (barId && matchState?.active) {
+          setSyncStatus('success'); // Continue en mode local
+        } else {
+          setSyncStatus('error');
+        }
       }
-    }, 30000);
+    };
+
+    // Vérifier toutes les 10 secondes
+    matchCheckInterval.current = setInterval(syncMatch, API_SYNC_INTERVAL);
+    
+    // Première synchronisation immédiate
+    syncMatch();
   };
 
   const stopMatchMonitoring = () => {
