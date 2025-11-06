@@ -1301,8 +1301,17 @@ export default function App() {
         if (data.response && data.response.length > 0) {
           const fixture = data.response[0];
           const status = fixture.fixture.status.short;
-          const elapsed = fixture.fixture.status.elapsed || 0;
+          const apiElapsed = fixture.fixture.status.elapsed || 0;
           const newScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
+
+          // 🔥 DEBUG : Voir EXACTEMENT ce que l'API renvoie
+          console.log('========== API RESPONSE ==========');
+          console.log('📡 API elapsed:', apiElapsed);
+          console.log('📡 API status:', status);
+          console.log('📡 API score:', newScore);
+          console.log('📡 State actuel elapsed:', matchElapsedMinutes);
+          console.log('📡 State actuel half:', matchHalf);
+          console.log('==================================');
 
           // 🔥 DÉTECTION AUTOMATIQUE DE FIN DE MATCH
           if (['FT', 'AET', 'PEN'].includes(status)) {
@@ -1321,40 +1330,36 @@ export default function App() {
           setSyncStatus('success'); // 🔥 Synchronisation réussie
           lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
 
-          // Mettre à jour les infos du match en temps réel (TOUJOURS, même si le match n'est pas actif)
+          // 🔥 TOUJOURS mettre à jour, pas de condition
+          const newStartTime = Date.now() - (apiElapsed * 60000);
+          
+          console.log('⏱️ Nouveau startTime calculé:', new Date(newStartTime).toLocaleTimeString());
+          console.log('⏱️ Minutes API:', apiElapsed);
+          
+          setMatchElapsedMinutes(apiElapsed);
+          setMatchStartTime(newStartTime);
+          setMatchHalf(status);
+          
+          // Mettre à jour Firebase
           if (barId) {
+            console.log('💾 Mise à jour Firebase...');
+            
+            if (matchState?.active) {
+              await update(ref(db, `bars/${barId}/matchState`), {
+                'matchClock.startTime': newStartTime,
+                'matchClock.elapsedMinutes': apiElapsed,
+                'matchClock.half': status,
+                'matchInfo.score': newScore
+              });
+              console.log('✅ matchState mis à jour');
+            }
+            
             await update(ref(db, `bars/${barId}/selectedMatch`), {
-              elapsed: elapsed,
+              elapsed: apiElapsed,
               half: status,
               score: newScore
             });
-          }
-          
-          // Si le match est actif, mettre à jour le matchClock, le score et la mi-temps
-          if (barId) {
-            const currentMatchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
-            if (currentMatchStateSnap.exists()) {
-              const currentMatchState = currentMatchStateSnap.val();
-              
-              if (currentMatchState?.active) {
-                const currentHalf = currentMatchState?.matchClock?.half || '1H';
-                const clockStartTime = currentMatchState?.matchClock?.startTime || Date.now();
-                
-                // 🔥 SYNCHRONISATION FORCÉE : Recalculer startTime à chaque sync
-                const correctStartTime = Date.now() - (elapsed * 60000);
-                
-                // Mettre à jour le matchClock, le score et la mi-temps
-                await update(ref(db, `bars/${barId}/matchState`), {
-                  'matchClock.elapsedMinutes': elapsed,
-                  'matchClock.half': status,
-                  'matchClock.startTime': correctStartTime, // Toujours recalculer !
-                  'matchClock.isPaused': status === 'HT', // 🔥 NOUVEAU : Indicateur de pause
-                  'matchInfo.score': newScore
-                });
-                
-                console.log(`✅ Sync forcée : ${elapsed}' - StartTime: ${new Date(correctStartTime).toLocaleTimeString()} - ${status} - ${newScore}`);
-              }
-            }
+            console.log('✅ selectedMatch mis à jour');
           }
         }
       } catch (e) {
@@ -1471,7 +1476,7 @@ export default function App() {
       updateTime();
       const iv = setInterval(updateTime, 1000);
       return () => clearInterval(iv);
-    }, [matchState]);
+    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half, matchState?.matchClock?.elapsedMinutes]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
