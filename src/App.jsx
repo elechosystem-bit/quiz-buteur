@@ -1244,68 +1244,88 @@ export default function App() {
     }
   };
 
-  const MatchClock = ({ syncStatus, lastSyncRef }) => {
+  const MatchClock = () => {
     const [time, setTime] = useState('');
     const [phase, setPhase] = useState('');
     
     useEffect(() => {
       const updateTime = () => {
-        // 🔥 TOUJOURS utiliser matchState.matchClock en priorité (synchronisé avec l'API)
         let clockStartTime = matchState?.matchClock?.startTime;
         let clockHalf = matchState?.matchClock?.half;
+        let apiElapsed = matchState?.matchClock?.elapsedMinutes || 0;
         
+        // Si le match est terminé
         if (clockHalf === 'FT') {
           setTime('90\'00');
           setPhase('TERMINÉ');
           return;
         }
         
+        // Si c'est la mi-temps
+        if (clockHalf === 'HT') {
+          setTime('45\'00');
+          setPhase('MI-TEMPS');
+          return;
+        }
+        
         if (clockStartTime) {
-          // 🔥 Blocage du chrono à 45'00 pendant la mi-temps
-          if (clockHalf === 'HT') {
-            setTime('45\'00');
-            setPhase('MI-TEMPS');
-            return;
-          }
-          
-          // Récupérer le temps écoulé depuis l'API (plus fiable)
-          const apiElapsed = matchState?.matchClock?.elapsedMinutes || 0;
-          
-          // Calcul du temps écoulé depuis le startTime synchronisé
+          // Calcul du temps écoulé depuis le startTime
           const totalElapsedMs = Date.now() - clockStartTime;
-          const elapsed = Math.floor(totalElapsedMs / 60000);
+          let calculatedMinutes = Math.floor(totalElapsedMs / 60000);
           const secs = Math.floor(totalElapsedMs / 1000) % 60;
+          
+          // Utiliser apiElapsed comme référence si disponible
+          let elapsed = apiElapsed || calculatedMinutes;
           
           let displayTime;
           let displayPhase;
           
-          // 🔥 Utiliser l'API elapsed pour la 2H (plus précis car startTime a été réinitialisé)
-          if (clockHalf === '2H') {
-            const realMinutes = apiElapsed;
-            
-            if (realMinutes < 90) {
-              const secondsInCurrentMinute = Math.floor(((Date.now() - clockStartTime) / 1000) % 60);
-              displayTime = `${realMinutes}'${secondsInCurrentMinute.toString().padStart(2, '0')}`;
-            } else {
-              displayTime = `90'+${realMinutes - 90}`;
-            }
-            displayPhase = '2MT';
-          } else {
-            // 1H : utiliser le calcul normal
-            if (elapsed < 90) {
+          // PREMIÈRE MI-TEMPS (0-45 minutes)
+          if (clockHalf === '1H') {
+            if (elapsed < 45) {
               displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+              displayPhase = '1ère MT';
             } else {
-              displayTime = `90'+${elapsed - 90 + 1}`;
+              // Temps additionnel 1ère MT
+              const addedTime = elapsed - 45;
+              displayTime = `45'+${addedTime + 1}`;
+              displayPhase = '1ère MT';
             }
-            displayPhase = '1MT';
+          }
+          // DEUXIÈME MI-TEMPS (45-90 minutes)
+          else if (clockHalf === '2H') {
+            if (elapsed < 90) {
+              const secondHalfTime = elapsed - 45;
+              displayTime = `${45 + secondHalfTime}'${secs.toString().padStart(2, '0')}`;
+              displayPhase = '2ème MT';
+            } else {
+              // Temps additionnel 2ème MT
+              const addedTime = elapsed - 90;
+              displayTime = `90'+${addedTime + 1}`;
+              displayPhase = '2ème MT';
+            }
+          }
+          // Prolongations
+          else if (['ET', 'BT'].includes(clockHalf)) {
+            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+            displayPhase = 'PROLONGATION';
+          }
+          // Tirs au but
+          else if (clockHalf === 'P') {
+            displayTime = 'TAB';
+            displayPhase = 'TIRS AU BUT';
+          }
+          // Par défaut
+          else {
+            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+            displayPhase = '1ère MT';
           }
           
           setTime(displayTime);
           setPhase(displayPhase);
         } else {
-          // Fallback si pas de données
           setTime('0\'00');
-          setPhase('1MT');
+          setPhase('1ère MT');
         }
       };
       
@@ -1315,36 +1335,12 @@ export default function App() {
     }, [matchState]);
 
     return (
-      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg relative">
-        {/* 🔥 NOUVEAU : Indicateur visuel de pause pendant la mi-temps */}
-        {phase === 'MI-TEMPS' && (
-          <div className="absolute -top-2 -right-2 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-            ⏸️ PAUSE
-          </div>
-        )}
-        
-        <div className={`text-6xl font-mono font-black ${phase === 'MI-TEMPS' ? 'text-yellow-400' : 'text-green-400'}`} 
-             style={{ letterSpacing: '0.1em' }}>
+      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
+        <div className="text-6xl font-mono font-black text-green-400" style={{ letterSpacing: '0.1em' }}>
           {time}
         </div>
-        <div className={`text-sm font-bold text-center mt-1 ${phase === 'MI-TEMPS' ? 'text-yellow-500' : 'text-green-500'}`}>
+        <div className="text-sm font-bold text-green-500 text-center mt-1">
           {phase}
-        </div>
-        
-        {/* 🔥 NOUVEAU : Indicateur de synchronisation API */}
-        <div className="flex items-center justify-center gap-2 mt-2">
-          <div className={`w-2 h-2 rounded-full ${
-            syncStatus === 'syncing' ? 'bg-blue-400 animate-pulse' :
-            syncStatus === 'success' ? 'bg-green-400' :
-            syncStatus === 'error' ? 'bg-red-400' :
-            'bg-gray-400'
-          }`} />
-          <span className="text-xs text-gray-400">
-            {syncStatus === 'syncing' ? 'Sync...' :
-             syncStatus === 'success' ? `Sync OK (${Math.floor((Date.now() - lastSyncRef.current) / 1000)}s)` :
-             syncStatus === 'error' ? 'Mode local' :
-             'En attente'}
-          </span>
         </div>
       </div>
     );
@@ -1892,7 +1888,7 @@ export default function App() {
             {matchState?.active && countdown && !isMatchFinished && (
               <div className="space-y-2">
                 <p className="text-xl text-yellow-400">⏱️ Prochaine: {countdown}</p>
-                <MatchClock syncStatus={syncStatus} lastSyncRef={lastSyncRef} />
+                <MatchClock />
               </div>
             )}
             {isMatchFinished && (
