@@ -484,6 +484,51 @@ export default function App() {
     }
   }, [barId, screen]);
 
+  // 🔥 ÉCOUTER L'HISTORIQUE DES RÉPONSES
+  useEffect(() => {
+    if (!barId || !user || screen !== 'mobile') return;
+    
+    try {
+      const historyRef = ref(db, `bars/${barId}/playerHistory/${user.uid}`);
+      
+      const unsub = onValue(historyRef, (snap) => {
+        try {
+          if (snap.exists()) {
+            const historyData = snap.val();
+            if (historyData && typeof historyData === 'object') {
+              // Convertir l'objet en tableau trié par timestamp (plus récent en premier)
+              const historyArray = Object.entries(historyData)
+                .map(([id, item]) => ({
+                  id,
+                  ...item
+                }))
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+              
+              setAnswerHistory(historyArray);
+              console.log('📝 Historique chargé:', historyArray.length, 'réponses');
+            } else {
+              setAnswerHistory([]);
+            }
+          } else {
+            setAnswerHistory([]);
+          }
+        } catch (e) {
+          console.error('Erreur dans onValue historyRef:', e);
+        }
+      });
+      
+      return () => {
+        try {
+          unsub();
+        } catch (e) {
+          console.error('Erreur lors du cleanup historyRef:', e);
+        }
+      };
+    } catch (e) {
+      console.error('Erreur dans useEffect answerHistory:', e);
+    }
+  }, [barId, user, screen]);
+
   useEffect(() => {
     if (!barId || !currentMatchId) {
       setPlayers([]);
