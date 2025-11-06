@@ -986,45 +986,25 @@ export default function App() {
       return;
     }
 
-    // VÉRIFIER qu'on a assez de joueurs du match
-    if (!matchPlayers || matchPlayers.length < 4) {
-      console.error('❌ Pas assez de joueurs chargés (', matchPlayers?.length, '). Impossible de créer une question.');
-      alert('⚠️ Les compositions d\'équipe ne sont pas encore chargées. Veuillez patienter...');
-      return;
-    }
-
     try {
-      console.log('🎲 Création question avec', matchPlayers.length, 'joueurs disponibles');
+      console.log('🎲 Création d\'une question...');
+      console.log('📊 Joueurs disponibles:', matchPlayers?.length || 0);
       
-      // Sélectionner 4 joueurs aléatoires du match
-      const shuffled = [...matchPlayers].sort(() => 0.5 - Math.random());
-      const selectedPlayers = shuffled.slice(0, 4);
+      let questionData;
       
-      console.log('✅ Joueurs sélectionnés:', selectedPlayers.map(p => p.name));
-      
-      // Types de questions possibles
-      const questionTypes = [
-        { 
-          text: "Qui va marquer le prochain but ?", 
-          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
-        },
-        { 
-          text: "Quel joueur va faire la prochaine passe décisive ?", 
-          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
-        },
-        { 
-          text: "Qui va avoir le prochain carton ?", 
-          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
-        },
-        { 
-          text: "Quel joueur va tenter le prochain tir ?", 
-          options: selectedPlayers.map(p => p.name.split(' ').pop()) 
-        }
+      // Toujours utiliser les questions génériques pour l'instant
+      const genericQuestions = [
+        { text: "Quelle équipe aura le prochain corner ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
+        { text: "Y aura-t-il un carton jaune dans les 5 prochaines minutes ?", options: ["Oui", "Non", "Peut-être", "2 cartons"] },
+        { text: "Y aura-t-il un but dans les 10 prochaines minutes ?", options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"] },
+        { text: "Combien de tirs cadrés dans les 5 prochaines minutes ?", options: ["0", "1-2", "3-4", "5+"] },
+        { text: "Quelle équipe fera la prochaine faute ?", options: ["Domicile", "Extérieur", "Aucune", "Les deux"] },
+        { text: "Y aura-t-il un penalty ?", options: ["Oui", "Non", "VAR", "Peut-être"] }
       ];
       
-      const questionToUse = questionTypes[Math.floor(Math.random() * questionTypes.length)];
-
-      const questionData = {
+      const questionToUse = genericQuestions[Math.floor(Math.random() * genericQuestions.length)];
+      
+      questionData = {
         text: questionToUse.text,
         options: questionToUse.options,
         id: Date.now(),
@@ -1036,7 +1016,6 @@ export default function App() {
 
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
 
-      // Programmer la prochaine question
       const nextTime = Date.now() + QUESTION_INTERVAL;
       await update(ref(db, `bars/${barId}/matchState`), {
         nextQuestionTime: nextTime,
@@ -1047,7 +1026,7 @@ export default function App() {
 
     } catch (e) {
       console.error('❌ Erreur création question:', e);
-      alert('❌ Erreur: ' + e.message);
+      alert('❌ Erreur lors de la création de la question: ' + e.message);
     }
   };
 
