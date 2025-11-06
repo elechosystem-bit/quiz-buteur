@@ -407,13 +407,27 @@ export default function App() {
       const state = snap.val();
       setMatchState(state);
       setCurrentMatchId(state?.currentMatchId || null);
+      
+      // Mettre à jour les states pour l'affichage depuis matchState
+      if (state?.matchClock) {
+        setMatchElapsedMinutes(state.matchClock.elapsedMinutes || 0);
+        setMatchHalf(state.matchClock.half || '1H');
+        if (state.matchClock.startTime) {
+          setMatchStartTime(state.matchClock.startTime);
+        }
+      }
+      
+      // Mettre à jour le score depuis matchInfo si disponible
+      if (state?.matchInfo?.score && !selectedMatch?.score) {
+        // Le score sera mis à jour via selectedMatch, mais on peut aussi le mettre ici en fallback
+      }
     });
     
     return () => unsub();
   }, [barId]);
 
   useEffect(() => {
-    if (!barId || screen !== 'tv') return;
+    if (!barId) return;
     
     const selectedMatchRef = ref(db, `bars/${barId}/selectedMatch`);
     
@@ -422,16 +436,19 @@ export default function App() {
         const match = snap.val();
         setSelectedMatch(match);
         
+        // Mettre à jour les states pour l'affichage
         if (match.elapsed !== undefined) {
           setMatchElapsedMinutes(match.elapsed);
           setMatchStartTime(Date.now() - (match.elapsed * 60000));
-          setMatchHalf(match.half || '1H');
+        }
+        if (match.half) {
+          setMatchHalf(match.half);
         }
       }
     });
     
     return () => unsub();
-  }, [barId, screen]);
+  }, [barId]);
 
   useEffect(() => {
     if (!barId || screen !== 'mobile') return;
@@ -1220,8 +1237,8 @@ export default function App() {
           setSyncStatus('success'); // 🔥 Synchronisation réussie
           lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
 
-          // Mettre à jour les infos du match en temps réel
-          if (barId && selectedMatch) {
+          // Mettre à jour les infos du match en temps réel (TOUJOURS, même si le match n'est pas actif)
+          if (barId) {
             await update(ref(db, `bars/${barId}/selectedMatch`), {
               elapsed: elapsed,
               half: status,
@@ -1249,13 +1266,6 @@ export default function App() {
                   'matchClock.startTime': correctStartTime, // Toujours recalculer !
                   'matchClock.isPaused': status === 'HT', // 🔥 NOUVEAU : Indicateur de pause
                   'matchInfo.score': newScore
-                });
-                
-                // Mettre à jour selectedMatch aussi pour cohérence
-                await update(ref(db, `bars/${barId}/selectedMatch`), {
-                  elapsed: elapsed,
-                  half: status,
-                  score: newScore
                 });
                 
                 console.log(`✅ Sync forcée : ${elapsed}' - StartTime: ${new Date(correctStartTime).toLocaleTimeString()} - ${status} - ${newScore}`);
