@@ -421,15 +421,21 @@ export default function App() {
     const unsub = onValue(selectedMatchRef, (snap) => {
       if (snap.exists()) {
         const match = snap.val();
+        console.log('🔄 selectedMatch mis à jour depuis Firebase:', match);
+        
         setSelectedMatch(match);
         
-        // Mettre à jour les states pour l'affichage
         if (match.elapsed !== undefined) {
+          const newStartTime = Date.now() - (match.elapsed * 60000);
           setMatchElapsedMinutes(match.elapsed);
-          setMatchStartTime(Date.now() - (match.elapsed * 60000));
-        }
-        if (match.half) {
-          setMatchHalf(match.half);
+          setMatchStartTime(newStartTime);
+          setMatchHalf(match.half || '1H');
+          
+          console.log('⏱️ Chrono mis à jour:', {
+            elapsed: match.elapsed,
+            startTime: new Date(newStartTime).toLocaleTimeString(),
+            half: match.half
+          });
         }
       }
     });
@@ -1268,117 +1274,119 @@ export default function App() {
     }
   };
 
+  const syncMatchData = async (fixtureId) => {
+    try {
+      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+      if (!apiKey) {
+        console.error('❌ Clé API manquante');
+        return null;
+      }
+
+      console.log('🔄 Synchronisation API pour fixture:', fixtureId);
+
+      const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-key': apiKey,
+          'x-rapidapi-host': 'v3.football.api-sports.io'
+        }
+      });
+
+      const data = await response.json();
+      
+      if (data.response && data.response.length > 0) {
+        const fixture = data.response[0];
+        const matchData = {
+          status: fixture.fixture.status.short,
+          elapsed: fixture.fixture.status.elapsed || 0,
+          score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
+          homeGoals: fixture.goals.home || 0,
+          awayGoals: fixture.goals.away || 0
+        };
+        
+        console.log('📡 Données récupérées:', matchData);
+        return matchData;
+      }
+      
+      return null;
+    } catch (e) {
+      console.error('❌ Erreur sync API:', e);
+      return null;
+    }
+  };
+
   const startMatchMonitoring = (fixtureId) => {
-    // Arrêter toute surveillance précédente
+    console.log('🚀 Démarrage surveillance match:', fixtureId);
+    
     if (matchCheckInterval.current) {
       clearInterval(matchCheckInterval.current);
+      matchCheckInterval.current = null;
     }
 
-    // Fonction de synchronisation avec l'API
-    const syncMatch = async () => {
-      try {
-        setSyncStatus('syncing'); // 🔥 Indiquer synchronisation en cours
+    const performSync = async () => {
+      const matchData = await syncMatchData(fixtureId);
+      
+      if (!matchData) {
+        console.warn('⚠️ Pas de données reçues');
+        return;
+      }
+      
+      console.log('📊 État actuel:', {
+        local: { elapsed: matchElapsedMinutes, half: matchHalf },
+        api: { elapsed: matchData.elapsed, half: matchData.status }
+      });
+      
+      // Calculer le nouveau startTime basé sur le temps API
+      const newStartTime = Date.now() - (matchData.elapsed * 60000);
+      
+      console.log('⏱️ Mise à jour chrono:', {
+        elapsed: matchData.elapsed,
+        startTime: new Date(newStartTime).toLocaleTimeString(),
+        half: matchData.status
+      });
+      
+      // Mettre à jour les states React
+      setMatchElapsedMinutes(matchData.elapsed);
+      setMatchStartTime(newStartTime);
+      setMatchHalf(matchData.status);
+      
+      // Mettre à jour Firebase pour tous les clients
+      if (barId) {
+        const updates = {
+          'selectedMatch/elapsed': matchData.elapsed,
+          'selectedMatch/half': matchData.status,
+          'selectedMatch/score': matchData.score
+        };
         
-        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (!apiKey) {
-          console.error('❌ Clé API manquante');
-          setSyncStatus('error');
-          return;
+        if (matchState?.active) {
+          updates['matchState/matchClock/startTime'] = newStartTime;
+          updates['matchState/matchClock/elapsedMinutes'] = matchData.elapsed;
+          updates['matchState/matchClock/half'] = matchData.status;
+          updates['matchState/matchInfo/score'] = matchData.score;
         }
         
-        console.log('🔄 Tentative sync API pour fixture:', fixtureId);
-
-        const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
-          method: 'GET',
-          headers: {
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': 'v3.football.api-sports.io'
-          }
-        });
-
-        const data = await response.json();
-        
-        if (data.response && data.response.length > 0) {
-          const fixture = data.response[0];
-          const status = fixture.fixture.status.short;
-          const apiElapsed = fixture.fixture.status.elapsed || 0;
-          const newScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
-
-          // 🔥 DEBUG : Voir EXACTEMENT ce que l'API renvoie
-          console.log('========== API RESPONSE ==========');
-          console.log('📡 API elapsed:', apiElapsed);
-          console.log('📡 API status:', status);
-          console.log('📡 API score:', newScore);
-          console.log('📡 State actuel elapsed:', matchElapsedMinutes);
-          console.log('📡 State actuel half:', matchHalf);
-          console.log('==================================');
-
-          // 🔥 DÉTECTION AUTOMATIQUE DE FIN DE MATCH
-          if (['FT', 'AET', 'PEN'].includes(status)) {
-            console.log('🏁 Match terminé détecté ! Arrêt automatique...');
-            
-            if (barId) {
-              await update(ref(db, `bars/${barId}/matchState/matchClock`), { half: 'FT' });
-              await update(ref(db, `bars/${barId}/selectedMatch`), { half: 'FT', score: newScore });
-            }
-            
-            await stopMatch();
-            stopMatchMonitoring();
-            return;
-          }
-
-          setSyncStatus('success'); // 🔥 Synchronisation réussie
-          lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
-
-          // 🔥 TOUJOURS mettre à jour, pas de condition
-          const newStartTime = Date.now() - (apiElapsed * 60000);
-          
-          console.log('⏱️ Nouveau startTime calculé:', new Date(newStartTime).toLocaleTimeString());
-          console.log('⏱️ Minutes API:', apiElapsed);
-          
-          setMatchElapsedMinutes(apiElapsed);
-          setMatchStartTime(newStartTime);
-          setMatchHalf(status);
-          
-          // Mettre à jour Firebase
-          if (barId) {
-            console.log('💾 Mise à jour Firebase...');
-            
-            if (matchState?.active) {
-              await update(ref(db, `bars/${barId}/matchState`), {
-                'matchClock.startTime': newStartTime,
-                'matchClock.elapsedMinutes': apiElapsed,
-                'matchClock.half': status,
-                'matchInfo.score': newScore
-              });
-              console.log('✅ matchState mis à jour');
-            }
-            
-            await update(ref(db, `bars/${barId}/selectedMatch`), {
-              elapsed: apiElapsed,
-              half: status,
-              score: newScore
-            });
-            console.log('✅ selectedMatch mis à jour');
-          }
+        await update(ref(db, `bars/${barId}`), updates);
+        console.log('✅ Firebase mis à jour');
+      }
+      
+      // Vérifier si le match est terminé
+      if (['FT', 'AET', 'PEN'].includes(matchData.status)) {
+        console.log('🏁 Match terminé !');
+        if (barId) {
+          await update(ref(db, `bars/${barId}/matchState/matchClock`), { half: 'FT' });
         }
-      } catch (e) {
-        console.error('❌ Erreur surveillance match:', e);
-        console.error('Détails:', e.message, e.response);
-        // Ne pas marquer comme erreur si le chrono fonctionne localement
-        if (barId && matchState?.active) {
-          setSyncStatus('success'); // Continue en mode local
-        } else {
-          setSyncStatus('error');
-        }
+        await stopMatch();
+        stopMatchMonitoring();
       }
     };
 
-    // Vérifier toutes les 10 secondes
-    matchCheckInterval.current = setInterval(syncMatch, API_SYNC_INTERVAL);
+    // Synchroniser immédiatement
+    performSync();
     
-    // Première synchronisation immédiate
-    syncMatch();
+    // Puis toutes les 10 secondes
+    matchCheckInterval.current = setInterval(performSync, 10000);
+    
+    console.log('✅ Surveillance active (intervalle: 10s)');
   };
 
   const stopMatchMonitoring = () => {
@@ -1389,107 +1397,81 @@ export default function App() {
   };
 
   const MatchClock = () => {
-    const [time, setTime] = useState('');
-    const [phase, setPhase] = useState('');
+    const [time, setTime] = useState('0:00');
+    const [phase, setPhase] = useState('1ère MT');
     
     useEffect(() => {
-      console.log('🕐 MatchClock useEffect - matchState:', matchState?.matchClock);
-      
       const updateTime = () => {
-        let clockStartTime = matchState?.matchClock?.startTime;
-        let clockHalf = matchState?.matchClock?.half;
-        let apiElapsed = matchState?.matchClock?.elapsedMinutes || 0;
+        // Priorité 1 : Utiliser matchState.matchClock si disponible
+        let startTime = matchState?.matchClock?.startTime;
+        let currentHalf = matchState?.matchClock?.half || matchHalf;
         
-        if (!clockStartTime) {
-          console.log('⚠️ Pas de startTime disponible');
-          setTime('0\'00');
-          setPhase('1ère MT');
+        // Priorité 2 : Fallback sur les states locaux
+        if (!startTime && matchStartTime) {
+          startTime = matchStartTime;
+        }
+        
+        if (!startTime) {
+          setTime('0:00');
+          setPhase('En attente');
           return;
         }
         
-        // Si le match est terminé
-        if (clockHalf === 'FT') {
-          setTime('90\'00');
-          setPhase('TERMINÉ');
-          return;
-        }
+        // Calculer le temps écoulé en temps réel
+        const totalElapsedMs = Date.now() - startTime;
+        let mins = Math.floor(totalElapsedMs / 60000);
+        const secs = Math.floor((totalElapsedMs / 1000) % 60);
         
-        // Si c'est la mi-temps
-        if (clockHalf === 'HT') {
-          setTime('45\'00');
-          setPhase('MI-TEMPS');
-          return;
-        }
-        
-        // Calcul du temps écoulé depuis le startTime
-        const totalElapsedMs = Date.now() - clockStartTime;
-        let calculatedMinutes = Math.floor(totalElapsedMs / 60000);
-        const secs = Math.floor(totalElapsedMs / 1000) % 60;
-        
-        // Utiliser apiElapsed comme référence si disponible
-        let elapsed = apiElapsed || calculatedMinutes;
-        
+        // Gérer les différentes phases
         let displayTime;
         let displayPhase;
         
-        // PREMIÈRE MI-TEMPS (0-45 minutes)
-        if (clockHalf === '1H') {
-          if (elapsed < 45) {
-            displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
+        if (currentHalf === 'FT') {
+          displayTime = '90:00';
+          displayPhase = '🏁 TERMINÉ';
+        } else if (currentHalf === 'HT') {
+          displayTime = '45:00';
+          displayPhase = 'MI-TEMPS';
+        } else if (currentHalf === '1H') {
+          if (mins < 45) {
+            displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
             displayPhase = '1ère MT';
           } else {
             // Temps additionnel 1ère MT
-            const addedTime = elapsed - 45;
-            displayTime = `45'+${addedTime + 1}`;
+            const addedTime = mins - 45;
+            displayTime = `45+${addedTime + 1}`;
             displayPhase = '1ère MT';
           }
-        }
-        // DEUXIÈME MI-TEMPS (45-90 minutes)
-        else if (clockHalf === '2H') {
-          if (elapsed < 90) {
-            const secondHalfTime = elapsed - 45;
-            displayTime = `${45 + secondHalfTime}'${secs.toString().padStart(2, '0')}`;
+        } else if (currentHalf === '2H') {
+          if (mins < 90) {
+            displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
             displayPhase = '2ème MT';
           } else {
             // Temps additionnel 2ème MT
-            const addedTime = elapsed - 90;
-            displayTime = `90'+${addedTime + 1}`;
+            const addedTime = mins - 90;
+            displayTime = `90+${addedTime + 1}`;
             displayPhase = '2ème MT';
           }
+        } else {
+          displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
+          displayPhase = 'EN COURS';
         }
-        // Prolongations
-        else if (['ET', 'BT'].includes(clockHalf)) {
-          displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-          displayPhase = 'PROLONGATION';
-        }
-        // Tirs au but
-        else if (clockHalf === 'P') {
-          displayTime = 'TAB';
-          displayPhase = 'TIRS AU BUT';
-        }
-        // Par défaut
-        else {
-          displayTime = `${elapsed}'${secs.toString().padStart(2, '0')}`;
-          displayPhase = '1ère MT';
-        }
-        
-        console.log('⏱️ Affichage:', displayTime, '(startTime:', new Date(clockStartTime).toLocaleTimeString(), ', apiElapsed:', apiElapsed, ', calculated:', calculatedMinutes, ')');
         
         setTime(displayTime);
         setPhase(displayPhase);
       };
       
       updateTime();
-      const iv = setInterval(updateTime, 1000);
-      return () => clearInterval(iv);
-    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half, matchState?.matchClock?.elapsedMinutes]);
+      const interval = setInterval(updateTime, 1000);
+      return () => clearInterval(interval);
+    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half, matchStartTime, matchHalf]);
 
     return (
-      <div className="bg-black rounded-xl px-6 py-3 border-2 border-gray-700 shadow-lg">
-        <div className="text-6xl font-mono font-black text-green-400" style={{ letterSpacing: '0.1em' }}>
+      <div className="bg-black rounded-xl px-6 py-3 border-2 border-green-500 shadow-lg">
+        <div className="text-6xl font-mono font-black text-green-400 text-center">
           {time}
         </div>
-        <div className="text-sm font-bold text-green-500 text-center mt-1">
+        <div className="text-sm font-bold text-green-300 text-center mt-1">
           {phase}
         </div>
       </div>
