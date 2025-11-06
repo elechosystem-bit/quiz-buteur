@@ -1123,24 +1123,14 @@ export default function App() {
   };
 
   const startMatchMonitoring = (fixtureId) => {
-    // Arrêter toute surveillance précédente
     if (matchCheckInterval.current) {
       clearInterval(matchCheckInterval.current);
     }
 
-    // Fonction de synchronisation avec l'API
-    const syncMatch = async () => {
+    matchCheckInterval.current = setInterval(async () => {
       try {
-        setSyncStatus('syncing'); // 🔥 Indiquer synchronisation en cours
-        
         const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (!apiKey) {
-          console.error('❌ Clé API manquante');
-          setSyncStatus('error');
-          return;
-        }
-        
-        console.log('🔄 Tentative sync API pour fixture:', fixtureId);
+        if (!apiKey) return;
 
         const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
           method: 'GET',
@@ -1158,19 +1148,36 @@ export default function App() {
           const elapsed = fixture.fixture.status.elapsed || 0;
           const newScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
 
-          setSyncStatus('success'); // 🔥 Synchronisation réussie
-          lastSyncRef.current = Date.now(); // 🔥 Mise à jour timestamp
+          // 🔥 DÉTECTION AUTOMATIQUE DE FIN DE MATCH
+          if (['FT', 'AET', 'PEN'].includes(status)) {
+            console.log('🏁 Match terminé détecté ! Arrêt automatique...');
+            
+            if (barId) {
+              await update(ref(db, `bars/${barId}/matchState/matchClock`), { half: 'FT' });
+              await update(ref(db, `bars/${barId}/selectedMatch`), { half: 'FT', score: newScore });
+            }
+            
+            await stopMatch();
+            stopMatchMonitoring();
+            return;
+          }
 
-          // Mettre à jour les infos du match en temps réel
-          if (barId && selectedMatch) {
-            await update(ref(db, `bars/${barId}/selectedMatch`), {
+          if (elapsed > 0 && !matchState?.active && ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status)) {
+            const updatedMatchData = {
+              ...selectedMatch,
               elapsed: elapsed,
               half: status,
               score: newScore
-            });
+            };
+            
+            await set(ref(db, `bars/${barId}/selectedMatch`), updatedMatchData);
+            setSelectedMatch(updatedMatchData);
+            setMatchElapsedMinutes(elapsed);
+            setMatchStartTime(Date.now() - (elapsed * 60000));
+            setMatchHalf(status);
+            await startMatch();
           }
           
-          // Si le match est actif, mettre à jour le matchClock, le score et la mi-temps
           if (barId) {
             const currentMatchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
             if (currentMatchStateSnap.exists()) {
@@ -1180,47 +1187,33 @@ export default function App() {
                 const currentHalf = currentMatchState?.matchClock?.half || '1H';
                 const clockStartTime = currentMatchState?.matchClock?.startTime || Date.now();
                 
-                // 🔥 SYNCHRONISATION FORCÉE : Recalculer startTime à chaque sync
-                const correctStartTime = Date.now() - (elapsed * 60000);
+                let updatedStartTime = clockStartTime;
+                if (status === '2H' && (currentHalf === '1H' || currentHalf === 'HT')) {
+                  updatedStartTime = Date.now() - (elapsed * 60000);
+                } else if (status === '1H' && currentHalf === 'HT') {
+                  updatedStartTime = Date.now() - (elapsed * 60000);
+                }
                 
-                // Mettre à jour le matchClock, le score et la mi-temps
                 await update(ref(db, `bars/${barId}/matchState`), {
                   'matchClock.elapsedMinutes': elapsed,
                   'matchClock.half': status,
-                  'matchClock.startTime': correctStartTime, // Toujours recalculer !
-                  'matchClock.isPaused': status === 'HT', // 🔥 NOUVEAU : Indicateur de pause
+                  'matchClock.startTime': updatedStartTime,
                   'matchInfo.score': newScore
                 });
                 
-                // Mettre à jour selectedMatch aussi pour cohérence
                 await update(ref(db, `bars/${barId}/selectedMatch`), {
                   elapsed: elapsed,
                   half: status,
                   score: newScore
                 });
-                
-                console.log(`✅ Sync forcée : ${elapsed}' - StartTime: ${new Date(correctStartTime).toLocaleTimeString()} - ${status} - ${newScore}`);
               }
             }
           }
         }
       } catch (e) {
-        console.error('❌ Erreur surveillance match:', e);
-        console.error('Détails:', e.message, e.response);
-        // Ne pas marquer comme erreur si le chrono fonctionne localement
-        if (barId && matchState?.active) {
-          setSyncStatus('success'); // Continue en mode local
-        } else {
-          setSyncStatus('error');
-        }
+        console.error('Erreur surveillance match:', e);
       }
-    };
-
-    // Vérifier toutes les 10 secondes
-    matchCheckInterval.current = setInterval(syncMatch, API_SYNC_INTERVAL);
-    
-    // Première synchronisation immédiate
-    syncMatch();
+    }, 30000);
   };
 
   const stopMatchMonitoring = () => {
@@ -1816,6 +1809,11 @@ export default function App() {
     const matchInfo = selectedMatch || matchState?.matchInfo;
     const hasMatchInfo = matchInfo?.homeTeam && matchInfo?.awayTeam;
     
+    const isMatchFinished = matchState?.matchClock?.half === 'FT' || 
+                           selectedMatch?.half === 'FT' ||
+                           ['FT', 'AET', 'PEN'].includes(matchState?.matchClock?.half) ||
+                           ['FT', 'AET', 'PEN'].includes(selectedMatch?.half);
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8">
         {notification && (
@@ -1835,7 +1833,11 @@ export default function App() {
             <h1 className="text-5xl font-black text-white mb-2">🏆 CLASSEMENT LIVE</h1>
             
             {hasMatchInfo ? (
-              <div className="mb-3 bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-4 rounded-xl border-2 border-blue-500">
+              <div className={`mb-3 p-4 rounded-xl border-2 ${
+                isMatchFinished 
+                  ? 'bg-gradient-to-r from-red-900/50 to-orange-900/50 border-red-500'
+                  : 'bg-gradient-to-r from-blue-900/50 to-purple-900/50 border-blue-500'
+              }`}>
                 <div className="flex items-center justify-center gap-4">
                   {matchInfo.homeLogo && (
                     <img src={matchInfo.homeLogo} alt={matchInfo.homeTeam} className="w-12 h-12 object-contain" />
@@ -1847,27 +1849,37 @@ export default function App() {
                       {matchInfo.awayTeam}
                     </p>
                     <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
-            </div>
+                    {isMatchFinished && (
+                      <p className="text-3xl font-black text-red-400 mt-2 animate-pulse">
+                        🏁 MATCH TERMINÉ
+                      </p>
+                    )}
+                  </div>
                   {matchInfo.awayLogo && (
                     <img src={matchInfo.awayLogo} alt={matchInfo.awayTeam} className="w-12 h-12 object-contain" />
                   )}
-          </div>
-        </div>
+                </div>
+              </div>
             ) : matchState?.active ? (
               <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
-                <p className="text-2xl text-yellow-400">⚽ Match en cours</p>
-      </div>
+                <p className="text-2xl text-yellow-400">🏀 Match en cours</p>
+              </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             )}
             
-            {matchState?.active && countdown && (
+            {matchState?.active && countdown && !isMatchFinished && (
               <div className="space-y-2">
                 <p className="text-xl text-yellow-400">⏱️ Prochaine: {countdown}</p>
                 <MatchClock syncStatus={syncStatus} lastSyncRef={lastSyncRef} />
-          </div>
+              </div>
             )}
-            {(!matchState || !matchState.active) && (
+            {isMatchFinished && (
+              <div className="bg-red-900/50 p-4 rounded-xl border-2 border-red-500 mt-3">
+                <p className="text-3xl text-red-300 font-black text-center">🏁 QUIZ TERMINÉ</p>
+              </div>
+            )}
+            {(!matchState || !matchState.active) && !isMatchFinished && (
               <p className="text-gray-300 mt-2">Match non démarré</p>
             )}
           </div>
