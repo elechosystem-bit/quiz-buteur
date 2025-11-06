@@ -67,6 +67,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('idle'); // 🔥 État de synchronisation
   const lastSyncRef = useRef(Date.now()); // 🔥 Timestamp dernière sync
   const [lastQuestionResult, setLastQuestionResult] = useState(null);
+  const [answerHistory, setAnswerHistory] = useState([]);
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
@@ -1103,6 +1104,26 @@ export default function App() {
         timestamp: Date.now()
       });
 
+      // 🔥 METTRE À JOUR L'HISTORIQUE POUR TOUS LES JOUEURS QUI ONT RÉPONDU
+      if (answersSnap.exists() && currentMatchId) {
+        const answersData = answersSnap.val();
+        if (answersData && typeof answersData === 'object') {
+          for (const [userId, data] of Object.entries(answersData)) {
+            try {
+              const historyItemId = `${questionId}_${userId}`;
+              const isCorrect = data.answer === randomWinner;
+              
+              await update(ref(db, `bars/${barId}/playerHistory/${userId}/${historyItemId}`), {
+                isCorrect: isCorrect,
+                correctAnswer: randomWinner
+              });
+            } catch (e) {
+              console.error('Erreur lors de la mise à jour de l\'historique:', e);
+            }
+          }
+        }
+      }
+
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers/${questionId}`));
       
@@ -1935,11 +1956,26 @@ export default function App() {
                         if (!playerAnswer && user && barId && currentQuestion) {
                           try {
                             setPlayerAnswer(opt);
+                            const timestamp = Date.now();
+                            
+                            // Sauvegarder la réponse dans answers
                             await set(ref(db, `bars/${barId}/answers/${currentQuestion.id}/${user.uid}`), {
                               answer: opt,
-                              timestamp: Date.now(),
+                              timestamp: timestamp,
                               timeLeft: timeLeft || 0
                             });
+                            
+                            // 🔥 SAUVEGARDER DANS L'HISTORIQUE
+                            const historyItemId = `${currentQuestion.id}_${user.uid}`;
+                            await set(ref(db, `bars/${barId}/playerHistory/${user.uid}/${historyItemId}`), {
+                              questionId: currentQuestion.id,
+                              question: currentQuestion.text || '',
+                              myAnswer: opt,
+                              timestamp: timestamp,
+                              isCorrect: null, // En attente de validation
+                              correctAnswer: null
+                            });
+                            
                             console.log('✅ Réponse enregistrée:', opt);
                           } catch (e) {
                             console.error('❌ Erreur enregistrement réponse:', e);
@@ -2004,16 +2040,90 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <div className="bg-white rounded-3xl p-12 text-center shadow-2xl">
-                <div className="text-6xl mb-4">⚽</div>
-                <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
-                {matchState?.active && countdown && (
-                  <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
-                )}
-                {(!matchState || !matchState.active) && (
-                  <p className="text-lg text-gray-500">En attente du démarrage</p>
-                )}
-              </div>
+              <>
+                <div className="bg-white rounded-3xl p-12 text-center shadow-2xl mb-4">
+                  <div className="text-6xl mb-4">⚽</div>
+                  <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
+                  {matchState?.active && countdown && (
+                    <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
+                  )}
+                  {(!matchState || !matchState.active) && (
+                    <p className="text-lg text-gray-500">En attente du démarrage</p>
+                  )}
+                </div>
+
+                {/* 🔥 HISTORIQUE DES RÉPONSES */}
+                <div className="bg-white rounded-2xl p-6 shadow-xl mb-4">
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">📝 Mes réponses</h2>
+                  
+                  {answerHistory.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      <div className="text-5xl mb-3">📋</div>
+                      <p className="text-lg">Aucune réponse pour le moment</p>
+                      <p className="text-sm mt-2">Répondez aux questions pour voir votre historique ici</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {answerHistory.slice(0, 10).map((item) => (
+                        <div 
+                          key={item.id} 
+                          className={`p-4 rounded-xl border-2 ${
+                            item.isCorrect === true 
+                              ? 'bg-green-50 border-green-400' 
+                              : item.isCorrect === false 
+                              ? 'bg-red-50 border-red-400'
+                              : 'bg-blue-50 border-blue-300'
+                          }`}
+                        >
+                          {/* Question */}
+                          <div className="text-sm font-bold text-gray-900 mb-3">
+                            {item.question}
+                          </div>
+                          
+                          {/* Ma réponse */}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-600">Ma réponse:</span>
+                              <span className={`font-bold text-base ${
+                                item.isCorrect === true 
+                                  ? 'text-green-600' 
+                                  : item.isCorrect === false 
+                                  ? 'text-red-600'
+                                  : 'text-blue-600'
+                              }`}>
+                                {item.myAnswer}
+                              </span>
+                            </div>
+                            <div className="text-2xl">
+                              {item.isCorrect === true && '✅'}
+                              {item.isCorrect === false && '❌'}
+                              {item.isCorrect === null && '⏳'}
+                            </div>
+                          </div>
+                          
+                          {/* Bonne réponse si incorrecte */}
+                          {item.isCorrect === false && item.correctAnswer && (
+                            <div className="bg-green-100 border border-green-300 rounded-lg p-2 mt-2">
+                              <span className="text-xs text-green-700">Bonne réponse:</span>
+                              <span className="text-sm font-bold text-green-800 ml-2">
+                                {item.correctAnswer}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* Timestamp */}
+                          <div className="text-xs text-gray-400 mt-2">
+                            {new Date(item.timestamp).toLocaleTimeString('fr-FR', { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
