@@ -188,10 +188,14 @@ export default function App() {
   };
 
   const selectMatch = async (match) => {
+    setSelectedMatch(match);
+    console.log('⚽ Match sélectionné:', match);
+    
     if (match.elapsed !== undefined) {
       setMatchElapsedMinutes(match.elapsed);
       setMatchStartTime(Date.now() - (match.elapsed * 60000));
       setMatchHalf(match.half || '1H');
+      console.log('⏱️ Chrono configuré :', match.elapsed, '\'', 'écoulées, démarrage à', new Date(Date.now() - (match.elapsed * 60000)).toLocaleTimeString());
     }
     
     try {
@@ -207,17 +211,17 @@ export default function App() {
         status: match.status,
         elapsed: match.elapsed || 0,
         half: match.half || '1H',
-        autoStartEnabled: true // Activation du démarrage auto
+        autoStartEnabled: true
       };
       
       await set(ref(db, `bars/${barId}/selectedMatch`), matchData);
       await new Promise(resolve => setTimeout(resolve, 500));
       setSelectedMatch(matchData);
       
-      // 🔥 C'EST ICI QU'IL FAUT APPELER startMatchMonitoring
-      console.log('🔥 Appel de startMatchMonitoring avec fixture ID:', match.id);
+      // 🔥 CRITIQUE : Lancer la surveillance
+      console.log('🚀 Lancement startMatchMonitoring pour fixture:', match.id);
       startMatchMonitoring(match.id);
-      console.log('🔥 startMatchMonitoring appelé');
+      console.log('✅ startMatchMonitoring lancé');
       
     } catch (e) {
       alert('❌ Erreur: ' + e.message);
@@ -1373,107 +1377,113 @@ export default function App() {
     }
 
     const performSync = async () => {
-      console.log('⏰ CHECK à', new Date().toLocaleTimeString());
-      
-      console.log('🔍 Vérification match à', new Date().toLocaleTimeString());
-      
-      const matchData = await syncMatchData(fixtureId);
-      
-      if (!matchData) {
-        console.warn('⚠️ Pas de données reçues');
-        return;
-      }
-      
-      console.log('📡 Status API:', matchData.status);
-      console.log('📡 Status complet:', matchData.statusFull);
-      
-      // 🔥 VÉRIFIER PLUSIEURS CONDITIONS DE FIN
-      const finishedStatuses = ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'];
-      const isFinished = finishedStatuses.includes(matchData.status);
-      
-      console.log('🏁 Match terminé ?', isFinished);
-      
-      if (isFinished) {
-        console.log('🛑 ARRÊT DU MATCH DÉTECTÉ');
+      try {
+        console.log('⏰ CHECK à', new Date().toLocaleTimeString());
         
-        const finalScore = matchData.score;
+        console.log('🔍 Vérification match à', new Date().toLocaleTimeString());
         
-        // Arrêter immédiatement
-        setMatchHalf('FT');
-        setMatchElapsedMinutes(90);
+        const matchData = await syncMatchData(fixtureId);
         
-        if (barId) {
-          // Arrêter le matchState
-          await update(ref(db, `bars/${barId}/matchState`), {
-            active: false,
-            matchClock: {
+        if (!matchData) {
+          console.warn('⚠️ Pas de données reçues');
+          return;
+        }
+        
+        console.log('📡 Status API:', matchData.status);
+        console.log('📡 Status complet:', matchData.statusFull);
+        
+        // 🔥 VÉRIFIER PLUSIEURS CONDITIONS DE FIN
+        const finishedStatuses = ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'];
+        const isFinished = finishedStatuses.includes(matchData.status);
+        
+        console.log('🏁 Match terminé ?', isFinished);
+        
+        if (isFinished) {
+          console.log('🛑 ARRÊT DU MATCH DÉTECTÉ');
+          
+          const finalScore = matchData.score;
+          
+          // Arrêter immédiatement
+          setMatchHalf('FT');
+          setMatchElapsedMinutes(90);
+          
+          if (barId) {
+            // Arrêter le matchState
+            await update(ref(db, `bars/${barId}/matchState`), {
+              active: false,
+              matchClock: {
+                half: 'FT',
+                elapsedMinutes: 90
+              },
+              matchInfo: {
+                score: finalScore
+              }
+            });
+            
+            // Mettre à jour selectedMatch
+            await update(ref(db, `bars/${barId}/selectedMatch`), {
               half: 'FT',
-              elapsedMinutes: 90
-            },
-            matchInfo: {
               score: finalScore
-            }
-          });
+            });
+            
+            // Supprimer la question en cours
+            await remove(ref(db, `bars/${barId}/currentQuestion`));
+            
+            console.log('✅ Firebase mis à jour - Match arrêté');
+          }
           
-          // Mettre à jour selectedMatch
-          await update(ref(db, `bars/${barId}/selectedMatch`), {
-            half: 'FT',
-            score: finalScore
-          });
+          // IMPORTANT : Arrêter la surveillance
+          stopMatchMonitoring();
           
-          // Supprimer la question en cours
-          await remove(ref(db, `bars/${barId}/currentQuestion`));
-          
-          console.log('✅ Firebase mis à jour - Match arrêté');
+          alert('🏁 Match terminé ! Score final : ' + finalScore);
+          return;
         }
         
-        // IMPORTANT : Arrêter la surveillance
-        stopMatchMonitoring();
+        console.log('📊 État actuel:', {
+          local: { elapsed: matchElapsedMinutes, half: matchHalf },
+          api: { elapsed: matchData.elapsed, half: matchData.status }
+        });
         
-        alert('🏁 Match terminé ! Score final : ' + finalScore);
-        return;
-      }
-      
-      console.log('📊 État actuel:', {
-        local: { elapsed: matchElapsedMinutes, half: matchHalf },
-        api: { elapsed: matchData.elapsed, half: matchData.status }
-      });
-      
-      // Calculer le nouveau startTime basé sur le temps API
-      const newStartTime = Date.now() - (matchData.elapsed * 60000);
-      
-      console.log('⏱️ Mise à jour chrono:', {
-        elapsed: matchData.elapsed,
-        startTime: new Date(newStartTime).toLocaleTimeString(),
-        half: matchData.status
-      });
-      
-      // Mettre à jour les states React
-      setMatchElapsedMinutes(matchData.elapsed);
-      setMatchStartTime(newStartTime);
-      setMatchHalf(matchData.status);
-      
-      // Mettre à jour Firebase pour tous les clients
-      if (barId) {
-        const updates = {
-          'selectedMatch/elapsed': matchData.elapsed,
-          'selectedMatch/half': matchData.status,
-          'selectedMatch/score': matchData.score
-        };
+        // Calculer le nouveau startTime basé sur le temps API
+        const newStartTime = Date.now() - (matchData.elapsed * 60000);
         
-        if (matchState?.active) {
-          updates['matchState/matchClock'] = {
-            startTime: newStartTime,
-            elapsedMinutes: matchData.elapsed,
-            half: matchData.status
+        console.log('⏱️ Mise à jour chrono:', {
+          elapsed: matchData.elapsed,
+          startTime: new Date(newStartTime).toLocaleTimeString(),
+          half: matchData.status
+        });
+        
+        // Mettre à jour les states React
+        setMatchElapsedMinutes(matchData.elapsed);
+        setMatchStartTime(newStartTime);
+        setMatchHalf(matchData.status);
+        
+        // Mettre à jour Firebase pour tous les clients
+        if (barId) {
+          const updates = {
+            'selectedMatch/elapsed': matchData.elapsed,
+            'selectedMatch/half': matchData.status,
+            'selectedMatch/score': matchData.score
           };
-          updates['matchState/matchInfo'] = {
-            score: matchData.score
-          };
+          
+          if (matchState?.active) {
+            updates['matchState/matchClock'] = {
+              startTime: newStartTime,
+              elapsedMinutes: matchData.elapsed,
+              half: matchData.status
+            };
+            updates['matchState/matchInfo'] = {
+              score: matchData.score
+            };
+          }
+          
+          await update(ref(db, `bars/${barId}`), updates);
+          console.log('✅ Firebase mis à jour');
         }
-        
-        await update(ref(db, `bars/${barId}`), updates);
-        console.log('✅ Firebase mis à jour');
+      } catch (error) {
+        console.error('❌ ERREUR CRITIQUE dans performSync:', error);
+        console.error('Stack trace:', error.stack);
+        // Ne pas stopper l'interval, continuer à essayer
       }
     };
 
