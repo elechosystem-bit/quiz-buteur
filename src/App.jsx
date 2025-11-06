@@ -1429,7 +1429,7 @@ export default function App() {
           
           // Supprimer la question des questions en attente
           await remove(ref(db, `bars/${barId}/pendingQuestions/${questionId}`));
-          await remove(ref(db, `bars/${barId}/answers/${questionId}`);
+          await remove(ref(db, `bars/${barId}/answers/${questionId}`));
         }
       }
     } catch (e) {
