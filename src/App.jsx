@@ -971,6 +971,30 @@ export default function App() {
         }
       };
       
+      // ==================== VALIDATION DIFFÉRÉE ====================
+      const validatePendingQuestions = async () => {
+        if (!barId || !selectedMatch || !currentMatchId) return;
+        
+        try {
+          const pendingQuestionsRef = ref(db, `bars/${barId}/pendingQuestions`);
+          const snap = await get(pendingQuestionsRef);
+          
+          if (!snap.exists()) return;
+          
+          const questions = snap.val();
+          const now = Date.now();
+          
+          for (const [questionId, question] of Object.entries(questions)) {
+            if (now >= question.validationTime) {
+              console.log('⏰ Validation question:', question.text);
+              await remove(ref(db, `bars/${barId}/pendingQuestions/${questionId}`));
+            }
+          }
+        } catch (e) {
+          console.error('Erreur validation:', e);
+        }
+      };
+      
       await set(ref(db, `bars/${barId}/matchState`), newMatchState);
       await new Promise(resolve => setTimeout(resolve, 500));
       
@@ -1509,8 +1533,6 @@ export default function App() {
       try {
         console.log('⏰ CHECK à', new Date().toLocaleTimeString());
         
-        console.log('🔍 Vérification match à', new Date().toLocaleTimeString());
-        
         const matchData = await syncMatchData(fixtureId);
         
         if (!matchData) {
@@ -1519,27 +1541,21 @@ export default function App() {
         }
         
         console.log('📡 Status API:', matchData.status);
-        console.log('📡 Status complet:', matchData.statusFull);
         
-        // 🔥 VÉRIFIER PLUSIEURS CONDITIONS DE FIN
-        const finishedStatuses = ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'];
-        const isFinished = finishedStatuses.includes(matchData.status);
+        // 🔥 DÉTECTER LA FIN DU MATCH
+        const matchFinished = ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(matchData.status);
         
-        console.log('🏁 Match terminé ?', isFinished);
-        
-        if (isFinished) {
-          console.log('🛑 ARRÊT DU MATCH DÉTECTÉ');
+        if (matchFinished) {
+          console.log('🏁 MATCH TERMINÉ ! Arrêt du quiz...');
           
           const finalScore = matchData.score;
           
-          // Arrêter immédiatement
-          setMatchHalf('FT');
-          setMatchElapsedMinutes(90);
-          
+          // Arrêter le match
           if (barId) {
-            // Arrêter le matchState
             await update(ref(db, `bars/${barId}/matchState`), {
               active: false,
+              endTime: Date.now(),
+              finalStatus: matchData.status,
               matchClock: {
                 half: 'FT',
                 elapsedMinutes: 90
@@ -1558,13 +1574,24 @@ export default function App() {
             // Supprimer la question en cours
             await remove(ref(db, `bars/${barId}/currentQuestion`));
             
+            // Notifier les joueurs
+            const notifRef = push(ref(db, `bars/${barId}/notifications`));
+            await set(notifRef, {
+              type: 'matchEnd',
+              message: '🏁 Match terminé ! Merci d\'avoir joué !',
+              timestamp: Date.now()
+            });
+            
             console.log('✅ Firebase mis à jour - Match arrêté');
           }
           
-          // IMPORTANT : Arrêter la surveillance
+          // Arrêter la surveillance
           stopMatchMonitoring();
           
-          alert('🏁 Match terminé ! Score final : ' + finalScore);
+          // Mettre à jour les states locaux
+          setMatchHalf('FT');
+          setMatchElapsedMinutes(90);
+          
           return;
         }
         
@@ -2136,6 +2163,45 @@ export default function App() {
                 Déconnexion
               </button>
             </div>
+
+            {/* 🔥 NOUVEAU : Toujours afficher le match en cours */}
+            {(selectedMatch || matchState?.matchInfo) && (
+              <div className="bg-gradient-to-r from-blue-900 to-green-900 rounded-xl p-4 shadow-lg mb-4">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-3 mb-2">
+                    {(selectedMatch?.homeLogo || matchState?.matchInfo?.homeLogo) && (
+                      <img 
+                        src={selectedMatch?.homeLogo || matchState?.matchInfo?.homeLogo} 
+                        alt="Home"
+                        className="w-8 h-8 object-contain bg-white rounded"
+                      />
+                    )}
+                    <div className="text-white text-xl font-bold">
+                      {selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam}
+                    </div>
+                    <div className="text-yellow-400 text-2xl font-black mx-2">
+                      {selectedMatch?.score || matchState?.matchInfo?.score || 'vs'}
+                    </div>
+                    <div className="text-white text-xl font-bold">
+                      {selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam}
+                    </div>
+                    {(selectedMatch?.awayLogo || matchState?.matchInfo?.awayLogo) && (
+                      <img 
+                        src={selectedMatch?.awayLogo || matchState?.matchInfo?.awayLogo} 
+                        alt="Away"
+                        className="w-8 h-8 object-contain bg-white rounded"
+                      />
+                    )}
+                  </div>
+                  <div className="text-xs text-green-200">{selectedMatch?.league || matchState?.matchInfo?.league}</div>
+                  {matchState?.active ? (
+                    <div className="text-red-400 font-bold mt-1 text-sm">🔴 MATCH EN COURS</div>
+                  ) : (
+                    <div className="text-gray-300 font-bold mt-1 text-sm">⏸️ Match terminé</div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {currentQuestion?.text && currentQuestion?.options ? (
               <div className="bg-white rounded-3xl p-8 shadow-2xl">
