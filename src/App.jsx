@@ -24,21 +24,6 @@ let __serverOffset = 0;
 onValue(serverOffsetRef, snap => { __serverOffset = snap.val() || 0; });
 const serverNow = () => Date.now() + __serverOffset;
 
-// ---------- PATHS & TIME HELPERS (unique source of truth) ----------
-const PATHS = {
-  matchState: (barId) => `bars/${barId}/matchState`,
-  selectedMatch: (barId) => `bars/${barId}/selectedMatch`,
-  currentQuestion: (barId) => `bars/${barId}/currentQuestion`,
-  answers: (barId, qid) => `bars/${barId}/answers/${qid}`,
-  players: (barId, matchId) => `bars/${barId}/matches/${matchId}/players`,
-  // ancien: pendingQuestions / pendingPredictions => on fusionne ici :
-  pending: (barId, matchId) => `bars/${barId}/matches/${matchId}/pendingPredictions`,
-  resolved: (barId, matchId) => `bars/${barId}/matches/${matchId}/resolvedPredictions`,
-  notifications: (barId) => `bars/${barId}/notifications`,
-};
-
-const nowMs = () => Date.now(); // on s'aligne côté client
-
 const schedulerLockRef = (barId) => ref(db, `bars/${barId}/locks/scheduler`);
 const tryLock = async (uid, barId) => {
   const now = serverNow();
@@ -176,14 +161,14 @@ const parseWindowPrediction = (text) => {
   const isCorner  = /corner/.test(t);
 
   let eventType = null;
-  if (isGoal) eventType = 'Goal';
-  else if (isRed) eventType = 'Card.Red';
-  else if (isYellow) eventType = 'Card.Yellow';
-  else if (isPenalty) eventType = 'Penalty';
-  else if (isCorner) eventType = 'Corner';
+  if (isGoal)    eventType = 'goal';
+  else if (isRed)    eventType = 'red_card';
+  else if (isYellow) eventType = 'yellow_card';
+  else if (isPenalty)eventType = 'penalty';
+  else if (isCorner) eventType = 'corner';
 
   if (!windowMinutes || !eventType) return null;
-  return { kind: 'EVENT_IN_WINDOW', eventType, windowMinutes };
+  return { kind: 'window_event', eventType, windowMinutes };
 };
 
 // Fait correspondre un event API-Football à notre type demandé
@@ -219,7 +204,7 @@ const parseNextGoalQuestion = (text) => {
   if (!isNextGoal) return null;
   const m = t.match(/dans\s+(\d+)\s*min/); // optionnel
   const windowMinutes = m ? Number(m[1]) : null;
-  return { kind: 'NEXT_GOAL_TEAM', windowMinutes };
+  return { kind: 'next_goal', windowMinutes };
 };
 // -----------------------------------------
 
@@ -969,22 +954,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [barId, matchState, currentQuestion]);
 
+  // 🔥 VÉRIFIER LES QUESTIONS EN ATTENTE PÉRIODIQUEMENT
   useEffect(() => {
-    if (!barId || !currentMatchId || !matchState?.active || !selectedMatch) return;
-    const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-    if (!apiKey) return;
-
-    const it = setInterval(() => {
-      resolvePendingPredictions({
-        barId,
-        matchId: currentMatchId,
-        apiKey,
-        fixtureId: selectedMatch.id,
-      });
+    if (!barId || !matchState?.active || !selectedMatch) return;
+    
+    // Vérifier les questions en attente toutes les 10 secondes
+    const interval = setInterval(() => {
+      validatePendingQuestions();
     }, 10000);
-
-    return () => clearInterval(it);
-  }, [barId, currentMatchId, matchState?.active, selectedMatch?.id]);
+    
+    return () => clearInterval(interval);
+  }, [barId, matchState?.active, selectedMatch, currentMatchId]);
 
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
@@ -1144,7 +1124,31 @@ export default function App() {
         }
       };
       
-      await set(ref(db, PATHS.matchState(barId)), newMatchState);
+      // ==================== VALIDATION DIFFÉRÉE ====================
+      const validatePendingQuestions = async () => {
+        if (!barId || !selectedMatch || !currentMatchId) return;
+        
+        try {
+          const pendingQuestionsRef = ref(db, `bars/${barId}/pendingQuestions`);
+          const snap = await get(pendingQuestionsRef);
+          
+          if (!snap.exists()) return;
+          
+          const questions = snap.val();
+          const now = Date.now();
+          
+          for (const [questionId, question] of Object.entries(questions)) {
+            if (now >= question.validationTime) {
+              console.log('⏰ Validation question:', question.text);
+              await remove(ref(db, `bars/${barId}/pendingQuestions/${questionId}`));
+            }
+          }
+        } catch (e) {
+          console.error('Erreur validation:', e);
+        }
+      };
+      
+      await set(ref(db, `bars/${barId}/matchState`), newMatchState);
       await new Promise(resolve => setTimeout(resolve, 500));
       
       await set(ref(db, `bars/${barId}/matches/${matchId}`), {
@@ -1239,41 +1243,22 @@ export default function App() {
 
       const parsedWindow  = parseWindowPrediction(picked.text);
       const parsedNextGoal = parseNextGoalQuestion(picked.text);
-      const startElapsed = matchState?.matchClock?.apiElapsed || matchState?.matchClock?.elapsedMinutes || matchElapsedMinutes || 0;
-
-      let kind = 'GENERIC';
-      let predictionMeta = {};
-      let windowMinutes = null;
-
-      if (parsedWindow) {
-        kind = parsedWindow.kind;
-        predictionMeta = { eventType: parsedWindow.eventType };
-        windowMinutes = parsedWindow.windowMinutes;
-      } else if (parsedNextGoal) {
-        kind = parsedNextGoal.kind;
-        windowMinutes = parsedNextGoal.windowMinutes ?? null;
-        const opts = Array.isArray(picked.options) ? picked.options : [];
-        const findOpt = (needle) => opts.find(o => norm(o).includes(needle)) || null;
-        predictionMeta = {
-          windowMinutes,
-          homeOption: findOpt('domicile') || opts[0] || 'Domicile',
-          awayOption: findOpt('exterieur') || findOpt('extérieur') || opts[1] || 'Extérieur',
-          noneOption: findOpt('aucun') || findOpt('aucune') || opts.find(o => norm(o).includes('egalite')) || 'Aucun'
-        };
-      }
+      const startElapsed = matchState?.matchClock?.apiElapsed || 0;
 
       const questionData = {
         ...picked,
         id: Date.now(),
         createdAt: serverTimestamp(),
         timeLeft: 15,
-        kind,
-        windowMinutes,
-        startElapsed,
-        predictionMeta
+        kind: parsedNextGoal ? 'next_goal' : (parsedWindow ? 'window_event' : 'generic'),
+        // window_event:
+        eventType: parsedWindow?.eventType ?? null,
+        windowMinutes: (parsedWindow?.windowMinutes ?? parsedNextGoal?.windowMinutes) ?? null,
+        // minute match au lancement
+        startElapsed
       };
 
-      await set(ref(db, PATHS.currentQuestion(barId)), questionData);
+      await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
 
     } catch (e) {
       console.error('Erreur création question:', e);
@@ -1282,8 +1267,8 @@ export default function App() {
   };
 
   const autoValidate = async () => {
-    if (!barId || !currentMatchId || isProcessingRef.current) {
-      console.log('Mobile: autoValidate ignorée - conditions non remplies', { barId, currentMatchId, isProcessing: isProcessingRef.current });
+    if (!barId || isProcessingRef.current) {
+      console.log('Mobile: autoValidate ignorée - conditions non remplies', { barId, isProcessing: isProcessingRef.current });
       return;
     }
     if (!currentQuestion) return;
@@ -1291,61 +1276,45 @@ export default function App() {
     isProcessingRef.current = true;
     try {
       const q = currentQuestion;
-      const matchClock = matchState?.matchClock || {};
-      const apiElapsed = matchClock.apiElapsed ?? matchClock.elapsedMinutes ?? matchElapsedMinutes ?? 0;
-      const lastSyncAt = matchClock.lastSyncAt ?? serverNow();
-      const matchStartAt = matchClock.matchStartAt ?? matchClock.startTime ?? (lastSyncAt - apiElapsed * 60000);
-      const startM = Number(q.startElapsed || 0);
-      const windowMinutes = q.windowMinutes != null ? Number(q.windowMinutes) : null;
-      const windowStartMs = matchStartAt + startM * 60000;
-      const expiresAt = windowMinutes != null ? windowStartMs + windowMinutes * 60000 : null;
-      const points = q.points || 1;
 
-      // 1) EVENT_IN_WINDOW (Oui/Non dans X minutes)
-      if (q.kind === 'EVENT_IN_WINDOW' && windowMinutes != null) {
-        const payload = {
+      // 1) window_event (Oui/Non dans X minutes)
+      if (q.kind === 'window_event' && q.windowMinutes != null) {
+        const startM = Number(q.startElapsed || 0);
+        const resolveAtMinute = startM + Number(q.windowMinutes);
+        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${q.id}`), {
           id: q.id,
-          questionId: q.id,
-          kind: 'EVENT_IN_WINDOW',
+          kind: q.kind,
           text: q.text,
-          createdAt: serverNow(),
-          matchStartAt,
-          windowStartMs,
-          expiresAt,
-          predictionMeta: q.predictionMeta || {},
-          options: q.options || [],
-          points
-        };
-
-        await set(ref(db, `${PATHS.pending(barId, currentMatchId)}/${q.id}`), payload);
-        await remove(ref(db, PATHS.currentQuestion(barId)));
+          eventType: q.eventType,
+          startedAtElapsed: startM,
+          resolveAtElapsed: resolveAtMinute,
+          createdAt: q.createdAt,
+          options: q.options || []
+        });
+        await remove(ref(db, `bars/${barId}/currentQuestion`));
         isProcessingRef.current = false;
         return;
       }
 
-      // 2) NEXT_GOAL_TEAM (avec ou sans fenêtre)
-      if (q.kind === 'NEXT_GOAL_TEAM') {
-        const payload = {
+      // 2) next_goal (avec ou sans fenêtre)
+      if (q.kind === 'next_goal') {
+        const startM = Number(q.startElapsed || 0);
+        const resolveAtMinute = (q.windowMinutes != null) ? startM + Number(q.windowMinutes) : null;
+        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${q.id}`), {
           id: q.id,
-          questionId: q.id,
-          kind: 'NEXT_GOAL_TEAM',
+          kind: q.kind,
           text: q.text,
-          createdAt: serverNow(),
-          matchStartAt,
-          windowStartMs,
-          expiresAt,
-          predictionMeta: q.predictionMeta || {},
-          options: q.options || [],
-          points
-        };
-
-        await set(ref(db, `${PATHS.pending(barId, currentMatchId)}/${q.id}`), payload);
-        await remove(ref(db, PATHS.currentQuestion(barId)));
+          startedAtElapsed: startM,
+          resolveAtElapsed: resolveAtMinute,
+          createdAt: q.createdAt,
+          options: q.options || []
+        });
+        await remove(ref(db, `bars/${barId}/currentQuestion`));
         isProcessingRef.current = false;
         return;
       }
 
-      // 3) fallback GENERIC : logique existante aléatoire
+      // ... conserve la logique existante pour les questions "generic" ensuite ...
       if (!q.options || !Array.isArray(q.options) || q.options.length === 0) {
         throw new Error('Options de question invalides');
       }
@@ -1354,18 +1323,17 @@ export default function App() {
       const questionId = q.id;
 
       const randomWinner = q.options[Math.floor(Math.random() * q.options.length)];
-      const answersSnap = await get(ref(db, PATHS.answers(barId, questionId)));
+      const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
 
       const winners = [];
 
-      if (answersSnap.exists()) {
+      if (answersSnap.exists() && currentMatchId) {
         const answersData = answersSnap.val();
         if (answersData && typeof answersData === 'object') {
-          const playersRefBase = PATHS.players(barId, currentMatchId);
           for (const [userId, data] of Object.entries(answersData)) {
             try {
               if (data && data.answer === randomWinner) {
-                const playerRef = ref(db, `${playersRefBase}/${userId}`);
+                const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
                 const playerSnap = await get(playerRef);
                 const bonus = Math.floor((data.timeLeft || 0) / 3);
                 const total = 10 + bonus;
@@ -1409,11 +1377,11 @@ export default function App() {
         questionText: q.text || '',
         correctAnswer: randomWinner,
         winners: winners,
-        timestamp: serverNow()
+        timestamp: Date.now()
       });
 
       // 🔥 METTRE À JOUR L'HISTORIQUE POUR TOUS LES JOUEURS QUI ONT RÉPONDU
-      if (answersSnap.exists()) {
+      if (answersSnap.exists() && currentMatchId) {
         const answersData = answersSnap.val();
         if (answersData && typeof answersData === 'object') {
           for (const [userId, data] of Object.entries(answersData)) {
@@ -1432,12 +1400,13 @@ export default function App() {
         }
       }
 
-      await remove(ref(db, PATHS.currentQuestion(barId)));
-      await remove(ref(db, PATHS.answers(barId, questionId)));
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${barId}/answers/${questionId}`));
 
       if (matchState?.active) {
-        await update(ref(db, PATHS.matchState(barId)), {
-          nextQuestionTime: serverNow() + QUESTION_INTERVAL
+        const nextTime = Date.now() + QUESTION_INTERVAL;
+        await update(ref(db, `bars/${barId}/matchState`), {
+          nextQuestionTime: nextTime
         });
       }
 
@@ -1777,14 +1746,119 @@ export default function App() {
 
             // --- Resolve pending WINDOW_EVENT / NEXT_GOAL predictions ---
             try {
-              const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-              if (barId && currentMatchId && apiKey) {
-                await resolvePendingPredictions({
-                  barId,
-                  matchId: currentMatchId,
-                  apiKey,
-                  fixtureId
-                });
+              if (barId && currentMatchId) {
+                const pendSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions`));
+                if (pendSnap.exists()) {
+                  const pend = pendSnap.val();
+                  const pendIds = Object.keys(pend);
+                  const events = Array.isArray(fixture.events) ? fixture.events : [];
+
+                  for (const qid of pendIds) {
+                    const pq = pend[qid];
+
+                    // -------- window_event --------
+                    if (pq.kind === 'window_event') {
+                      const startM = Number(pq.startedAtElapsed) || 0;
+                      const endM   = Number(pq.resolveAtElapsed) || (startM + Number(pq.windowMinutes || 0));
+
+                      if (apiElapsed >= endM) {
+                        let happened = false;
+                        for (const ev of events) {
+                          const evMin = Number(ev?.time?.elapsed) || 0;
+                          if (evMin >= startM && evMin <= endM) {
+                            if (eventMatchesType(ev, pq.eventType)) { happened = true; break; }
+                          }
+                        }
+                        const correctAnswer = happened ? 'Oui' : 'Non';
+
+                        // scoring Oui/Non
+                        const answersSnap = await get(ref(db, `bars/${barId}/answers/${qid}`));
+                        if (answersSnap.exists()) {
+                          const answersData = answersSnap.val();
+                          const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+                          const playersSnap = await get(playersRef);
+                          if (playersSnap.exists()) {
+                            const playersData = playersSnap.val();
+                            const updates = {};
+                            Object.entries(answersData).forEach(([uid, a]) => {
+                              const ans = (a && a.answer !== undefined) ? a.answer : a;
+                              if (ans === correctAnswer && playersData[uid]) {
+                                updates[`${uid}/score`] = (playersData[uid].score || 0) + 1;
+                              }
+                            });
+                            if (Object.keys(updates).length) await update(playersRef, updates);
+                          }
+                        }
+
+                        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/resolved/${qid}`), {
+                          ...pq, resolvedAt: serverNow(), correctAnswer
+                        });
+                        await remove(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${qid}`));
+                        await remove(ref(db, `bars/${barId}/answers/${qid}`));
+                      }
+                    }
+
+                    // -------- next_goal --------
+                    if (pq.kind === 'next_goal') {
+                      const startM = Number(pq.startedAtElapsed) || 0;
+                      const endM   = (pq.resolveAtElapsed != null) ? Number(pq.resolveAtElapsed) : null;
+                      const options = Array.isArray(pq.options) ? pq.options : [];
+
+                      const goalEvents = events
+                        .filter(ev => (ev.type || '').toLowerCase() === 'goal')
+                        .map(ev => ({
+                          minute: Number(ev?.time?.elapsed) || 0,
+                          player: ev?.player?.name || '',
+                          team: ev?.team?.name || ''
+                        }))
+                        .sort((a,b) => a.minute - b.minute);
+
+                      let firstGoal = null;
+                      for (const g of goalEvents) {
+                        if (g.minute > startM && (endM == null || g.minute <= endM)) { firstGoal = g; break; }
+                      }
+
+                      const shouldResolve = (endM == null) ? !!firstGoal : (firstGoal || apiElapsed >= endM);
+
+                      if (shouldResolve) {
+                        let correctOption = null;
+                        if (firstGoal) {
+                          correctOption = findMatchingOption(options, firstGoal.player, firstGoal.team);
+                        } else if (hasAucune(options)) {
+                          correctOption = options.find(o => {
+                            const n = norm(o); return n === 'aucune' || n === 'aucun';
+                          });
+                        }
+
+                        if (correctOption) {
+                          const answersSnap = await get(ref(db, `bars/${barId}/answers/${qid}`));
+                          if (answersSnap.exists()) {
+                            const answersData = answersSnap.val();
+                            const playersRef  = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+                            const playersSnap = await get(playersRef);
+                            if (playersSnap.exists()) {
+                              const playersData = playersSnap.val();
+                              const updates = {};
+                              Object.entries(answersData).forEach(([uid, a]) => {
+                                const ans = (a && a.answer !== undefined) ? a.answer : a;
+                                if (ans && norm(ans) === norm(correctOption) && playersData[uid]) {
+                                  updates[`${uid}/score`] = (playersData[uid].score || 0) + 1;
+                                }
+                              });
+                              if (Object.keys(updates).length) await update(playersRef, updates);
+                            }
+                          }
+                        }
+
+                        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/resolved/${qid}`), {
+                          ...pq, resolvedAt: serverNow(), correctAnswer: correctOption || null
+                        });
+                        await remove(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${qid}`));
+                        await remove(ref(db, `bars/${barId}/answers/${qid}`));
+                      }
+                    }
+                  }
+                }
               }
             } catch (err) {
               console.error('prediction resolver error:', err);
@@ -3006,152 +3080,4 @@ export default function App() {
   }
 
   return null;
-}
-
-async function resolvePendingPredictions({ barId, matchId, apiKey, fixtureId }) {
-  try {
-    const pendRef = ref(db, PATHS.pending(barId, matchId));
-    const pendSnap = await get(pendRef);
-    if (!pendSnap.exists()) return;
-
-    const pending = pendSnap.val();
-    const pendingList = Object.entries(pending).map(([id, p]) => ({ id, ...p }));
-    if (pendingList.length === 0) return;
-
-    const r = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
-      method: 'GET',
-      headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'v3.football.api-sports.io' }
-    });
-    const data = await r.json();
-    const fixture = data?.response?.[0];
-    if (!fixture) return;
-
-    const events = Array.isArray(fixture?.events) ? fixture.events : [];
-    const goals = events.filter(e => (e.type || '').toLowerCase() === 'goal');
-    const now = nowMs();
-
-    const updatesPlayers = {};
-    const writes = [];
-
-    for (const p of pendingList) {
-      let correctOption = null;
-
-      if (p.kind === 'EVENT_IN_WINDOW') {
-        if (!p.expiresAt || now < p.expiresAt) {
-          continue; // attendre la fin de la fenêtre
-        }
-        const metaEventType = p.predictionMeta?.eventType;
-        if (!metaEventType) {
-          correctOption = null;
-        } else {
-          const windowStart = p.windowStartMs ?? (p.matchStartAt + (p.startedAtElapsed || 0) * 60000);
-          const windowEnd = p.expiresAt;
-          let happened = false;
-          for (const ev of events) {
-            const minute = ev?.time?.elapsed ?? -1;
-            if (minute < 0) continue;
-            const msApprox = (p.matchStartAt || 0) + minute * 60000;
-            if (msApprox >= windowStart && msApprox <= windowEnd && matchEvent(ev, metaEventType)) {
-              happened = true;
-              break;
-            }
-          }
-          correctOption = happened ? 'Oui' : 'Non';
-        }
-      }
-
-      if (p.kind === 'NEXT_GOAL_TEAM') {
-        const windowEnd = p.expiresAt ?? null;
-        const matchStart = p.matchStartAt || 0;
-        const nextGoal = goals.find(g => {
-          const minute = g?.time?.elapsed ?? -1;
-          if (minute < 0) return false;
-          const msApprox = matchStart + minute * 60000;
-          if (msApprox <= (p.windowStartMs ?? matchStart)) return false;
-          if (windowEnd != null && msApprox > windowEnd) return false;
-          return true;
-        });
-
-        const homeTeamId = fixture?.teams?.home?.id;
-        const awayTeamId = fixture?.teams?.away?.id;
-        const meta = p.predictionMeta || {};
-        const homeOption = meta.homeOption || 'Domicile';
-        const awayOption = meta.awayOption || 'Extérieur';
-        const noneOption = meta.noneOption || 'Aucun';
-
-        if (nextGoal) {
-          const goalTeamId = nextGoal?.team?.id;
-          if (goalTeamId && homeTeamId && goalTeamId === homeTeamId) {
-            correctOption = homeOption;
-          } else if (goalTeamId && awayTeamId && goalTeamId === awayTeamId) {
-            correctOption = awayOption;
-          } else {
-            correctOption = noneOption;
-          }
-        } else {
-          if (windowEnd != null && now >= windowEnd) {
-            correctOption = noneOption;
-          } else {
-            continue; // rien à résoudre tant qu'aucun but et pas de limite atteinte
-          }
-        }
-      }
-
-      if (correctOption) {
-        const answersSnap = await get(ref(db, PATHS.answers(barId, p.questionId || p.id)));
-        if (answersSnap.exists()) {
-          const answersData = answersSnap.val();
-          for (const [playerId, ans] of Object.entries(answersData)) {
-            const answerValue = ans?.answer ?? ans;
-            if (answerValue === correctOption) {
-              updatesPlayers[playerId] = (updatesPlayers[playerId] || 0) + (p.points || 1);
-            }
-          }
-        }
-      }
-
-      writes.push(set(ref(db, `${PATHS.resolved(barId, matchId)}/${p.id}`), {
-        ...p,
-        resolvedAt: now,
-        correctOption: correctOption ?? null
-      }));
-      writes.push(remove(ref(db, `${PATHS.pending(barId, matchId)}/${p.id}`)));
-      writes.push(remove(ref(db, PATHS.answers(barId, p.questionId || p.id))));
-    }
-
-    if (Object.keys(updatesPlayers).length > 0) {
-      const playersRef = ref(db, PATHS.players(barId, matchId));
-      const playersSnap = await get(playersRef);
-      if (playersSnap.exists()) {
-        const playersData = playersSnap.val();
-        const upd = {};
-        for (const [pid, add] of Object.entries(updatesPlayers)) {
-          if (!playersData[pid]) continue;
-          upd[`${pid}/score`] = (playersData[pid].score || 0) + add;
-        }
-        if (Object.keys(upd).length) await update(playersRef, upd);
-      }
-    }
-
-    if (writes.length) await Promise.all(writes);
-  } catch (err) {
-    console.error('resolvePendingPredictions error', err);
-  }
-}
-
-function matchEvent(ev, type) {
-  if (!type) return false;
-  const evType = (ev.type || '').toLowerCase();
-  const detail = (ev.detail || '').toLowerCase();
-  if (type === 'Corner') return evType === 'var' && /corner/i.test(detail);
-  if (type === 'Card.Red') return evType === 'card' && /red/i.test(detail);
-  if (type === 'Card.Yellow') return evType === 'card' && /yellow/i.test(detail);
-  if (type === 'Goal') return evType === 'goal';
-  if (type === 'Penalty') {
-    return evType === 'penalty'
-      || detail.includes('penalty')
-      || (evType === 'goal' && detail.includes('penalty'))
-      || (evType === 'var' && detail.includes('penalty'));
-  }
-  return false;
 }
