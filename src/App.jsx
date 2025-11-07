@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, remove, get, push } from 'firebase/database';
+import { getDatabase, ref, onValue, set, update, remove, get, push, serverTimestamp, runTransaction } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -18,8 +18,155 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
+// ---- Server time utils (Firebase server clock) ----
+const serverOffsetRef = ref(db, '.info/serverTimeOffset');
+let __serverOffset = 0;
+onValue(serverOffsetRef, snap => { __serverOffset = snap.val() || 0; });
+const serverNow = () => Date.now() + __serverOffset;
+
+const schedulerLockRef = (barId) => ref(db, `bars/${barId}/locks/scheduler`);
+const tryLock = async (uid, barId) => {
+  const now = serverNow();
+  const ttlMs = 60_000;
+  const res = await runTransaction(schedulerLockRef(barId), cur => {
+    if (!cur || (cur.expiresAt && cur.expiresAt < now)) {
+      return { uid, acquiredAt: now, expiresAt: now + ttlMs };
+    }
+    return cur;
+  });
+  const v = res.snapshot.val();
+  return res.committed && v && v.uid === uid;
+};
+
 const QUESTION_INTERVAL = 60000;
 const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
+
+const LIVE_STATUSES = new Set(['1H','2H','ET','LIVE']);
+const PAUSE_STATUSES = new Set(['HT','BT','P','SUSP','INT']);
+const FINISHED_STATUSES = new Set(['FT','AET','PEN','AWD','WO']);
+
+const computeElapsed = (apiElapsed, lastSyncAt, half, isPaused) => {
+  if (isPaused || !LIVE_STATUSES.has(half)) return apiElapsed || 0;
+  const drift = Math.floor((serverNow() - (lastSyncAt || serverNow())) / 60000);
+  return Math.max(0, (apiElapsed || 0) + drift);
+};
+
+const formatMatchMinute = ({ half, elapsed, isPaused }) => {
+  // 1) Finished → "TERMINÉ"
+  if (FINISHED_STATUSES.has(half)) return '✅ TERMINÉ';
+
+  // 2) Half-time → "MI-TEMPS"
+  if (half === 'HT') return '⏸️ MI-TEMPS';
+
+  // 3) First half + stoppage time → "45+X"
+  if (half === '1H') {
+    if (elapsed > 45) return `45+${elapsed - 45}`;
+    return `${Math.max(0, elapsed)}`;
+  }
+
+  // 4) Second half baseline: restart FROM 45 (not below)
+  if (half === '2H') {
+    if (elapsed <= 90) {
+      // show at least 45 at the restart, then 46..90
+      const clamped = Math.max(45, elapsed);
+      return `${clamped}`;
+    }
+    // 5) Second half stoppage → "90+X"
+    return `90+${elapsed - 90}`;
+  }
+
+  // 6) Extra time or other statuses → show raw elapsed (can be refined later)
+  return `${elapsed}`;
+};
+
+// ---------- PREDICTION HELPERS ----------
+const norm = (s) => String(s || '')
+  .toLowerCase()
+  .normalize('NFD').replace(/\p{Diacritic}/gu,'')
+  .replace(/[^a-z0-9 ]+/g,' ')
+  .replace(/\s+/g,' ')
+  .trim();
+
+// Essaie d'associer un buteur/équipe à une option
+const findMatchingOption = (options, scorerName, scorerTeam) => {
+  const nScorer = norm(scorerName);
+  const nTeam   = norm(scorerTeam);
+  for (const opt of options || []) {
+    const nOpt = norm(opt);
+    if (nOpt && nScorer && (nScorer.includes(nOpt) || nOpt.includes(nScorer))) return opt;
+  }
+  for (const opt of options || []) {
+    const nOpt = norm(opt);
+    if (nOpt && nTeam && (nTeam.includes(nOpt) || nOpt.includes(nTeam))) return opt;
+  }
+  return null;
+};
+
+const hasAucune = (options=[]) => options.some(o => {
+  const n = norm(o);
+  return n === 'aucune' || n === 'aucun';
+});
+
+// Détecte une question "dans X minutes"
+const parseWindowPrediction = (text) => {
+  if (!text) return null;
+  const t = String(text).toLowerCase();
+  const m = t.match(/dans\s+(\d+)\s*min/);
+  const windowMinutes = m ? Number(m[1]) : null;
+
+  const isGoal    = /but(?!eur)/.test(t) || /prochain but/.test(t);
+  const isRed     = /carton\s+rouge/.test(t);
+  const isYellow  = /carton\s+jaune/.test(t);
+  const isPenalty = /penalty|penalité|pénalty|pénalité/.test(t);
+  const isCorner  = /corner/.test(t);
+
+  let eventType = null;
+  if (isGoal)    eventType = 'goal';
+  else if (isRed)    eventType = 'red_card';
+  else if (isYellow) eventType = 'yellow_card';
+  else if (isPenalty)eventType = 'penalty';
+  else if (isCorner) eventType = 'corner';
+
+  if (!windowMinutes || !eventType) return null;
+  return { kind: 'window_event', eventType, windowMinutes };
+};
+
+// Fait correspondre un event API-Football à notre type demandé
+const eventMatchesType = (ev, wanted) => {
+  if (!ev) return false;
+  const type = (ev.type || '').toLowerCase();
+  const detail = (ev.detail || '').toLowerCase();
+  switch (wanted) {
+    case 'goal':
+      return type === 'goal';
+    case 'red_card':
+      return type === 'card' && detail.includes('red');
+    case 'yellow_card':
+      return type === 'card' && detail.includes('yellow');
+    case 'penalty':
+      return type === 'penalty'
+          || detail.includes('penalty')
+          || (type === 'goal' && detail.includes('penalty'))
+          || (type === 'var'  && detail.includes('penalty'));
+    case 'corner':
+      // seulement si l'API émet des events corner
+      return type === 'corner' || detail.includes('corner');
+    default:
+      return false;
+  }
+};
+
+// Détecte "prochain but" (+ fenêtre optionnelle)
+const parseNextGoalQuestion = (text) => {
+  if (!text) return null;
+  const t = String(text).toLowerCase();
+  const isNextGoal = /prochain\s+but/.test(t) || /\bqui va marquer\b/.test(t);
+  if (!isNextGoal) return null;
+  const m = t.match(/dans\s+(\d+)\s*min/); // optionnel
+  const windowMinutes = m ? Number(m[1]) : null;
+  return { kind: 'next_goal', windowMinutes };
+};
+// -----------------------------------------
 
 export default function App() {
   // Initialiser screen en fonction de l'URL
@@ -694,82 +841,48 @@ export default function App() {
   }, [user, barId, currentMatchId, userProfile, screen]);
 
   useEffect(() => {
-    if (!currentQuestion?.id || !currentQuestion?.createdAt) return;
-    
-    const calculateTimeLeft = () => {
-      try {
-        const elapsed = Math.floor((Date.now() - currentQuestion.createdAt) / 1000);
-        const remaining = Math.max(0, 15 - elapsed);
-        setTimeLeft(remaining);
-        
-        if (remaining === 0 && !isProcessingRef.current) {
-          console.log('Mobile: timeLeft = 0, appel autoValidate');
-          try {
-            autoValidate();
-          } catch (e) {
-            console.error('Erreur dans autoValidate depuis calculateTimeLeft:', e);
-          }
-        }
-      } catch (e) {
-        console.error('Erreur dans calculateTimeLeft:', e);
+    if (!currentQuestion?.createdAt) return;
+
+    const createdAtMs =
+      typeof currentQuestion.createdAt === 'number'
+        ? currentQuestion.createdAt
+        : Date.now(); // fallback in case timestamp not yet resolved
+
+    const tick = async () => {
+      const remaining = 15 - Math.floor((serverNow() - createdAtMs) / 1000);
+      const safe = Math.max(0, remaining);
+      setTimeLeft(safe);
+      if (safe === 0 && !isProcessingRef.current) {
+        isProcessingRef.current = true;
+        await autoValidate();
+        isProcessingRef.current = false;
       }
     };
-    
-    calculateTimeLeft();
-    const interval = setInterval(calculateTimeLeft, 1000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentQuestion]);
+
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [currentQuestion?.createdAt]);
 
   useEffect(() => {
-    if (!barId) return;
-    
-    const matchStateRef = ref(db, `bars/${barId}/matchState/nextQuestionTime`);
-    
-    const unsub = onValue(matchStateRef, (snap) => {
-      const nextTime = snap.val();
-      
-      const updateCountdown = () => {
-        if (!nextTime) {
-          setCountdown('');
-          return;
-        }
-        
-        const diff = nextTime - Date.now();
-        if (diff <= 0) {
-          setCountdown('Bientôt...');
-        } else {
-          const mins = Math.floor(diff / 60000);
-          const secs = Math.floor((diff % 60000) / 1000);
-          setCountdown(`${mins}m ${secs}s`);
-        }
-      };
-      
-      updateCountdown();
-    });
-    
-    const interval = setInterval(() => {
-      const nextTimeSnap = matchState?.nextQuestionTime;
-      if (!nextTimeSnap) {
-        setCountdown('');
-        return;
-      }
-      
-      const diff = nextTimeSnap - Date.now();
+    if (!matchState?.nextQuestionTime) {
+      setCountdown('');
+      return;
+    }
+    const updateCountdown = () => {
+      const diff = matchState.nextQuestionTime - serverNow();
       if (diff <= 0) {
         setCountdown('Bientôt...');
       } else {
         const mins = Math.floor(diff / 60000);
         const secs = Math.floor((diff % 60000) / 1000);
-        setCountdown(`${mins}m ${secs}s`);
+        setCountdown(`${mins}m ${secs < 10 ? '0' : ''}${secs}s`);
       }
-    }, 1000);
-    
-    return () => {
-      unsub();
-      clearInterval(interval);
     };
-  }, [barId, matchState]);
+    updateCountdown();
+    const id = setInterval(updateCountdown, 500);
+    return () => clearInterval(id);
+  }, [matchState?.nextQuestionTime]);
 
   useEffect(() => {
     if (!barId || !matchState?.active) {
@@ -953,7 +1066,7 @@ export default function App() {
       const newMatchState = {
         active: true,
         startTime: now,
-        nextQuestionTime: now + 60000,
+        nextQuestionTime: serverNow() + 30000,
         questionCount: 0,
         currentMatchId: matchId,
         matchInfo: selectedMatch ? {
@@ -1076,161 +1189,104 @@ export default function App() {
 
   const createRandomQuestion = async () => {
     if (!matchState?.active) {
-      console.error('❌ Le match n\'est pas actif');
+      alert('❌ Le match n\'est pas actif');
       return;
     }
-
     try {
-      console.log('🎲 Création d\'une question...');
-      console.log('📊 Joueurs disponibles:', matchPlayers?.length || 0);
-      
-      let questionData;
-      
-      // Toujours utiliser les questions génériques pour l'instant
-      const genericQuestions = [
-        // ✅ BUTS - Validable avec events API
-        { 
-          text: "Y aura-t-il un but dans les 10 prochaines minutes ?", 
-          options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"],
-          validationDelay: 600000, // 10 minutes
-          eventType: 'goal'
-        },
-        
-        // ✅ CARTONS - Validable avec events API
-        { 
-          text: "Y aura-t-il un carton jaune dans les 5 prochaines minutes ?", 
-          options: ["Oui", "Non", "2 cartons", "3+ cartons"],
-          validationDelay: 300000, // 5 minutes
-          eventType: 'yellowCard'
-        },
-        
-        { 
-          text: "Y aura-t-il un carton rouge dans les 10 prochaines minutes ?", 
-          options: ["Oui", "Non"],
-          validationDelay: 600000, // 10 minutes
-          eventType: 'redCard'
-        },
-        
-        // ✅ REMPLACEMENTS - Validable avec events API
-        { 
-          text: "Y aura-t-il un remplacement dans les 5 prochaines minutes ?", 
-          options: ["Oui domicile", "Oui extérieur", "Non", "Les deux"],
-          validationDelay: 300000, // 5 minutes
-          eventType: 'substitution'
-        },
-        
-        // ✅ TIRS CADRÉS - Validable avec statistics API
-        { 
-          text: "Combien de tirs cadrés au total dans les 5 prochaines minutes ?", 
-          options: ["0", "1-2", "3-4", "5+"],
-          validationDelay: 300000, // 5 minutes
-          eventType: 'shotsOnTarget'
-        },
-        
-        // ✅ VAR - Validable avec events API
-        { 
-          text: "Y aura-t-il une intervention de la VAR dans les 10 prochaines minutes ?", 
-          options: ["Oui", "Non"],
-          validationDelay: 600000, // 10 minutes
-          eventType: 'var'
-        }
-      ];
-      
-      const questionToUse = genericQuestions[Math.floor(Math.random() * genericQuestions.length)];
-      
-      questionData = {
-        text: questionToUse.text,
-        options: questionToUse.options,
-        id: Date.now(),
-        createdAt: Date.now(),
-        timeLeft: 15,
-        validationDelay: questionToUse.validationDelay || 0,
-        eventType: questionToUse.eventType || null,
-        validationTime: Date.now() + 15000 + (questionToUse.validationDelay || 0), // Temps de réponse + délai
-        status: 'collecting' // collecting → waiting → validating → validated
-      };
+      let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+      if (pool.length === 0) {
+        usedQuestionsRef.current = [];
+        pool = QUESTIONS.slice();
+      }
+      const picked = pool[Math.floor(Math.random() * pool.length)];
+      usedQuestionsRef.current.push(picked.text);
 
-      console.log('📢 Question créée:', questionData);
+      const parsedWindow  = parseWindowPrediction(picked.text);
+      const parsedNextGoal = parseNextGoalQuestion(picked.text);
+      const startElapsed = matchState?.matchClock?.apiElapsed || 0;
+
+      const questionData = {
+        ...picked,
+        id: Date.now(),
+        createdAt: serverTimestamp(),
+        timeLeft: 15,
+        kind: parsedNextGoal ? 'next_goal' : (parsedWindow ? 'window_event' : 'generic'),
+        // window_event:
+        eventType: parsedWindow?.eventType ?? null,
+        windowMinutes: (parsedWindow?.windowMinutes ?? parsedNextGoal?.windowMinutes) ?? null,
+        // minute match au lancement
+        startElapsed
+      };
 
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
 
-      const nextTime = Date.now() + QUESTION_INTERVAL;
-      await update(ref(db, `bars/${barId}/matchState`), {
-        nextQuestionTime: nextTime,
-        questionCount: (matchState?.questionCount || 0) + 1
-      });
-
-      console.log('✅ Question publiée avec succès');
-
     } catch (e) {
-      console.error('❌ Erreur création question:', e);
-      alert('❌ Erreur lors de la création de la question: ' + e.message);
+      console.error('Erreur création question:', e);
+      alert('❌ Erreur: ' + e.message);
     }
   };
 
   const autoValidate = async () => {
-    if (!barId || !currentQuestion?.options || isProcessingRef.current) {
-      console.log('Mobile: autoValidate ignorée - conditions non remplies', { barId, hasOptions: !!currentQuestion?.options, isProcessing: isProcessingRef.current });
+    if (!barId || isProcessingRef.current) {
+      console.log('Mobile: autoValidate ignorée - conditions non remplies', { barId, isProcessing: isProcessingRef.current });
       return;
     }
-    
-    console.log('🔄 Auto-validation de la question:', currentQuestion.text);
+    if (!currentQuestion) return;
+
     isProcessingRef.current = true;
-    const questionId = currentQuestion.id;
-    
     try {
-      // Si la question a un délai de validation, la déplacer en "attente"
-      if (currentQuestion.validationDelay && currentQuestion.validationDelay > 0) {
-        console.log('⏰ Question avec délai, mise en attente pour', currentQuestion.validationDelay / 60000, 'minutes');
-        
-        // Sauvegarder dans pendingQuestions
-        await set(ref(db, `bars/${barId}/pendingQuestions/${currentQuestion.id}`), currentQuestion);
-        
-        // Mettre à jour l'historique pour tous les joueurs qui ont répondu
-        const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
-        if (answersSnap.exists() && currentMatchId) {
-          const answersData = answersSnap.val();
-          if (answersData && typeof answersData === 'object') {
-            for (const [userId, data] of Object.entries(answersData)) {
-              try {
-                const historyItemId = `${questionId}_${userId}`;
-                await update(ref(db, `bars/${barId}/playerHistory/${userId}/${historyItemId}`), {
-                  validationDelay: currentQuestion.validationDelay,
-                  isCorrect: null, // En attente
-                  correctAnswer: null
-                });
-              } catch (e) {
-                console.error('Erreur lors de la mise à jour de l\'historique:', e);
-              }
-            }
-          }
-        }
-        
-        // Supprimer la question courante
+      const q = currentQuestion;
+
+      // 1) window_event (Oui/Non dans X minutes)
+      if (q.kind === 'window_event' && q.windowMinutes != null) {
+        const startM = Number(q.startElapsed || 0);
+        const resolveAtMinute = startM + Number(q.windowMinutes);
+        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${q.id}`), {
+          id: q.id,
+          kind: q.kind,
+          text: q.text,
+          eventType: q.eventType,
+          startedAtElapsed: startM,
+          resolveAtElapsed: resolveAtMinute,
+          createdAt: q.createdAt,
+          options: q.options || []
+        });
         await remove(ref(db, `bars/${barId}/currentQuestion`));
-        
-        // Programmer la prochaine question
-        if (matchState?.active) {
-          const nextTime = Date.now() + QUESTION_INTERVAL;
-          await update(ref(db, `bars/${barId}/matchState`), {
-            nextQuestionTime: nextTime
-          });
-        }
-        
         isProcessingRef.current = false;
         return;
       }
-      
-      // Validation immédiate (logique existante)
-      if (!currentQuestion.options || !Array.isArray(currentQuestion.options) || currentQuestion.options.length === 0) {
+
+      // 2) next_goal (avec ou sans fenêtre)
+      if (q.kind === 'next_goal') {
+        const startM = Number(q.startElapsed || 0);
+        const resolveAtMinute = (q.windowMinutes != null) ? startM + Number(q.windowMinutes) : null;
+        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${q.id}`), {
+          id: q.id,
+          kind: q.kind,
+          text: q.text,
+          startedAtElapsed: startM,
+          resolveAtElapsed: resolveAtMinute,
+          createdAt: q.createdAt,
+          options: q.options || []
+        });
+        await remove(ref(db, `bars/${barId}/currentQuestion`));
+        isProcessingRef.current = false;
+        return;
+      }
+
+      // ... conserve la logique existante pour les questions "generic" ensuite ...
+      if (!q.options || !Array.isArray(q.options) || q.options.length === 0) {
         throw new Error('Options de question invalides');
       }
-      
-      const randomWinner = currentQuestion.options[Math.floor(Math.random() * currentQuestion.options.length)];
+
+      console.log('🔄 Auto-validation de la question:', q.text);
+      const questionId = q.id;
+
+      const randomWinner = q.options[Math.floor(Math.random() * q.options.length)];
       const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
-      
+
       const winners = [];
-      
+
       if (answersSnap.exists() && currentMatchId) {
         const answersData = answersSnap.val();
         if (answersData && typeof answersData === 'object') {
@@ -1241,7 +1297,7 @@ export default function App() {
                 const playerSnap = await get(playerRef);
                 const bonus = Math.floor((data.timeLeft || 0) / 3);
                 const total = 10 + bonus;
-                
+
                 // Récupérer le pseudo du joueur
                 let playerPseudo = '';
                 if (playerSnap.exists()) {
@@ -1259,7 +1315,7 @@ export default function App() {
                     });
                   }
                 }
-                
+
                 // Ajouter le gagnant à la liste
                 winners.push({
                   userId: userId,
@@ -1278,7 +1334,7 @@ export default function App() {
       // Sauvegarder le résultat dans Firebase
       await set(ref(db, `bars/${barId}/lastQuestionResult`), {
         questionId: questionId,
-        questionText: currentQuestion.text || '',
+        questionText: q.text || '',
         correctAnswer: randomWinner,
         winners: winners,
         timestamp: Date.now()
@@ -1292,7 +1348,7 @@ export default function App() {
             try {
               const historyItemId = `${questionId}_${userId}`;
               const isCorrect = data.answer === randomWinner;
-              
+
               await update(ref(db, `bars/${barId}/playerHistory/${userId}/${historyItemId}`), {
                 isCorrect: isCorrect,
                 correctAnswer: randomWinner
@@ -1306,18 +1362,16 @@ export default function App() {
 
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers/${questionId}`));
-      
+
       if (matchState?.active) {
         const nextTime = Date.now() + QUESTION_INTERVAL;
-        console.log('🕐 Next:', new Date(nextTime).toLocaleTimeString());
-        
         await update(ref(db, `bars/${barId}/matchState`), {
           nextQuestionTime: nextTime
         });
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
       }
-      
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       console.log('Mobile: autoValidate terminée avec succès');
     } catch (e) {
       console.error('Erreur dans autoValidate:', e);
@@ -1507,7 +1561,8 @@ export default function App() {
           score: `${fixture.goals.home || 0}-${fixture.goals.away || 0}`,
           homeGoals: fixture.goals.home || 0,
           awayGoals: fixture.goals.away || 0,
-          statusFull: fixture.fixture.status
+          statusFull: fixture.fixture.status,
+          rawFixture: fixture
         };
         
         console.log('📡 Données récupérées:', matchData);
@@ -1600,41 +1655,175 @@ export default function App() {
           api: { elapsed: matchData.elapsed, half: matchData.status }
         });
         
-        // Calculer le nouveau startTime basé sur le temps API
-        const newStartTime = Date.now() - (matchData.elapsed * 60000);
-        
-        console.log('⏱️ Mise à jour chrono:', {
-          elapsed: matchData.elapsed,
-          startTime: new Date(newStartTime).toLocaleTimeString(),
-          half: matchData.status
-        });
-        
-        // Mettre à jour les states React
-        setMatchElapsedMinutes(matchData.elapsed);
-        setMatchStartTime(newStartTime);
-        setMatchHalf(matchData.status);
-        
-        // Mettre à jour Firebase pour tous les clients
-        if (barId) {
-          const updates = {
-            'selectedMatch/elapsed': matchData.elapsed,
-            'selectedMatch/half': matchData.status,
-            'selectedMatch/score': matchData.score
-          };
-          
-          if (matchState?.active) {
-            updates['matchState/matchClock'] = {
-              startTime: newStartTime,
-              elapsedMinutes: matchData.elapsed,
-              half: matchData.status
-            };
-            updates['matchState/matchInfo'] = {
-              score: matchData.score
-            };
+        const fixture = matchData.rawFixture;
+        if (fixture) {
+          const statusShort = fixture.fixture.status.short;
+          const apiElapsed = fixture.fixture.status.elapsed || 0;
+          const isPaused = PAUSE_STATUSES.has(statusShort);
+
+          setMatchElapsedMinutes(apiElapsed);
+          setMatchHalf(statusShort);
+
+          if (currentMatchId && barId) {
+            await update(ref(db, `bars/${barId}/matchState`), {
+              matchClock: {
+                apiElapsed,
+                lastSyncAt: serverNow(),
+                half: statusShort,
+                isPaused
+              }
+            });
+
+            // Pause / Resume scheduler + Stop on finished
+            if (currentMatchId && barId) {
+              // 1) If finished -> stop match & cleanup
+              if (FINISHED_STATUSES.has(statusShort)) {
+                await update(ref(db, `bars/${barId}/matchState`), {
+                  active: false,
+                  endTime: serverNow(),
+                  nextQuestionTime: null
+                });
+                await remove(ref(db, `bars/${barId}/currentQuestion`));
+                // optional: clear answers bucket of last question if any
+                // (safe if nothing there)
+                // NOTE: we don't know the last question id here; we just keep as-is.
+              }
+              // 2) If paused (e.g., HT) -> freeze scheduler
+              else if (PAUSE_STATUSES.has(statusShort)) {
+                await update(ref(db, `bars/${barId}/matchState`), { nextQuestionTime: null });
+              }
+              // 3) If live -> ensure a next question is scheduled (unless one is already running)
+              else if (LIVE_STATUSES.has(statusShort)) {
+                const cqSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
+                const nxtSnap = await get(ref(db, `bars/${barId}/matchState/nextQuestionTime`));
+                const hasQuestion = cqSnap.exists();
+                const hasNext = nxtSnap.exists() && !!nxtSnap.val();
+                if (!hasQuestion && !hasNext) {
+                  await set(ref(db, `bars/${barId}/matchState/nextQuestionTime`), serverNow() + 30000);
+                }
+              }
+            }
+
+            // --- Resolve pending WINDOW_EVENT / NEXT_GOAL predictions ---
+            try {
+              if (barId && currentMatchId) {
+                const pendSnap = await get(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions`));
+                if (pendSnap.exists()) {
+                  const pend = pendSnap.val();
+                  const pendIds = Object.keys(pend);
+                  const events = Array.isArray(fixture.events) ? fixture.events : [];
+
+                  for (const qid of pendIds) {
+                    const pq = pend[qid];
+
+                    // -------- window_event --------
+                    if (pq.kind === 'window_event') {
+                      const startM = Number(pq.startedAtElapsed) || 0;
+                      const endM   = Number(pq.resolveAtElapsed) || (startM + Number(pq.windowMinutes || 0));
+
+                      if (apiElapsed >= endM) {
+                        let happened = false;
+                        for (const ev of events) {
+                          const evMin = Number(ev?.time?.elapsed) || 0;
+                          if (evMin >= startM && evMin <= endM) {
+                            if (eventMatchesType(ev, pq.eventType)) { happened = true; break; }
+                          }
+                        }
+                        const correctAnswer = happened ? 'Oui' : 'Non';
+
+                        // scoring Oui/Non
+                        const answersSnap = await get(ref(db, `bars/${barId}/answers/${qid}`));
+                        if (answersSnap.exists()) {
+                          const answersData = answersSnap.val();
+                          const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+                          const playersSnap = await get(playersRef);
+                          if (playersSnap.exists()) {
+                            const playersData = playersSnap.val();
+                            const updates = {};
+                            Object.entries(answersData).forEach(([uid, a]) => {
+                              const ans = (a && a.answer !== undefined) ? a.answer : a;
+                              if (ans === correctAnswer && playersData[uid]) {
+                                updates[`${uid}/score`] = (playersData[uid].score || 0) + 1;
+                              }
+                            });
+                            if (Object.keys(updates).length) await update(playersRef, updates);
+                          }
+                        }
+
+                        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/resolved/${qid}`), {
+                          ...pq, resolvedAt: serverNow(), correctAnswer
+                        });
+                        await remove(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${qid}`));
+                        await remove(ref(db, `bars/${barId}/answers/${qid}`));
+                      }
+                    }
+
+                    // -------- next_goal --------
+                    if (pq.kind === 'next_goal') {
+                      const startM = Number(pq.startedAtElapsed) || 0;
+                      const endM   = (pq.resolveAtElapsed != null) ? Number(pq.resolveAtElapsed) : null;
+                      const options = Array.isArray(pq.options) ? pq.options : [];
+
+                      const goalEvents = events
+                        .filter(ev => (ev.type || '').toLowerCase() === 'goal')
+                        .map(ev => ({
+                          minute: Number(ev?.time?.elapsed) || 0,
+                          player: ev?.player?.name || '',
+                          team: ev?.team?.name || ''
+                        }))
+                        .sort((a,b) => a.minute - b.minute);
+
+                      let firstGoal = null;
+                      for (const g of goalEvents) {
+                        if (g.minute > startM && (endM == null || g.minute <= endM)) { firstGoal = g; break; }
+                      }
+
+                      const shouldResolve = (endM == null) ? !!firstGoal : (firstGoal || apiElapsed >= endM);
+
+                      if (shouldResolve) {
+                        let correctOption = null;
+                        if (firstGoal) {
+                          correctOption = findMatchingOption(options, firstGoal.player, firstGoal.team);
+                        } else if (hasAucune(options)) {
+                          correctOption = options.find(o => {
+                            const n = norm(o); return n === 'aucune' || n === 'aucun';
+                          });
+                        }
+
+                        if (correctOption) {
+                          const answersSnap = await get(ref(db, `bars/${barId}/answers/${qid}`));
+                          if (answersSnap.exists()) {
+                            const answersData = answersSnap.val();
+                            const playersRef  = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+                            const playersSnap = await get(playersRef);
+                            if (playersSnap.exists()) {
+                              const playersData = playersSnap.val();
+                              const updates = {};
+                              Object.entries(answersData).forEach(([uid, a]) => {
+                                const ans = (a && a.answer !== undefined) ? a.answer : a;
+                                if (ans && norm(ans) === norm(correctOption) && playersData[uid]) {
+                                  updates[`${uid}/score`] = (playersData[uid].score || 0) + 1;
+                                }
+                              });
+                              if (Object.keys(updates).length) await update(playersRef, updates);
+                            }
+                          }
+                        }
+
+                        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/resolved/${qid}`), {
+                          ...pq, resolvedAt: serverNow(), correctAnswer: correctOption || null
+                        });
+                        await remove(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${qid}`));
+                        await remove(ref(db, `bars/${barId}/answers/${qid}`));
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('prediction resolver error:', err);
+            }
           }
-          
-          await update(ref(db, `bars/${barId}`), updates);
-          console.log('✅ Firebase mis à jour');
         }
       } catch (error) {
         console.error('❌ ERREUR CRITIQUE dans performSync:', error);
@@ -2504,6 +2693,23 @@ export default function App() {
                       {matchInfo.awayTeam}
                     </p>
                     <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
+                    {matchState?.matchClock && (
+                      <div className="text-2xl font-bold mt-2">
+                        {formatMatchMinute({
+                          half: matchState.matchClock.half,
+                          isPaused: matchState.matchClock.isPaused,
+                          elapsed: computeElapsed(
+                            matchState.matchClock.apiElapsed,
+                            matchState.matchClock.lastSyncAt,
+                            matchState.matchClock.half,
+                            matchState.matchClock.isPaused
+                          )
+                        })}
+                      </div>
+                    )}
+                    {!matchState?.matchClock?.isPaused && !FINISHED_STATUSES.has(matchState?.matchClock?.half) && matchState?.active && (
+                      <div className="text-red-400 font-bold mt-2">🔴 MATCH EN COURS</div>
+                    )}
                     {isMatchFinished && (
                       <p className="text-3xl font-black text-red-400 mt-2 animate-pulse">
                         🏁 MATCH TERMINÉ
