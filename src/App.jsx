@@ -38,7 +38,7 @@ const tryLock = async (uid, barId) => {
   return res.committed && v && v.uid === uid;
 };
 
-const QUESTION_INTERVAL = 60000;
+const QUESTION_INTERVAL = 120000;
 const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
 
 // --- QUESTIONS par défaut (fallback pour le quiz) ---
@@ -496,10 +496,10 @@ export default function App() {
     if (barFromUrl) {
       // Si on a un barId depuis l'URL, le définir
       if (!barId || barId !== barFromUrl) {
-        setBarId(barFromUrl);
-      }
+      setBarId(barFromUrl);
+    }
       if (screen !== 'playJoin' && screen !== 'auth' && screen !== 'mobile') {
-        setScreen('playJoin');
+      setScreen('playJoin');
       }
     }
 
@@ -729,17 +729,17 @@ export default function App() {
     }
     
     try {
-      const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
-      
-      const unsub = onValue(playersRef, (snap) => {
+    const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+    
+    const unsub = onValue(playersRef, (snap) => {
         try {
-          if (snap.exists()) {
-            const data = snap.val();
+      if (snap.exists()) {
+        const data = snap.val();
             if (data && typeof data === 'object') {
-              const list = Object.entries(data).map(([id, p]) => ({ id, ...p }));
+        const list = Object.entries(data).map(([id, p]) => ({ id, ...p }));
               setPlayers(list.sort((a, b) => (b.score || 0) - (a.score || 0)));
-            } else {
-              setPlayers([]);
+      } else {
+        setPlayers([]);
             }
           } else {
             setPlayers([]);
@@ -765,30 +765,30 @@ export default function App() {
     if (!barId) return;
     
     try {
-      const unsub = onValue(ref(db, `bars/${barId}/currentQuestion`), (snap) => {
+    const unsub = onValue(ref(db, `bars/${barId}/currentQuestion`), (snap) => {
         try {
-          const data = snap.val();
-          if (data && data.text && data.options && Array.isArray(data.options)) {
-            setCurrentQuestion(data);
-            setTimeLeft(data.timeLeft || 15);
-            
-            if (screen === 'mobile' && 'Notification' in window && Notification.permission === 'granted') {
+      const data = snap.val();
+      if (data && data.text && data.options && Array.isArray(data.options)) {
+        setCurrentQuestion(data);
+        setTimeLeft(data.timeLeft || 15);
+        
+        if (screen === 'mobile' && 'Notification' in window && Notification.permission === 'granted') {
               try {
-                new Notification('⚽ Nouvelle question !', {
-                  body: data.text,
-                  icon: '/icon-192.png',
-                  badge: '/icon-192.png',
-                  vibrate: [200, 100, 200],
-                  tag: 'quiz-question',
-                  requireInteraction: true
-                });
+          new Notification('⚽ Nouvelle question !', {
+            body: data.text,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            vibrate: [200, 100, 200],
+            tag: 'quiz-question',
+            requireInteraction: true
+          });
               } catch (e) {
                 console.error('Erreur lors de la création de la notification:', e);
               }
-            }
-          } else {
-            setCurrentQuestion(null);
-            setPlayerAnswer(null);
+        }
+      } else {
+        setCurrentQuestion(null);
+        setPlayerAnswer(null);
           }
         } catch (e) {
           console.error('Erreur dans onValue currentQuestion:', e);
@@ -849,22 +849,17 @@ export default function App() {
 
   useEffect(() => {
     const addPlayerToMatch = async () => {
-      if (!user || !barId || !currentMatchId || !userProfile || screen !== 'mobile') return;
-
+      if (!user || !barId || !currentMatchId || !userProfile) return;
       try {
         const playerPath = `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`;
         const playerRef = ref(db, playerPath);
         const playerSnap = await get(playerRef);
-        
         if (!playerSnap.exists()) {
           await set(playerRef, {
             pseudo: userProfile.pseudo,
             score: 0,
             joinedAt: Date.now()
           });
-          
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
           const notifRef = push(ref(db, `bars/${barId}/notifications`));
           await set(notifRef, {
             type: 'playerJoined',
@@ -876,9 +871,8 @@ export default function App() {
         console.error('Erreur ajout joueur:', e);
       }
     };
-    
     addPlayerToMatch();
-  }, [user, barId, currentMatchId, userProfile, screen]);
+  }, [user, barId, currentMatchId, userProfile]);
 
   useEffect(() => {
     if (!currentQuestion?.createdAt) return;
@@ -944,7 +938,7 @@ export default function App() {
       if (now >= nextTime) {
         await createRandomQuestion();
       }
-    }, 2000);
+    }, 10000);
 
     return () => {
       if (nextQuestionTimer.current) {
@@ -1238,28 +1232,21 @@ export default function App() {
         usedQuestionsRef.current = [];
         pool = QUESTIONS.slice();
       }
-      const picked = pool[Math.floor(Math.random() * pool.length)];
-      usedQuestionsRef.current.push(picked.text);
-
-      const parsedWindow  = parseWindowPrediction(picked.text);
-      const parsedNextGoal = parseNextGoalQuestion(picked.text);
-      const startElapsed = matchState?.matchClock?.apiElapsed || 0;
-
+      const question = pool[Math.floor(Math.random() * pool.length)];
+      usedQuestionsRef.current.push(question.text);
+      const now = Date.now();
       const questionData = {
-        ...picked,
-        id: Date.now(),
-        createdAt: serverTimestamp(),
-        timeLeft: 15,
-        kind: parsedNextGoal ? 'next_goal' : (parsedWindow ? 'window_event' : 'generic'),
-        // window_event:
-        eventType: parsedWindow?.eventType ?? null,
-        windowMinutes: (parsedWindow?.windowMinutes ?? parsedNextGoal?.windowMinutes) ?? null,
-        // minute match au lancement
-        startElapsed
+        ...question,
+        id: now,
+        createdAt: now,
+        timeLeft: 15
       };
-
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
-
+      const nextTime = now + QUESTION_INTERVAL;
+      await update(ref(db, `bars/${barId}/matchState`), {
+        nextQuestionTime: nextTime,
+        questionCount: (matchState?.questionCount || 0) + 1
+      });
     } catch (e) {
       console.error('Erreur création question:', e);
       alert('❌ Erreur: ' + e.message);
@@ -1267,160 +1254,45 @@ export default function App() {
   };
 
   const autoValidate = async () => {
-    if (!barId || isProcessingRef.current) {
-      console.log('Mobile: autoValidate ignorée - conditions non remplies', { barId, isProcessing: isProcessingRef.current });
-      return;
-    }
     if (!currentQuestion) return;
-
+    if (isProcessingRef.current) return;
     isProcessingRef.current = true;
     try {
-      const q = currentQuestion;
-
-      // 1) window_event (Oui/Non dans X minutes)
-      if (q.kind === 'window_event' && q.windowMinutes != null) {
-        const startM = Number(q.startElapsed || 0);
-        const resolveAtMinute = startM + Number(q.windowMinutes);
-        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${q.id}`), {
-          id: q.id,
-          kind: q.kind,
-          text: q.text,
-          eventType: q.eventType,
-          startedAtElapsed: startM,
-          resolveAtElapsed: resolveAtMinute,
-          createdAt: q.createdAt,
-          options: q.options || []
-        });
+      const answerCounts = Object.entries(answers);
+      if (answerCounts.length === 0) {
         await remove(ref(db, `bars/${barId}/currentQuestion`));
-        isProcessingRef.current = false;
         return;
       }
-
-      // 2) next_goal (avec ou sans fenêtre)
-      if (q.kind === 'next_goal') {
-        const startM = Number(q.startElapsed || 0);
-        const resolveAtMinute = (q.windowMinutes != null) ? startM + Number(q.windowMinutes) : null;
-        await set(ref(db, `bars/${barId}/matches/${currentMatchId}/pendingQuestions/${q.id}`), {
-          id: q.id,
-          kind: q.kind,
-          text: q.text,
-          startedAtElapsed: startM,
-          resolveAtElapsed: resolveAtMinute,
-          createdAt: q.createdAt,
-          options: q.options || []
-        });
-        await remove(ref(db, `bars/${barId}/currentQuestion`));
-        isProcessingRef.current = false;
-        return;
-      }
-
-      // ... conserve la logique existante pour les questions "generic" ensuite ...
-      if (!q.options || !Array.isArray(q.options) || q.options.length === 0) {
-        throw new Error('Options de question invalides');
-      }
-
-      console.log('🔄 Auto-validation de la question:', q.text);
-      const questionId = q.id;
-
-      const randomWinner = q.options[Math.floor(Math.random() * q.options.length)];
-      const answersSnap = await get(ref(db, `bars/${barId}/answers/${questionId}`));
-
-      const winners = [];
-
-      if (answersSnap.exists() && currentMatchId) {
-        const answersData = answersSnap.val();
-        if (answersData && typeof answersData === 'object') {
-          for (const [userId, data] of Object.entries(answersData)) {
-            try {
-              if (data && data.answer === randomWinner) {
-                const playerRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players/${userId}`);
-                const playerSnap = await get(playerRef);
-                const bonus = Math.floor((data.timeLeft || 0) / 3);
-                const total = 10 + bonus;
-
-                // Récupérer le pseudo du joueur
-                let playerPseudo = '';
-                if (playerSnap.exists()) {
-                  playerPseudo = playerSnap.val().pseudo || '';
-                  await update(playerRef, {
-                    score: (playerSnap.val().score || 0) + total
-                  });
-                } else {
-                  const userSnap = await get(ref(db, `users/${userId}`));
-                  if (userSnap.exists()) {
-                    playerPseudo = userSnap.val().pseudo || '';
-                    await set(playerRef, {
-                      pseudo: playerPseudo,
-                      score: total
-                    });
-                  }
-                }
-
-                // Ajouter le gagnant à la liste
-                winners.push({
-                  userId: userId,
-                  pseudo: playerPseudo,
-                  points: total,
-                  timeLeft: data.timeLeft || 0
-                });
-              }
-            } catch (e) {
-              console.error('Erreur lors du traitement d\'un gagnant:', e);
+      const correctAnswer = answerCounts.reduce((a, b) =>
+        answers[a[0]] > answers[b[0]] ? a : b
+      )[0];
+      const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+      const playersSnap = await get(playersRef);
+      if (playersSnap.exists()) {
+        const playersData = playersSnap.val();
+        const updates = {};
+        const answersRef = ref(db, `bars/${barId}/answers/${currentQuestion.id}`);
+        const answersSnap = await get(answersRef);
+        if (answersSnap.exists()) {
+          const answersData = answersSnap.val();
+          Object.values(answersData).forEach((answerData) => {
+            const pid = answerData.playerId;
+            if (!pid) return;
+            if (answerData.answer === correctAnswer && playersData[pid]) {
+              updates[`${pid}/score`] = (playersData[pid].score || 0) + 1;
             }
-          }
+          });
+        }
+        if (Object.keys(updates).length > 0) {
+          await update(playersRef, updates);
         }
       }
-
-      // Sauvegarder le résultat dans Firebase
-      await set(ref(db, `bars/${barId}/lastQuestionResult`), {
-        questionId: questionId,
-        questionText: q.text || '',
-        correctAnswer: randomWinner,
-        winners: winners,
-        timestamp: Date.now()
-      });
-
-      // 🔥 METTRE À JOUR L'HISTORIQUE POUR TOUS LES JOUEURS QUI ONT RÉPONDU
-      if (answersSnap.exists() && currentMatchId) {
-        const answersData = answersSnap.val();
-        if (answersData && typeof answersData === 'object') {
-          for (const [userId, data] of Object.entries(answersData)) {
-            try {
-              const historyItemId = `${questionId}_${userId}`;
-              const isCorrect = data.answer === randomWinner;
-
-              await update(ref(db, `bars/${barId}/playerHistory/${userId}/${historyItemId}`), {
-                isCorrect: isCorrect,
-                correctAnswer: randomWinner
-              });
-            } catch (e) {
-              console.error('Erreur lors de la mise à jour de l\'historique:', e);
-            }
-          }
-        }
-      }
-
       await remove(ref(db, `bars/${barId}/currentQuestion`));
-      await remove(ref(db, `bars/${barId}/answers/${questionId}`));
-
-      if (matchState?.active) {
-        const nextTime = Date.now() + QUESTION_INTERVAL;
-        await update(ref(db, `bars/${barId}/matchState`), {
-          nextQuestionTime: nextTime
-        });
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      console.log('Mobile: autoValidate terminée avec succès');
+      await remove(ref(db, `bars/${barId}/answers/${currentQuestion.id}`));
     } catch (e) {
-      console.error('Erreur dans autoValidate:', e);
-      console.error('Détails:', e.message, e.stack);
+      console.error('Erreur validation:', e);
     } finally {
-      setTimeout(() => {
-        isProcessingRef.current = false;
-        console.log('Mobile: isProcessingRef réinitialisé');
-      }, 2000);
+      isProcessingRef.current = false;
     }
   };
 
@@ -1573,8 +1445,8 @@ export default function App() {
   };
 
   const syncMatchData = async (fixtureId) => {
-    try {
-      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+      try {
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
       if (!apiKey) {
         console.error('❌ Clé API manquante');
         return null;
@@ -1582,18 +1454,18 @@ export default function App() {
 
       console.log('🔄 Synchronisation API pour fixture:', fixtureId);
 
-      const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-rapidapi-host': 'v3.football.api-sports.io'
-        }
-      });
+        const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
+          method: 'GET',
+          headers: {
+            'x-rapidapi-key': apiKey,
+            'x-rapidapi-host': 'v3.football.api-sports.io'
+          }
+        });
 
-      const data = await response.json();
-      
-      if (data.response && data.response.length > 0) {
-        const fixture = data.response[0];
+        const data = await response.json();
+        
+        if (data.response && data.response.length > 0) {
+          const fixture = data.response[0];
         const matchData = {
           status: fixture.fixture.status.short,
           statusLong: fixture.fixture.status.long,
@@ -1620,9 +1492,9 @@ export default function App() {
     console.log('🚀 START MONITORING - fixture:', fixtureId);
     
     if (matchCheckInterval.current) {
-      clearInterval(matchCheckInterval.current);
-      matchCheckInterval.current = null;
-    }
+            clearInterval(matchCheckInterval.current);
+            matchCheckInterval.current = null;
+          }
 
     const performSync = async () => {
       try {
@@ -1959,7 +1831,7 @@ export default function App() {
           if (mins < 90) {
             displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
             displayPhase = '2ème MT';
-          } else {
+        } else {
             // Temps additionnel 2ème MT
             const addedTime = mins - 90;
             displayTime = `90+${addedTime + 1}`;
@@ -2378,20 +2250,20 @@ export default function App() {
 
     try {
       const myScore = players.find(p => p.id === user?.uid);
-      const score = myScore?.score || 0;
+    const score = myScore?.score || 0;
 
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
-          <div className="max-w-md mx-auto">
-            <div className="bg-white rounded-2xl p-6 mb-6 text-center">
-              <div className="text-sm text-gray-500">{barInfo?.name || ''}</div>
-              <div className="text-green-700 text-lg font-semibold">{userProfile?.pseudo || ''}</div>
-              <div className="text-4xl font-black text-green-900">{score} pts</div>
-              <div className="text-sm text-gray-500 mt-2">Total: {userProfile?.totalPoints || 0} pts</div>
-              <button onClick={handleLogout} className="mt-3 text-red-600 text-sm underline">
-                Déconnexion
-              </button>
-            </div>
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
+        <div className="max-w-md mx-auto">
+          <div className="bg-white rounded-2xl p-6 mb-6 text-center">
+            <div className="text-sm text-gray-500">{barInfo?.name || ''}</div>
+            <div className="text-green-700 text-lg font-semibold">{userProfile?.pseudo || ''}</div>
+            <div className="text-4xl font-black text-green-900">{score} pts</div>
+            <div className="text-sm text-gray-500 mt-2">Total: {userProfile?.totalPoints || 0} pts</div>
+            <button onClick={handleLogout} className="mt-3 text-red-600 text-sm underline">
+              Déconnexion
+            </button>
+                      </div>
 
             {/* 🔥 NOUVEAU : Toujours afficher le match en cours */}
             {(selectedMatch || matchState?.matchInfo) && (
@@ -2432,19 +2304,19 @@ export default function App() {
               </div>
             )}
 
-            {currentQuestion?.text && currentQuestion?.options ? (
-              <div className="bg-white rounded-3xl p-8 shadow-2xl">
-                <div className="text-center mb-6">
+          {currentQuestion?.text && currentQuestion?.options ? (
+            <div className="bg-white rounded-3xl p-8 shadow-2xl">
+              <div className="text-center mb-6">
                   <div className="text-6xl font-black text-green-900 mb-2">{timeLeft || 0}s</div>
-                  <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div className="h-full bg-green-600 transition-all" style={{ width: `${((timeLeft || 0) / 15) * 100}%` }} />
+                    </div>
                   </div>
-                </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
-                <div className="space-y-3">
-                  {currentQuestion.options.map((opt, i) => (
-                    <button
-                      key={i}
+              <h3 className="text-2xl font-bold text-gray-800 mb-6 text-center">{currentQuestion.text}</h3>
+              <div className="space-y-3">
+                {currentQuestion.options.map((opt, i) => (
+                  <button
+                    key={i}
                       onClick={async () => {
                         if (!playerAnswer && user && barId && currentQuestion) {
                           try {
@@ -2481,16 +2353,16 @@ export default function App() {
                           }
                         }
                       }}
-                      disabled={playerAnswer !== null}
-                      className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
-                        playerAnswer === opt ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                      }`}
-                    >
-                      {opt} {playerAnswer === opt && '⏳'}
-                    </button>
-                  ))}
-                </div>
-                {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
+                    disabled={playerAnswer !== null}
+                    className={`w-full py-4 px-6 rounded-xl text-lg font-bold transition-all ${
+                      playerAnswer === opt ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    }`}
+                  >
+                    {opt} {playerAnswer === opt && '⏳'}
+                  </button>
+                ))}
+              </div>
+              {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
               </div>
             ) : lastQuestionResult ? (
               <div className="bg-white rounded-3xl p-8 shadow-2xl">
@@ -2521,8 +2393,8 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                    </div>
-                  ) : (
+              </div>
+            ) : (
                     <div className="bg-gray-100 rounded-xl p-4 mb-4">
                       <p className="text-gray-600">Personne n'a trouvé la bonne réponse</p>
                     </div>
@@ -2539,14 +2411,14 @@ export default function App() {
             ) : (
               <>
                 <div className="bg-white rounded-3xl p-12 text-center shadow-2xl mb-4">
-                  <div className="text-6xl mb-4">⚽</div>
-                  <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
-                  {matchState?.active && countdown && (
-                    <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
-                  )}
-                  {(!matchState || !matchState.active) && (
-                    <p className="text-lg text-gray-500">En attente du démarrage</p>
-                  )}
+              <div className="text-6xl mb-4">⚽</div>
+              <p className="text-2xl text-gray-600 font-semibold mb-4">Match en cours...</p>
+              {matchState?.active && countdown && (
+                <p className="text-lg text-gray-500">Prochaine question dans {countdown}</p>
+              )}
+              {(!matchState || !matchState.active) && (
+                <p className="text-lg text-gray-500">En attente du démarrage</p>
+            )}
                 </div>
 
                 {/* 🔥 HISTORIQUE DES RÉPONSES */}
@@ -2604,8 +2476,8 @@ export default function App() {
                               <span className="text-xs text-blue-700">
                                 ⏰ En attente de validation ({Math.floor(item.validationDelay / 60000)} minutes)
                               </span>
-                            </div>
-                          )}
+          </div>
+          )}
                           
                           {/* Bonne réponse si incorrecte */}
                           {item.isCorrect === false && item.correctAnswer && (
@@ -2650,9 +2522,9 @@ export default function App() {
             >
               Recharger
             </button>
-          </div>
         </div>
-      );
+      </div>
+    );
     }
   }
 
@@ -2762,16 +2634,16 @@ export default function App() {
                         🏁 MATCH TERMINÉ
                       </p>
                     )}
-                  </div>
+            </div>
                   {matchInfo.awayLogo && (
                     <img src={matchInfo.awayLogo} alt={matchInfo.awayTeam} className="w-12 h-12 object-contain" />
                   )}
-                </div>
-              </div>
+          </div>
+        </div>
             ) : matchState?.active ? (
               <div className="mb-3 bg-yellow-900/30 p-4 rounded-xl border-2 border-yellow-500">
                 <p className="text-2xl text-yellow-400">🏀 Match en cours</p>
-              </div>
+      </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             )}
@@ -2780,7 +2652,7 @@ export default function App() {
               <div className="space-y-2">
                 <p className="text-xl text-yellow-400">⏱️ Prochaine: {countdown}</p>
                 <MatchClock />
-              </div>
+          </div>
             )}
             {isMatchFinished && (
               <div className="bg-red-900/50 p-4 rounded-xl border-2 border-red-500 mt-3">
@@ -2888,7 +2760,7 @@ export default function App() {
                   <div className="flex-1">
                     <div className="text-xl font-bold">
                       {selectedMatch.homeTeam} {selectedMatch.score} {selectedMatch.awayTeam}
-                    </div>
+          </div>
                     <div className="text-sm text-gray-300">{selectedMatch.league}</div>
                   </div>
                   {selectedMatch.awayLogo && <img src={selectedMatch.awayLogo} alt="" className="w-10 h-10" />}
@@ -2923,7 +2795,7 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         {match.homeLogo && <img src={match.homeLogo} alt="" className="w-8 h-8" />}
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs bg-blue-600 px-2 py-1 rounded">
                               {match.league}
                             </span>
@@ -2947,8 +2819,8 @@ export default function App() {
                             {match.homeTeam} {match.score} {match.awayTeam}
                           </div>
                           <div className="text-sm text-gray-400">{match.date}</div>
-                      </div>
-                      {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
+                        </div>
+                        {match.awayLogo && <img src={match.awayLogo} alt="" className="w-8 h-8" />}
                         {(isUpcoming || isFinished) && <div className="text-2xl ml-4">🔒</div>}
                       </div>
                     </div>
@@ -3069,7 +2941,7 @@ export default function App() {
           <div className="flex gap-4">
             <button onClick={() => setScreen('home')} className="bg-gray-700 px-6 py-3 rounded-lg">
               ← Retour
-            </button>
+          </button>
             <button onClick={() => setScreen('tv')} className="bg-blue-600 px-6 py-3 rounded-lg">
               📺 TV
             </button>
