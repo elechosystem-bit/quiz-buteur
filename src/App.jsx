@@ -79,6 +79,36 @@ const formatMatchMinute = ({ half, elapsed, isPaused }) => {
   return `${elapsed}`;
 };
 
+// --- Helpers affichage horloge match ---
+function formatMatchTime(statusShort, elapsed = 0) {
+  if (!elapsed || elapsed < 0) return '0';
+
+  switch (statusShort) {
+    case 'HT':
+      return 'MI-TEMPS';
+    case '1H':
+      return elapsed <= 45 ? `${elapsed}` : `45+${elapsed - 45}`;
+    case '2H':
+      return elapsed <= 90 ? `${elapsed}` : `90+${elapsed - 90}`;
+    case 'ET': // prolongations : on laisse la minute brute
+      return `${elapsed}`;
+    case 'FT':
+      return 'TERMINÉ';
+    default:
+      return `${elapsed}`;
+  }
+}
+
+function formatHalfLabel(statusShort) {
+  switch (statusShort) {
+    case 'HT': return 'Mi-temps';
+    case '1H': return '1ʳᵉ MT';
+    case '2H': return '2ᵉ MT';
+    case 'FT': return 'Terminé';
+    default:   return statusShort || '';
+  }
+}
+
 // ---------- PREDICTION HELPERS ----------
 const norm = (s) => String(s || '')
   .toLowerCase()
@@ -2693,20 +2723,27 @@ export default function App() {
                       {matchInfo.awayTeam}
                     </p>
                     <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
-                    {matchState?.matchClock && (
-                      <div className="text-2xl font-bold mt-2">
-                        {formatMatchMinute({
-                          half: matchState.matchClock.half,
-                          isPaused: matchState.matchClock.isPaused,
-                          elapsed: computeElapsed(
-                            matchState.matchClock.apiElapsed,
-                            matchState.matchClock.lastSyncAt,
-                            matchState.matchClock.half,
-                            matchState.matchClock.isPaused
-                          )
-                        })}
-                      </div>
-                    )}
+                    {(() => {
+                      // --- Source horloge depuis Firebase ou sélection courante ---
+                      const shortStatus =
+                        matchState?.matchClock?.half ??
+                        selectedMatch?.half ??
+                        matchHalf;
+
+                      const elapsedMinutes =
+                        matchState?.matchClock?.elapsedMinutes ??
+                        matchElapsedMinutes ??
+                        0;
+
+                      const clockText = formatMatchTime(shortStatus, elapsedMinutes);
+                      const phaseText = formatHalfLabel(shortStatus);
+
+                      return (
+                        <div className="text-2xl font-bold mt-2">
+                          {clockText} {phaseText && `- ${phaseText}`}
+                        </div>
+                      );
+                    })()}
                     {!matchState?.matchClock?.isPaused && !FINISHED_STATUSES.has(matchState?.matchClock?.half) && matchState?.active && (
                       <div className="text-red-400 font-bold mt-2">🔴 MATCH EN COURS</div>
                     )}
