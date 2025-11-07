@@ -41,6 +41,16 @@ const tryLock = async (uid, barId) => {
 const QUESTION_INTERVAL = 60000;
 const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
 
+// --- QUESTIONS par défaut (fallback pour le quiz) ---
+const QUESTIONS = [
+  { text: "Y aura-t-il un but dans les 5 prochaines minutes ?", options: ["Oui", "Non"] },
+  { text: "Y aura-t-il un corner dans les 5 prochaines minutes ?", options: ["Oui", "Non"] },
+  { text: "Y aura-t-il un carton jaune dans les 10 prochaines minutes ?", options: ["Oui", "Non"] },
+  { text: "Qui va marquer le prochain but ?", options: ["Domicile", "Extérieur", "Aucun"] },
+  { text: "Y aura-t-il un but contre son camp ?", options: ["Oui", "Non"] },
+  { text: "Y aura-t-il un penalty sifflé ?", options: ["Oui", "Non"] }
+];
+
 const LIVE_STATUSES = new Set(['1H','2H','ET','LIVE']);
 const PAUSE_STATUSES = new Set(['HT','BT','P','SUSP','INT']);
 const FINISHED_STATUSES = new Set(['FT','AET','PEN','AWD','WO']);
