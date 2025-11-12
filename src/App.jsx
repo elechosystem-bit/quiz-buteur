@@ -147,6 +147,48 @@ const hasAucune = (options=[]) => options.some(o => {
   return n === 'aucune' || n === 'aucun';
 });
 
+// === START PATCH: helpers + autoValidate avec API-Football ===
+
+// Parse "…dans les 5/10 prochaines minutes ?" -> 5 ou 10 (fallback 10)
+function parsePredictionWindowMinutes(text = '') {
+  const m = text.match(/(\d+)\s*prochaines?\s*minutes?/i);
+  const n = m ? parseInt(m[1], 10) : 10;
+  return Number.isFinite(n) && n > 0 ? n : 10;
+}
+
+// Détermine le type simple de question
+function detectQuestionType(text = '') {
+  const t = text.toLowerCase();
+  if (t.includes('carton')) return 'card';
+  if (t.includes('corner')) return 'corner';
+  if (t.includes('contre son camp')) return 'own_goal';
+  if (t.includes('but')) return 'goal';
+  return 'unknown';
+}
+
+// Récupération du fixture (events + elapsed)
+async function fetchFixtureNow(fixtureId, apiKey) {
+  const res = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
+    method: 'GET',
+    headers: {
+      'x-rapidapi-key': apiKey,
+      'x-rapidapi-host': 'v3.football.api-sports.io'
+    }
+  });
+  const data = await res.json();
+  const fx = data?.response?.[0];
+  return {
+    events: Array.isArray(fx?.events) ? fx.events : [],
+    elapsedNow: Number.isFinite(fx?.fixture?.status?.elapsed) ? fx.fixture.status.elapsed : null,
+  };
+}
+
+// Test si l'événement tombe dans la fenêtre [startMin, endMin]
+function isInMinuteWindow(ev, startMin, endMin) {
+  const evMin = (ev?.time?.elapsed ?? 0) + ((ev?.time?.extra ?? 0) / 1);
+  return evMin >= startMin && evMin <= endMin;
+}
+
 // Détecte une question "dans X minutes"
 const parseWindowPrediction = (text) => {
   if (!text) return null;
@@ -258,6 +300,7 @@ export default function App() {
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
+const firstQuestionTimeoutRef = useRef(null);
   const wakeLockRef = useRef(null);
   const matchCheckInterval = useRef(null);
 
@@ -677,6 +720,32 @@ export default function App() {
     }
   }, [barId, screen]);
 
+  // Show correction/feedback on mobile when a result is published
+  useEffect(() => {
+    if (!barId || !currentQuestion?.id || screen !== 'mobile') return;
+
+    const qid = String(currentQuestion.id);
+    const resultRef = ref(db, `bars/${barId}/results/${qid}`);
+    const unsub = onValue(resultRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.val();
+      // If no correctAnswer (null) => nobody answered / no resolution
+      if (typeof data.correctAnswer === 'undefined') return;
+
+      const isCorrect = playerAnswer != null && data.correctAnswer != null && playerAnswer === data.correctAnswer;
+      const msg = (data.correctAnswer == null)
+        ? '⏱️ Pas de bonne réponse déterminée pour cette question.'
+        : (isCorrect
+            ? '✅ Bonne réponse ! +10 pts'
+            : `❌ Mauvaise réponse.\nBonne réponse : ${data.correctAnswer}`);
+
+      // basic UX: alert. (you can later replace by a nicer toast)
+      alert(msg);
+    });
+
+    return () => unsub();
+  }, [barId, currentQuestion?.id, playerAnswer, screen]);
+
   // 🔥 ÉCOUTER L'HISTORIQUE DES RÉPONSES
   useEffect(() => {
     if (!barId || !user || screen !== 'mobile') return;
@@ -924,6 +993,10 @@ export default function App() {
         clearInterval(nextQuestionTimer.current);
         nextQuestionTimer.current = null;
       }
+      if (firstQuestionTimeoutRef.current) {
+        clearTimeout(firstQuestionTimeoutRef.current);
+        firstQuestionTimeoutRef.current = null;
+      }
       return;
     }
 
@@ -934,6 +1007,17 @@ export default function App() {
       
       const now = Date.now();
       const nextTime = matchState.nextQuestionTime || 0;
+      const questionCount = matchState?.questionCount || 0;
+
+      if (questionCount === 0) {
+        if (!firstQuestionTimeoutRef.current) {
+          firstQuestionTimeoutRef.current = setTimeout(async () => {
+            firstQuestionTimeoutRef.current = null;
+            await createRandomQuestion();
+          }, 2 * 60 * 1000);
+        }
+        return;
+      }
 
       if (now >= nextTime) {
         await createRandomQuestion();
@@ -943,6 +1027,10 @@ export default function App() {
     return () => {
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
+      }
+      if (firstQuestionTimeoutRef.current) {
+        clearTimeout(firstQuestionTimeoutRef.current);
+        firstQuestionTimeoutRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1030,6 +1118,10 @@ export default function App() {
     }
     
     try {
+      if (firstQuestionTimeoutRef.current) {
+        clearTimeout(firstQuestionTimeoutRef.current);
+        firstQuestionTimeoutRef.current = null;
+      }
       // 🔥 SYNCHRONISATION AVEC L'API EN TEMPS RÉEL
       console.log('🔄 Synchronisation avec l\'API...');
       let realTimeElapsed = selectedMatch?.elapsed || 0;
@@ -1100,7 +1192,7 @@ export default function App() {
       const newMatchState = {
         active: true,
         startTime: now,
-        nextQuestionTime: serverNow() + 30000,
+        nextQuestionTime: serverNow() + 2 * 60 * 1000,
         questionCount: 0,
         currentMatchId: matchId,
         matchInfo: selectedMatch ? {
@@ -1208,6 +1300,10 @@ export default function App() {
         clearInterval(nextQuestionTimer.current);
         nextQuestionTimer.current = null;
       }
+      if (firstQuestionTimeoutRef.current) {
+        clearTimeout(firstQuestionTimeoutRef.current);
+        firstQuestionTimeoutRef.current = null;
+      }
       
       stopMatchMonitoring();
       
@@ -1225,6 +1321,10 @@ export default function App() {
     if (!matchState?.active) {
       alert('❌ Le match n\'est pas actif');
       return;
+    }
+    if (firstQuestionTimeoutRef.current) {
+      clearTimeout(firstQuestionTimeoutRef.current);
+      firstQuestionTimeoutRef.current = null;
     }
     try {
       let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
@@ -1254,47 +1354,96 @@ export default function App() {
   };
 
   const autoValidate = async () => {
-    if (!currentQuestion) return;
+    if (!currentQuestion || !barId) return;
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
+
     try {
-      const answerCounts = Object.entries(answers);
-      if (answerCounts.length === 0) {
-        await remove(ref(db, `bars/${barId}/currentQuestion`));
-        return;
+      const qid = String(currentQuestion.id);
+      const answersPath = `bars/${barId}/answers/${qid}`;
+      const playersPath = `bars/${barId}/matches/${currentMatchId}/players`;
+
+      const answersSnap = await get(ref(db, answersPath));
+      const counts = {};
+      const byPlayer = {};
+      if (answersSnap.exists()) {
+        const raw = answersSnap.val();
+        for (const [pid, a] of Object.entries(raw)) {
+          counts[a.answer] = (counts[a.answer] || 0) + 1;
+          byPlayer[pid] = a.answer;
+        }
       }
-      const correctAnswer = answerCounts.reduce((a, b) =>
-        answers[a[0]] > answers[b[0]] ? a : b
-      )[0];
-      const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
-      const playersSnap = await get(playersRef);
+
+      const majorityAnswer = Object.keys(counts).reduce((best, k) => {
+        if (best == null) return k;
+        return counts[k] > counts[best] ? k : best;
+      }, null);
+
+      let correctAnswer = null;
+      const qType = detectQuestionType(currentQuestion.text);
+      const winMin = parsePredictionWindowMinutes(currentQuestion.text);
+
+      try {
+        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+        if (apiKey && selectedMatch?.id) {
+          const { events, elapsedNow } = await fetchFixtureNow(selectedMatch.id, apiKey);
+          const deltaMinutes = Math.floor((Date.now() - (currentQuestion.createdAt || Date.now())) / 60000);
+          const startMin = Math.max(0, (elapsedNow ?? 0) - deltaMinutes);
+          const endMin = startMin + winMin;
+          const inWindow = (ev) => isInMinuteWindow(ev, startMin, endMin);
+
+          if (qType === 'card') {
+            const cards = events.filter(ev => ev?.type === 'Card' && inWindow(ev));
+            correctAnswer = cards.length > 0 ? 'Oui' : 'Non';
+          } else if (qType === 'own_goal') {
+            const og = events.filter(ev => ev?.type === 'Goal' && ev?.detail === 'Own Goal' && inWindow(ev));
+            correctAnswer = og.length > 0 ? 'Oui' : 'Non';
+          } else if (qType === 'goal') {
+            const goals = events.filter(ev => ev?.type === 'Goal' && inWindow(ev));
+            correctAnswer = goals.length > 0 ? 'Oui' : 'Non';
+          } else if (qType === 'corner') {
+            const corners = events.filter(ev => ev?.detail === 'Corner' && inWindow(ev));
+            if (corners.length > 0) correctAnswer = 'Oui';
+          }
+        }
+      } catch (err) {
+        console.error('Validation API error:', err);
+      }
+
+      if (correctAnswer == null && majorityAnswer != null) {
+        correctAnswer = majorityAnswer;
+      }
+
+      const playersSnap = await get(ref(db, playersPath));
       if (playersSnap.exists()) {
         const playersData = playersSnap.val();
         const updates = {};
-        const answersRef = ref(db, `bars/${barId}/answers/${currentQuestion.id}`);
-        const answersSnap = await get(answersRef);
-        if (answersSnap.exists()) {
-          const answersData = answersSnap.val();
-          Object.values(answersData).forEach((answerData) => {
-            const pid = answerData.playerId;
-            if (!pid) return;
-            if (answerData.answer === correctAnswer && playersData[pid]) {
-              updates[`${pid}/score`] = (playersData[pid].score || 0) + 1;
-            }
-          });
+        for (const [pid, p] of Object.entries(playersData)) {
+          const ans = byPlayer[pid];
+          if (ans != null && correctAnswer != null && ans === correctAnswer) {
+            updates[`${pid}/score`] = (p.score || 0) + 10;
+          }
         }
-        if (Object.keys(updates).length > 0) {
-          await update(playersRef, updates);
+        if (Object.keys(updates).length) {
+          await update(ref(db, playersPath), updates);
         }
       }
+
+      await set(ref(db, `bars/${barId}/results/${qid}`), {
+        correctAnswer: correctAnswer ?? null,
+        validatedAt: Date.now(),
+        totals: counts,
+      });
+
       await remove(ref(db, `bars/${barId}/currentQuestion`));
-      await remove(ref(db, `bars/${barId}/answers/${currentQuestion.id}`));
-    } catch (e) {
-      console.error('Erreur validation:', e);
+      await remove(ref(db, answersPath));
+    } catch (err) {
+      console.error('autoValidate fatal error', err);
     } finally {
       isProcessingRef.current = false;
     }
   };
+// === END PATCH ===
 
   // ==================== VALIDATION DIFFÉRÉE ====================
   const validatePendingQuestions = async () => {
