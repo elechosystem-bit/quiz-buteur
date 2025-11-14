@@ -42,6 +42,7 @@ const tryLock = async (uid, barId) => {
 
 const QUESTION_INTERVAL = 120000;
 const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
+const SIMULATION_MINUTE_MS = 13333;
 
 // --- QUESTIONS par défaut (fallback pour le quiz) ---
 const QUESTIONS = [
@@ -1436,7 +1437,7 @@ const firstQuestionTimeoutRef = useRef(null);
       let half = '1H';
       let isPaused = false;
       
-      simulationIntervalRef.current = setInterval(async () => {
+    simulationIntervalRef.current = setInterval(async () => {
         if (isPaused) return;
         
         elapsed++;
@@ -1483,7 +1484,8 @@ const firstQuestionTimeoutRef = useRef(null);
           return;
         }
         
-        const currentEvents = matchData.events.filter(e => e.elapsed === elapsed);
+      const currentEvents = matchData.events.filter(e => e.elapsed === elapsed);
+      if (currentEvents.length > 0) {
         for (const event of currentEvents) {
           if (event.type === 'Goal') {
             if (event.team === 'home') score.home++;
@@ -1502,6 +1504,48 @@ const firstQuestionTimeoutRef = useRef(null);
             ]);
             console.log(`${cardEmoji} ${elapsed}' - ${event.detail}`);
           }
+
+          try {
+            console.log('🔔 Event détecté, vérification des questions actives...');
+            const currentQuestionRef = ref(db, `bars/${simulationBarId}/currentQuestion`);
+            const questionSnap = await get(currentQuestionRef);
+
+            if (questionSnap.exists()) {
+              const question = questionSnap.val();
+              const qType = detectQuestionType(question.text);
+              const winMin = parsePredictionWindowMinutes(question.text);
+
+              const simSnap = await get(ref(db, `bars/${simulationBarId}/simulation`));
+              const simData = simSnap.val() || {};
+              const startedAt = simData.startedAt || question.createdAt || Date.now();
+              const createdAt = question.createdAt || Date.now();
+              const questionStartMin = Math.max(0, Math.floor((createdAt - startedAt) / SIMULATION_MINUTE_MS));
+              const questionEndMin = questionStartMin + winMin;
+
+              console.log(`❓ Question active: "${question.text}"`);
+              console.log(`⏱️ Fenêtre: ${questionStartMin}' à ${questionEndMin}'`);
+              console.log(`📍 Event actuel: ${elapsed}'`);
+
+              if (elapsed >= questionStartMin && elapsed <= questionEndMin) {
+                let shouldValidate = false;
+                if (qType === 'goal' && event.type === 'Goal') shouldValidate = true;
+                else if (qType === 'card' && event.type === 'Card') shouldValidate = true;
+                else if (qType === 'own_goal' && event.type === 'Goal' && event.detail === 'Own Goal') shouldValidate = true;
+
+                if (shouldValidate) {
+                  console.log('✅ Déclenchement validation immédiate');
+                  await validateQuestionNow(simulationBarId, question, event);
+                } else {
+                  console.log('⏭️ Event non pertinent pour la question active');
+                }
+              } else {
+                console.log('⏭️ Event hors fenêtre de question, pas de validation');
+              }
+            }
+          } catch (eventErr) {
+            console.error('❌ Erreur vérification question/événement:', eventErr);
+          }
+        }
         }
         
         setSimulationElapsed(elapsed);
@@ -1512,7 +1556,7 @@ const firstQuestionTimeoutRef = useRef(null);
           half
         });
         
-      }, 13333);
+    }, SIMULATION_MINUTE_MS);
       
       console.log('✅ Intervalle démarré (1 min = 60 secondes)');
       
@@ -1534,6 +1578,59 @@ const firstQuestionTimeoutRef = useRef(null);
     setSimulationLog([]);
     setSelectedSimulationMatch(null);
     setSimulationPlayers({});
+  };
+
+  const validateQuestionNow = async (simBarId, question, triggeringEvent) => {
+    try {
+      const qid = String(question.id);
+      const answersPath = `bars/${simBarId}/answers/${qid}`;
+      const playersPath = `bars/${simBarId}/players`;
+
+      const answersSnap = await get(ref(db, answersPath));
+      const counts = {};
+      const byPlayer = {};
+      if (answersSnap.exists()) {
+        const raw = answersSnap.val();
+        for (const [pid, a] of Object.entries(raw)) {
+          counts[a.answer] = (counts[a.answer] || 0) + 1;
+          byPlayer[pid] = a.answer;
+        }
+      }
+
+      let correctAnswer = 'Oui';
+
+      const playersSnap = await get(ref(db, playersPath));
+      if (playersSnap.exists()) {
+        const playersData = playersSnap.val();
+        const updates = {};
+        for (const [pid, p] of Object.entries(playersData)) {
+          const ans = byPlayer[pid];
+          if (ans === correctAnswer) {
+            updates[`${pid}/score`] = (p.score || 0) + 10;
+          }
+        }
+        if (Object.keys(updates).length) {
+          await update(ref(db, playersPath), updates);
+        }
+      }
+
+      const resultData = {
+        correctAnswer,
+        validatedAt: Date.now(),
+        totals: counts,
+        questionText: question.text,
+        type: question.type || detectQuestionType(question.text),
+        explanation: `${triggeringEvent.type === 'Goal' ? '⚽' : '🟨'} ${triggeringEvent.elapsed || 0}' - ${triggeringEvent.player || 'Event'}`
+      };
+
+      await set(ref(db, `bars/${simBarId}/results/${qid}`), resultData);
+      await remove(ref(db, `bars/${simBarId}/currentQuestion`));
+      await remove(ref(db, answersPath));
+
+      console.log('✅ Validation immédiate terminée');
+    } catch (error) {
+      console.error('❌ Erreur validation immédiate:', error);
+    }
   };
 
   const handleJoinBar = async () => {
