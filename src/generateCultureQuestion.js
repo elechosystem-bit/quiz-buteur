@@ -222,7 +222,3 @@ export async function checkClaudeQuota(db, ref, get, set, maxPerDay = 200) {
 
 }
 
-
-
-Objectif : Ce fichier contient la logique pour appeler l'API Claude et générer des questions de culture football intelligentes et contextuelles.
-
