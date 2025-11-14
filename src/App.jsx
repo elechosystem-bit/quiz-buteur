@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push, serverTimestamp, runTransaction } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, checkClaudeQuota } from './generateCultureQuestion';
 
 const firebaseConfig = {
@@ -1335,9 +1336,32 @@ const firstQuestionTimeoutRef = useRef(null);
         alert('❌ Aucun match sélectionné');
         return;
       }
-      
-      const simulationBarId = barId || 'BAR-SIMULATION-TEST';
-      
+
+      let simulationBarId = barId;
+
+      if (!simulationBarId) {
+        if (typeof window !== 'undefined' && window.simulationBarId) {
+          simulationBarId = window.simulationBarId;
+        } else {
+          const newBarId = 'BAR-SIM-' + Date.now().toString(36).toUpperCase();
+
+          await set(ref(db, `bars/${newBarId}`), {
+            name: `Simulation ${matchData.homeTeam} vs ${matchData.awayTeam}`,
+            createdAt: Date.now(),
+            isSimulation: true
+          });
+
+          if (typeof window !== 'undefined') {
+            window.simulationBarId = newBarId;
+          }
+          setBarId(newBarId);
+          simulationBarId = newBarId;
+          console.log('✅ Bar de simulation créé:', newBarId);
+        }
+      }
+
+      simulationBarId = simulationBarId || (typeof window !== 'undefined' ? window.simulationBarId : null) || 'BAR-SIMULATION-TEST';
+
       console.log('🎬 Démarrage simulation:', {
         selectedMatch: selectedSimulationMatch,
         matchData,
@@ -1360,6 +1384,38 @@ const firstQuestionTimeoutRef = useRef(null);
       });
       
       console.log('✅ Firebase initialisé');
+
+      await set(ref(db, `bars/${simulationBarId}/matchState`), {
+        active: true,
+        startedAt: Date.now(),
+        questionCount: 0,
+        nextQuestionTime: Date.now() + 120000,
+        matchInfo: {
+          homeTeam: matchData.homeTeam,
+          awayTeam: matchData.awayTeam,
+          league: matchData.league,
+          score: '0-0'
+        },
+        matchClock: {
+          apiElapsed: 0,
+          half: '1H',
+          isPaused: false,
+          lastSyncAt: Date.now()
+        }
+      });
+
+      await set(ref(db, `bars/${simulationBarId}/selectedMatch`), {
+        id: matchData.id,
+        homeTeam: matchData.homeTeam,
+        awayTeam: matchData.awayTeam,
+        league: matchData.league,
+        score: '0-0',
+        elapsed: 0,
+        half: '1H',
+        status: 'LIVE'
+      });
+
+      console.log('✅ Système de questions activé');
       
       let elapsed = 0;
       let score = { home: 0, away: 0 };
@@ -1597,32 +1653,75 @@ const firstQuestionTimeoutRef = useRef(null);
         
         const qType = detectQuestionType(currentQuestion.text);
         const winMin = parsePredictionWindowMinutes(currentQuestion.text);
-        
+
+        let simulationHandled = false;
+
         try {
-          const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-          if (apiKey && selectedMatch?.id) {
-            const { events, elapsedNow } = await fetchFixtureNow(selectedMatch.id, apiKey);
-            const deltaMinutes = Math.floor((Date.now() - (currentQuestion.createdAt || Date.now())) / 60000);
-            const startMin = Math.max(0, (elapsedNow ?? 0) - deltaMinutes);
-            const endMin = startMin + winMin;
-            const inWindow = (ev) => isInMinuteWindow(ev, startMin, endMin);
-            
-            if (qType === 'card') {
-              const cards = events.filter(ev => ev?.type === 'Card' && inWindow(ev));
-              correctAnswer = cards.length > 0 ? 'Oui' : 'Non';
-            } else if (qType === 'own_goal') {
-              const og = events.filter(ev => ev?.type === 'Goal' && ev?.detail === 'Own Goal' && inWindow(ev));
-              correctAnswer = og.length > 0 ? 'Oui' : 'Non';
-            } else if (qType === 'goal') {
-              const goals = events.filter(ev => ev?.type === 'Goal' && inWindow(ev));
-              correctAnswer = goals.length > 0 ? 'Oui' : 'Non';
-            } else if (qType === 'corner') {
-              const corners = events.filter(ev => ev?.detail === 'Corner' && inWindow(ev));
-              if (corners.length > 0) correctAnswer = 'Oui';
+          const simulationBarPath = barId || (typeof window !== 'undefined' ? window.simulationBarId : null);
+          if (simulationBarPath) {
+            const simulationRef = ref(db, `bars/${simulationBarPath}/simulation`);
+            const simulationSnap = await get(simulationRef);
+
+            if (simulationSnap.exists() && simulationSnap.val().active) {
+              console.log('🎬 Validation en mode simulation');
+
+              const simData = simulationSnap.val();
+              const simEvents = simData.match?.events || [];
+              const deltaMinutes = Math.floor((Date.now() - (currentQuestion.createdAt || Date.now())) / 60000);
+              const startMin = Math.max(0, (simData.elapsed || 0) - deltaMinutes);
+              const endMin = startMin + winMin;
+
+              console.log(`🔍 Recherche events entre ${startMin}' et ${endMin}'`);
+
+              const inWindow = (ev) => ev.elapsed >= startMin && ev.elapsed <= endMin;
+
+              if (qType === 'goal') {
+                const goals = simEvents.filter(ev => ev.type === 'Goal' && inWindow(ev));
+                correctAnswer = goals.length > 0 ? 'Oui' : 'Non';
+                console.log(`⚽ ${goals.length} buts trouvés → ${correctAnswer}`);
+              } else if (qType === 'card') {
+                const cards = simEvents.filter(ev => ev.type === 'Card' && ev.detail === 'Yellow Card' && inWindow(ev));
+                correctAnswer = cards.length > 0 ? 'Oui' : 'Non';
+                console.log(`🟨 ${cards.length} cartons jaunes trouvés → ${correctAnswer}`);
+              } else if (qType === 'own_goal') {
+                const ownGoals = simEvents.filter(ev => ev.type === 'Goal' && ev.detail === 'Own Goal' && inWindow(ev));
+                correctAnswer = ownGoals.length > 0 ? 'Oui' : 'Non';
+              }
+
+              simulationHandled = true;
             }
           }
-        } catch (err) {
-          console.error('Validation API error:', err);
+        } catch (simErr) {
+          console.error('Simulation validation error:', simErr);
+        }
+        
+        if (!simulationHandled) {
+          try {
+            const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+            if (apiKey && selectedMatch?.id) {
+              const { events, elapsedNow } = await fetchFixtureNow(selectedMatch.id, apiKey);
+              const deltaMinutes = Math.floor((Date.now() - (currentQuestion.createdAt || Date.now())) / 60000);
+              const startMin = Math.max(0, (elapsedNow ?? 0) - deltaMinutes);
+              const endMin = startMin + winMin;
+              const inWindow = (ev) => isInMinuteWindow(ev, startMin, endMin);
+              
+              if (qType === 'card') {
+                const cards = events.filter(ev => ev?.type === 'Card' && inWindow(ev));
+                correctAnswer = cards.length > 0 ? 'Oui' : 'Non';
+              } else if (qType === 'own_goal') {
+                const og = events.filter(ev => ev?.type === 'Goal' && ev?.detail === 'Own Goal' && inWindow(ev));
+                correctAnswer = og.length > 0 ? 'Oui' : 'Non';
+              } else if (qType === 'goal') {
+                const goals = events.filter(ev => ev?.type === 'Goal' && inWindow(ev));
+                correctAnswer = goals.length > 0 ? 'Oui' : 'Non';
+              } else if (qType === 'corner') {
+                const corners = events.filter(ev => ev?.detail === 'Corner' && inWindow(ev));
+                if (corners.length > 0) correctAnswer = 'Oui';
+              }
+            }
+          } catch (err) {
+            console.error('Validation API error:', err);
+          }
         }
         
         if (correctAnswer == null && majorityAnswer != null) {
@@ -3095,6 +3194,8 @@ const firstQuestionTimeoutRef = useRef(null);
   }
 
   if (screen === 'simulation') {
+    const simulationBarDisplayId = barId || (typeof window !== 'undefined' ? window.simulationBarId : null) || 'BAR-SIM-TEST';
+    const simulationJoinUrl = `https://quiz-buteur.vercel.app/?bar=${simulationBarDisplayId}`;
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-pink-900 p-8">
         <div className="flex justify-between items-center mb-8">
@@ -3241,6 +3342,34 @@ const firstQuestionTimeoutRef = useRef(null);
                     {simulationHalf === 'HT' && '⏸️ Mi-temps'}
                     {simulationHalf === '2H' && '⚽ 2ème Mi-temps'}
                     {simulationHalf === 'FT' && '🏁 Match Terminé'}
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl p-6 mb-6">
+                  <h4 className="font-bold text-xl mb-4 text-purple-900 text-center">
+                    📱 Rejoindre le quiz
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white rounded-xl p-6 text-center">
+                      <div className="text-sm text-gray-600 mb-2">Code du bar :</div>
+                      <div className="text-4xl font-black text-purple-900 mb-2">
+                        {simulationBarDisplayId}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        URL : quiz-buteur.vercel.app
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-xl p-6 flex items-center justify-center">
+                      <QRCodeSVG 
+                        value={simulationJoinUrl}
+                        size={150}
+                        level="H"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-center mt-4 text-sm text-purple-700">
+                    Les joueurs peuvent scanner le QR code ou entrer le code pour rejoindre
                   </div>
                 </div>
                 
