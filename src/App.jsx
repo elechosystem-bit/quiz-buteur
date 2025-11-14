@@ -288,9 +288,6 @@ export default function App() {
   const [availableMatches, setAvailableMatches] = useState([]);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [loadingMatches, setLoadingMatches] = useState(false);
-  const [matchStartTime, setMatchStartTime] = useState(null);
-  const [matchElapsedMinutes, setMatchElapsedMinutes] = useState(0);
-  const [matchHalf, setMatchHalf] = useState('1H');
   const [matchPlayers, setMatchPlayers] = useState([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [syncStatus, setSyncStatus] = useState('idle'); // 🔥 État de synchronisation
@@ -420,14 +417,6 @@ const firstQuestionTimeoutRef = useRef(null);
   const selectMatch = async (match) => {
     setSelectedMatch(match);
     console.log('⚽ Match sélectionné:', match);
-    
-    if (match.elapsed !== undefined) {
-      setMatchElapsedMinutes(match.elapsed);
-      setMatchStartTime(Date.now() - (match.elapsed * 60000));
-      setMatchHalf(match.half || '1H');
-      console.log('⏱️ Chrono configuré :', match.elapsed, '\'', 'écoulées, démarrage à', new Date(Date.now() - (match.elapsed * 60000)).toLocaleTimeString());
-    }
-    
     try {
       const matchData = {
         id: match.id,
@@ -632,15 +621,6 @@ const firstQuestionTimeoutRef = useRef(null);
       setMatchState(state);
       setCurrentMatchId(state?.currentMatchId || null);
       
-      // Mettre à jour les states pour l'affichage depuis matchState
-      if (state?.matchClock) {
-        setMatchElapsedMinutes(state.matchClock.elapsedMinutes || 0);
-        setMatchHalf(state.matchClock.half || '1H');
-        if (state.matchClock.startTime) {
-          setMatchStartTime(state.matchClock.startTime);
-        }
-      }
-      
       // Mettre à jour le score depuis matchInfo si disponible
       if (state?.matchInfo?.score && !selectedMatch?.score) {
         // Le score sera mis à jour via selectedMatch, mais on peut aussi le mettre ici en fallback
@@ -661,19 +641,6 @@ const firstQuestionTimeoutRef = useRef(null);
         console.log('🔄 selectedMatch mis à jour depuis Firebase:', match);
         
         setSelectedMatch(match);
-        
-        if (match.elapsed !== undefined) {
-          const newStartTime = Date.now() - (match.elapsed * 60000);
-          setMatchElapsedMinutes(match.elapsed);
-          setMatchStartTime(newStartTime);
-          setMatchHalf(match.half || '1H');
-          
-          console.log('⏱️ Chrono mis à jour:', {
-            elapsed: match.elapsed,
-            startTime: new Date(newStartTime).toLocaleTimeString(),
-            half: match.half
-          });
-        }
       }
     });
     
@@ -1178,17 +1145,7 @@ const firstQuestionTimeoutRef = useRef(null);
       const now = Date.now();
       const matchId = `match_${now}`;
       
-      // 🔥 CALCUL DU TEMPS DE DÉPART BASÉ SUR LE TEMPS RÉEL
-      const clockStartTime = now - (realTimeElapsed * 60000);
-      
-      console.log(`⏱️ Chrono configuré : ${realTimeElapsed}' écoulées, démarrage à ${new Date(clockStartTime).toLocaleTimeString()}`);
-      
-      console.log('🔍 DEBUG TEMPS:');
-      console.log('- Temps réel elapsed:', realTimeElapsed, 'minutes');
-      console.log('- Now:', now);
-      console.log('- ClockStartTime calculé:', clockStartTime);
-      console.log('- Différence:', Math.floor((now - clockStartTime) / 60000), 'minutes');
-      
+      const matchClockSyncAt = serverNow();
       const newMatchState = {
         active: true,
         startTime: now,
@@ -1204,9 +1161,10 @@ const firstQuestionTimeoutRef = useRef(null);
           score: realTimeScore // Score en temps réel
         } : null,
         matchClock: {
-          startTime: clockStartTime, // Temps calculé avec l'elapsed réel
-          elapsedMinutes: realTimeElapsed, // Minutes réelles
-          half: realTimeHalf // Mi-temps réelle
+          apiElapsed: realTimeElapsed,
+          lastSyncAt: matchClockSyncAt,
+          half: realTimeHalf,
+          isPaused: PAUSE_STATUSES.has(realTimeHalf)
         }
       };
       
@@ -1673,8 +1631,10 @@ const firstQuestionTimeoutRef = useRef(null);
               endTime: Date.now(),
               finalStatus: matchData.status,
               matchClock: {
+                apiElapsed: 90,
                 half: 'FT',
-                elapsedMinutes: 90
+                isPaused: true,
+                lastSyncAt: serverNow()
               },
               matchInfo: {
                 score: finalScore
@@ -1704,26 +1664,14 @@ const firstQuestionTimeoutRef = useRef(null);
           // Arrêter la surveillance
           stopMatchMonitoring();
           
-          // Mettre à jour les states locaux
-          setMatchHalf('FT');
-          setMatchElapsedMinutes(90);
-          
           return;
         }
-        
-        console.log('📊 État actuel:', {
-          local: { elapsed: matchElapsedMinutes, half: matchHalf },
-          api: { elapsed: matchData.elapsed, half: matchData.status }
-        });
         
         const fixture = matchData.rawFixture;
         if (fixture) {
           const statusShort = fixture.fixture.status.short;
           const apiElapsed = fixture.fixture.status.elapsed || 0;
           const isPaused = PAUSE_STATUSES.has(statusShort);
-
-          setMatchElapsedMinutes(apiElapsed);
-          setMatchHalf(statusShort);
 
           if (currentMatchId && barId) {
             await update(ref(db, `bars/${barId}/matchState`), {
@@ -2731,16 +2679,14 @@ const firstQuestionTimeoutRef = useRef(null);
                     </p>
                     <p className="text-xl text-green-300 mt-1">{matchInfo.league}</p>
                     {(() => {
-                      // --- Source horloge depuis Firebase ou sélection courante ---
-                      const shortStatus =
-                        matchState?.matchClock?.half ??
-                        selectedMatch?.half ??
-                        matchHalf;
+                      const clockData = matchState?.matchClock;
+                      const shortStatus = clockData?.half ?? selectedMatch?.half ?? 'NS';
+                      let elapsedMinutes = clockData?.apiElapsed ?? selectedMatch?.elapsed ?? 0;
 
-                      const elapsedMinutes =
-                        matchState?.matchClock?.elapsedMinutes ??
-                        matchElapsedMinutes ??
-                        0;
+                      if (clockData?.lastSyncAt && LIVE_STATUSES.has(shortStatus) && !clockData?.isPaused) {
+                        const drift = Math.floor((Date.now() - clockData.lastSyncAt) / 60000);
+                        if (drift > 0) elapsedMinutes += drift;
+                      }
 
                       const clockText = formatMatchTime(shortStatus, elapsedMinutes);
                       const phaseText = formatHalfLabel(shortStatus);
