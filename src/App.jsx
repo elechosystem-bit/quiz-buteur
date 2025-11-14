@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove, get, push, serverTimestamp, runTransaction } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { generateCultureQuestion, checkClaudeQuota } from './generateCultureQuestion';
 
 const firebaseConfig = {
   apiKey: "AIzaSyATw6VYnsTtPQnJXtHJWvx8FxC6__q3ulk",
@@ -1284,29 +1285,91 @@ const firstQuestionTimeoutRef = useRef(null);
       clearTimeout(firstQuestionTimeoutRef.current);
       firstQuestionTimeoutRef.current = null;
     }
+    
     try {
-      let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
-      if (pool.length === 0) {
-        usedQuestionsRef.current = [];
-        pool = QUESTIONS.slice();
-      }
-      const question = pool[Math.floor(Math.random() * pool.length)];
-      usedQuestionsRef.current.push(question.text);
+      const questionCount = matchState?.questionCount || 0;
       const now = Date.now();
-      const questionData = {
-        ...question,
-        id: now,
-        createdAt: now,
-        timeLeft: 15
-      };
+      const shouldUseClaude = questionCount % 2 === 1;
+      let questionData;
+      
+      if (shouldUseClaude) {
+        console.log('🧠 Génération question culture avec Claude...');
+        const canGenerate = await checkClaudeQuota(db, ref, get, set, 200);
+        
+        if (!canGenerate) {
+          console.warn('⚠️ Quota atteint, question prédictive');
+          let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+          if (pool.length === 0) {
+            usedQuestionsRef.current = [];
+            pool = QUESTIONS.slice();
+          }
+          const question = pool[Math.floor(Math.random() * pool.length)];
+          usedQuestionsRef.current.push(question.text);
+          questionData = {
+            ...question,
+            id: now,
+            createdAt: now,
+            timeLeft: 15,
+            type: 'predictive'
+          };
+        } else {
+          const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
+          if (!apiKey) {
+            console.error('❌ Clé API manquante');
+            alert('❌ VITE_ANTHROPIC_KEY manquante');
+            return;
+          }
+          
+          const matchContext = {
+            homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
+            awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
+            league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
+            score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
+            elapsed: matchState?.matchClock?.apiElapsed || 0,
+            players: matchPlayers.map(p => p.name) || []
+          };
+          
+          const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
+          questionData = {
+            text: claudeQuestion.question,
+            options: claudeQuestion.options,
+            correctAnswer: claudeQuestion.correctAnswer,
+            explanation: claudeQuestion.explanation,
+            id: now,
+            createdAt: now,
+            timeLeft: 15,
+            type: 'culture',
+            isFallback: claudeQuestion.isFallback || false
+          };
+          console.log('✅ Question culture créée');
+        }
+      } else {
+        console.log('🔮 Question prédictive');
+        let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+        if (pool.length === 0) {
+          usedQuestionsRef.current = [];
+          pool = QUESTIONS.slice();
+        }
+        const question = pool[Math.floor(Math.random() * pool.length)];
+        usedQuestionsRef.current.push(question.text);
+        questionData = {
+          ...question,
+          id: now,
+          createdAt: now,
+          timeLeft: 15,
+          type: 'predictive'
+        };
+      }
+      
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
       const nextTime = now + QUESTION_INTERVAL;
       await update(ref(db, `bars/${barId}/matchState`), {
         nextQuestionTime: nextTime,
-        questionCount: (matchState?.questionCount || 0) + 1
+        questionCount: questionCount + 1
       });
+      console.log(`✅ Question ${questionData.type} publiée`);
     } catch (e) {
-      console.error('Erreur création question:', e);
+      console.error('❌ Erreur création question:', e);
       alert('❌ Erreur: ' + e.message);
     }
   };
@@ -1332,44 +1395,50 @@ const firstQuestionTimeoutRef = useRef(null);
         }
       }
 
-      const majorityAnswer = Object.keys(counts).reduce((best, k) => {
-        if (best == null) return k;
-        return counts[k] > counts[best] ? k : best;
-      }, null);
-
       let correctAnswer = null;
-      const qType = detectQuestionType(currentQuestion.text);
-      const winMin = parsePredictionWindowMinutes(currentQuestion.text);
 
-      try {
-        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (apiKey && selectedMatch?.id) {
-          const { events, elapsedNow } = await fetchFixtureNow(selectedMatch.id, apiKey);
-          const deltaMinutes = Math.floor((Date.now() - (currentQuestion.createdAt || Date.now())) / 60000);
-          const startMin = Math.max(0, (elapsedNow ?? 0) - deltaMinutes);
-          const endMin = startMin + winMin;
-          const inWindow = (ev) => isInMinuteWindow(ev, startMin, endMin);
-
-          if (qType === 'card') {
-            const cards = events.filter(ev => ev?.type === 'Card' && inWindow(ev));
-            correctAnswer = cards.length > 0 ? 'Oui' : 'Non';
-          } else if (qType === 'own_goal') {
-            const og = events.filter(ev => ev?.type === 'Goal' && ev?.detail === 'Own Goal' && inWindow(ev));
-            correctAnswer = og.length > 0 ? 'Oui' : 'Non';
-          } else if (qType === 'goal') {
-            const goals = events.filter(ev => ev?.type === 'Goal' && inWindow(ev));
-            correctAnswer = goals.length > 0 ? 'Oui' : 'Non';
-          } else if (qType === 'corner') {
-            const corners = events.filter(ev => ev?.detail === 'Corner' && inWindow(ev));
-            if (corners.length > 0) correctAnswer = 'Oui';
+      if (currentQuestion.type === 'culture') {
+        correctAnswer = currentQuestion.correctAnswer;
+        console.log('🧠 Validation immédiate:', correctAnswer);
+      } else {
+        const majorityAnswer = Object.keys(counts).reduce((best, k) => {
+          if (best == null) return k;
+          return counts[k] > counts[best] ? k : best;
+        }, null);
+        
+        const qType = detectQuestionType(currentQuestion.text);
+        const winMin = parsePredictionWindowMinutes(currentQuestion.text);
+        
+        try {
+          const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
+          if (apiKey && selectedMatch?.id) {
+            const { events, elapsedNow } = await fetchFixtureNow(selectedMatch.id, apiKey);
+            const deltaMinutes = Math.floor((Date.now() - (currentQuestion.createdAt || Date.now())) / 60000);
+            const startMin = Math.max(0, (elapsedNow ?? 0) - deltaMinutes);
+            const endMin = startMin + winMin;
+            const inWindow = (ev) => isInMinuteWindow(ev, startMin, endMin);
+            
+            if (qType === 'card') {
+              const cards = events.filter(ev => ev?.type === 'Card' && inWindow(ev));
+              correctAnswer = cards.length > 0 ? 'Oui' : 'Non';
+            } else if (qType === 'own_goal') {
+              const og = events.filter(ev => ev?.type === 'Goal' && ev?.detail === 'Own Goal' && inWindow(ev));
+              correctAnswer = og.length > 0 ? 'Oui' : 'Non';
+            } else if (qType === 'goal') {
+              const goals = events.filter(ev => ev?.type === 'Goal' && inWindow(ev));
+              correctAnswer = goals.length > 0 ? 'Oui' : 'Non';
+            } else if (qType === 'corner') {
+              const corners = events.filter(ev => ev?.detail === 'Corner' && inWindow(ev));
+              if (corners.length > 0) correctAnswer = 'Oui';
+            }
           }
+        } catch (err) {
+          console.error('Validation API error:', err);
         }
-      } catch (err) {
-        console.error('Validation API error:', err);
-      }
-
-      if (correctAnswer == null && majorityAnswer != null) {
-        correctAnswer = majorityAnswer;
+        
+        if (correctAnswer == null && majorityAnswer != null) {
+          correctAnswer = majorityAnswer;
+        }
       }
 
       const playersSnap = await get(ref(db, playersPath));
@@ -1387,11 +1456,19 @@ const firstQuestionTimeoutRef = useRef(null);
         }
       }
 
-      await set(ref(db, `bars/${barId}/results/${qid}`), {
+      const resultData = {
         correctAnswer: correctAnswer ?? null,
         validatedAt: Date.now(),
         totals: counts,
-      });
+        questionText: currentQuestion.text,
+        type: currentQuestion.type
+      };
+      
+      if (currentQuestion.type === 'culture' && currentQuestion.explanation) {
+        resultData.explanation = currentQuestion.explanation;
+      }
+      
+      await set(ref(db, `bars/${barId}/results/${qid}`), resultData);
 
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, answersPath));
@@ -2379,6 +2456,21 @@ const firstQuestionTimeoutRef = useRef(null);
 
           {currentQuestion?.text && currentQuestion?.options ? (
             <div className="bg-white rounded-3xl p-8 shadow-2xl">
+              <div className="flex items-center justify-center gap-2 mb-4">
+                {currentQuestion.type === 'culture' ? (
+                  <div className="bg-purple-100 px-4 py-2 rounded-full flex items-center gap-2">
+                    <span className="text-2xl">🧠</span>
+                    <span className="text-sm font-bold text-purple-900">CULTURE FOOT</span>
+                  </div>
+                ) : (
+                  <div className="bg-blue-100 px-4 py-2 rounded-full flex items-center gap-2">
+                    <span className="text-2xl">🔮</span>
+                    <span className="text-sm font-bold text-blue-900">PRÉDICTION</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Le reste du code (timer, question, options) reste inchangé */}
               <div className="text-center mb-6">
                   <div className="text-6xl font-black text-green-900 mb-2">{timeLeft || 0}s</div>
                 <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
@@ -2717,6 +2809,24 @@ const firstQuestionTimeoutRef = useRef(null);
       </div>
             ) : (
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
+            )}
+
+            {currentQuestion && (
+              <div className={`p-4 rounded-xl mt-4 ${
+                currentQuestion.type === 'culture' 
+                  ? 'bg-purple-900/30 border-2 border-purple-500' 
+                  : 'bg-blue-900/30 border-2 border-blue-500'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">{currentQuestion.type === 'culture' ? '🧠' : '🔮'}</span>
+                  <div>
+                    <span className="text-lg font-bold text-white block">
+                      {currentQuestion.type === 'culture' ? 'CULTURE FOOT' : 'PRÉDICTION'}
+                    </span>
+                    <span className="text-sm text-gray-300">{currentQuestion.text}</span>
+                  </div>
+                </div>
+              </div>
             )}
             
             {matchState?.matchClock?.isPaused && matchState?.active && (
