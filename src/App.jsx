@@ -2030,9 +2030,9 @@ const firstQuestionTimeoutRef = useRef(null);
           </button>
           <button 
             onClick={() => setScreen('superAdminLogin')}
-            className="bg-yellow-600 text-white px-12 py-8 rounded-2xl text-3xl font-bold hover:bg-yellow-500 transition-all shadow-2xl border-4 border-white"
+            className="bg-yellow-300 text-yellow-900 px-12 py-8 rounded-2xl text-3xl font-black hover:bg-yellow-200 transition-all shadow-2xl shadow-yellow-500/40 border-4 border-yellow-500"
           >
-            👑 SUPER ADMIN
+            👑 GESTIONNAIRE
           </button>
         </div>
       </div>
