@@ -2719,6 +2719,14 @@ const firstQuestionTimeoutRef = useRef(null);
               <p className="text-2xl text-green-300">{barInfo?.name || 'Quiz Buteur Live'}</p>
             )}
             
+            {matchState?.matchClock?.isPaused && matchState?.active && (
+              <div className="bg-yellow-900/50 p-4 rounded-xl border-2 border-yellow-500 mt-3">
+                <p className="text-2xl text-yellow-300 font-bold text-center animate-pulse">
+                  ⏸️ MATCH EN PAUSE
+                </p>
+              </div>
+            )}
+
             {matchState?.active && countdown && !isMatchFinished && (
               <div className="space-y-2">
                 <p className="text-xl text-yellow-400">⏱️ Prochaine: {countdown}</p>
