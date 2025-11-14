@@ -958,6 +958,16 @@ const firstQuestionTimeoutRef = useRef(null);
             timestamp: Date.now()
           });
         }
+
+        const barPlayersRef = ref(db, `bars/${barId}/players/${user.uid}`);
+        await set(barPlayersRef, {
+          id: user.uid,
+          name: userProfile.pseudo,
+          pseudo: userProfile.pseudo,
+          score: playerSnap.exists() ? (playerSnap.val()?.score || 0) : 0,
+          joinedAt: Date.now()
+        });
+        console.log('✅ Joueur enregistré globalement:', userProfile.pseudo, `bars/${barId}/players/${user.uid}`);
       } catch (e) {
         console.error('Erreur ajout joueur:', e);
       }
@@ -1524,22 +1534,35 @@ const firstQuestionTimeoutRef = useRef(null);
   };
 
   useEffect(() => {
-    if (!simulationActive) return;
+    if (!simulationActive) {
+      setSimulationPlayers({});
+      return;
+    }
     const simMatch = SIMULATION_MATCHES[selectedSimulationMatch];
     if (!simMatch) return;
 
     const simulationBarId = barId || (typeof window !== 'undefined' ? window.simulationBarId : null) || 'BAR-SIMULATION-TEST';
-    const playersRef = ref(db, `bars/${simulationBarId}/matches/${simMatch.id}/players`);
+    const playersPath = `bars/${simulationBarId}/players`;
+    const playersRef = ref(db, playersPath);
+
+    console.log('🎧 Écoute des joueurs sur:', playersPath);
 
     const unsubscribe = onValue(playersRef, (snapshot) => {
+      console.log('📡 Snapshot joueurs reçu:', snapshot.exists(), snapshot.val());
       if (snapshot.exists()) {
-        setSimulationPlayers(snapshot.val());
+        const players = snapshot.val();
+        console.log('👥 Joueurs détectés:', Object.keys(players).length, players);
+        setSimulationPlayers(players);
       } else {
+        console.log('❌ Aucun joueur trouvé');
         setSimulationPlayers({});
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      console.log('🔇 Arrêt écoute joueurs');
+      unsubscribe();
+    };
   }, [simulationActive, barId, selectedSimulationMatch]);
 
   const createRandomQuestion = async () => {
@@ -3227,8 +3250,10 @@ const firstQuestionTimeoutRef = useRef(null);
   }
 
   if (screen === 'simulation') {
-    const simulationBarDisplayId = barId || (typeof window !== 'undefined' ? window.simulationBarId : null) || 'BAR-SIM-TEST';
+    const windowSimId = typeof window !== 'undefined' ? window.simulationBarId : null;
+    const simulationBarDisplayId = barId || windowSimId || 'BAR-SIM-TEST';
     const simulationJoinUrl = `https://quiz-buteur.vercel.app/?bar=${simulationBarDisplayId}`;
+    console.log('🎬 Mode simulation - barId:', barId, 'window.simulationBarId:', windowSimId);
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-pink-900 p-8">
         <div className="flex justify-between items-center mb-8">
@@ -3366,6 +3391,21 @@ const firstQuestionTimeoutRef = useRef(null);
                   Les joueurs peuvent scanner le QR code ou entrer le code pour rejoindre
                 </div>
               </div>
+            <div className="flex justify-center mb-6">
+              <button
+                onClick={async () => {
+                  const debugBarId = simulationBarDisplayId;
+                  const playersSnap = await get(ref(db, `bars/${debugBarId}/players`));
+                  console.log('🔍 DEBUG - Path:', `bars/${debugBarId}/players`);
+                  console.log('🔍 DEBUG - Existe?', playersSnap.exists());
+                  console.log('🔍 DEBUG - Données:', playersSnap.val());
+                  alert(`Joueurs dans Firebase: ${playersSnap.exists() ? Object.keys(playersSnap.val()).length : 0}`);
+                }}
+                className="bg-blue-500 px-4 py-2 rounded text-white text-sm"
+              >
+                🔍 Debug Joueurs
+              </button>
+            </div>
 
               <div className="bg-gradient-to-br from-green-100 to-blue-100 rounded-2xl p-6 mb-6">
                 <h4 className="font-bold text-xl mb-4 text-purple-900 flex items-center gap-2">
