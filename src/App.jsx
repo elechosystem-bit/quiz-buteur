@@ -1912,93 +1912,69 @@ const firstQuestionTimeoutRef = useRef(null);
   const MatchClock = () => {
     const [time, setTime] = useState('0:00');
     const [phase, setPhase] = useState('1ère MT');
-    
+
     useEffect(() => {
       const updateTime = () => {
-        // Priorité 1 : Utiliser matchState.matchClock si disponible
-        let startTime = matchState?.matchClock?.startTime;
-        let currentHalf = matchState?.matchClock?.half || matchHalf;
-        
-        // Priorité 2 : Fallback sur les states locaux
-        if (!startTime && matchStartTime) {
-          startTime = matchStartTime;
-        }
-        
-        if (!startTime) {
+        const apiElapsed = matchState?.matchClock?.apiElapsed ?? 0;
+        const currentHalf = matchState?.matchClock?.half ?? 'NS';
+        const isPaused = matchState?.matchClock?.isPaused ?? false;
+        const lastSyncAt = matchState?.matchClock?.lastSyncAt ?? Date.now();
+
+        if (!matchState?.matchClock) {
           setTime('0:00');
           setPhase('En attente');
           return;
         }
-        
-        // Calculer le temps écoulé en temps réel
-        const totalElapsedMs = Date.now() - startTime;
-        let mins = Math.floor(totalElapsedMs / 60000);
-        const secs = Math.floor((totalElapsedMs / 1000) % 60);
-        
-        // 🔥 SÉCURITÉ : Si plus de 95 minutes, arrêter
-        if (mins >= 95 && currentHalf !== 'FT') {
-          console.warn('⚠️ Temps dépassé 95 min, arrêt forcé');
-          
-          if (barId) {
-            update(ref(db, `bars/${barId}/matchState`), {
-              active: false,
-              matchClock: {
-                half: 'FT',
-                elapsedMinutes: 90
-              }
-            });
-            
-            remove(ref(db, `bars/${barId}/currentQuestion`));
-          }
-          
-          setTime('90:00');
-          setPhase('🏁 TERMINÉ');
-          return;
+
+        let mins = apiElapsed;
+        let secs = 0;
+
+        if (LIVE_STATUSES.has(currentHalf) && !isPaused) {
+          const driftMs = Date.now() - lastSyncAt;
+          const driftMins = Math.floor(driftMs / 60000);
+          const driftSecs = Math.floor((driftMs % 60000) / 1000);
+          mins = apiElapsed + driftMins;
+          secs = driftSecs;
         }
-        
-        // Gérer les différentes phases
+
         let displayTime;
         let displayPhase;
-        
-        if (currentHalf === 'FT') {
+
+        if (FINISHED_STATUSES.has(currentHalf)) {
           displayTime = '90:00';
           displayPhase = '🏁 TERMINÉ';
         } else if (currentHalf === 'HT') {
           displayTime = '45:00';
-          displayPhase = 'MI-TEMPS';
+          displayPhase = '⏸️ MI-TEMPS';
         } else if (currentHalf === '1H') {
           if (mins < 45) {
             displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
             displayPhase = '1ère MT';
           } else {
-            // Temps additionnel 1ère MT
-            const addedTime = mins - 45;
-            displayTime = `45+${addedTime + 1}`;
+            displayTime = `45+${mins - 45}`;
             displayPhase = '1ère MT';
           }
         } else if (currentHalf === '2H') {
           if (mins < 90) {
             displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
             displayPhase = '2ème MT';
-        } else {
-            // Temps additionnel 2ème MT
-            const addedTime = mins - 90;
-            displayTime = `90+${addedTime + 1}`;
+          } else {
+            displayTime = `90+${mins - 90}`;
             displayPhase = '2ème MT';
           }
         } else {
           displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
-          displayPhase = 'EN COURS';
+          displayPhase = currentHalf || 'EN COURS';
         }
-        
+
         setTime(displayTime);
         setPhase(displayPhase);
       };
-      
+
       updateTime();
       const interval = setInterval(updateTime, 1000);
       return () => clearInterval(interval);
-    }, [matchState?.matchClock?.startTime, matchState?.matchClock?.half, matchStartTime, matchHalf, barId]);
+    }, [matchState?.matchClock]);
 
     return (
       <div className="bg-black rounded-xl px-6 py-3 border-2 border-green-500 shadow-lg">
