@@ -1329,102 +1329,128 @@ const firstQuestionTimeoutRef = useRef(null);
   };
 
   const startSimulation = async () => {
-    const matchData = SIMULATION_MATCHES[selectedSimulationMatch];
-    if (!matchData || !barId) return;
-    
-    setSimulationActive(true);
-    setSimulationElapsed(0);
-    setSimulationScore({ home: 0, away: 0 });
-    setSimulationHalf('1H');
-    setSimulationLog([`🟢 0' - Coup d'envoi !`]);
-    
-    await set(ref(db, `bars/${barId}/simulation`), {
-      active: true,
-      match: matchData,
-      elapsed: 0,
-      score: '0-0',
-      half: '1H',
-      startedAt: Date.now()
-    });
-    
-    let elapsed = 0;
-    let score = { home: 0, away: 0 };
-    let half = '1H';
-    let isPaused = false;
-    
-    simulationIntervalRef.current = setInterval(async () => {
-      if (isPaused) return;
-      
-      elapsed++;
-      
-      if (elapsed === 45) {
-        half = 'HT';
-        setSimulationHalf('HT');
-        setSimulationLog(prev => [...prev, `⏸️ 45' - Mi-temps`]);
-        isPaused = true;
-        
-        await update(ref(db, `bars/${barId}/simulation`), {
-          half: 'HT',
-          elapsed: 45
-        });
-        
-        setTimeout(() => {
-          half = '2H';
-          elapsed = 46;
-          isPaused = false;
-          setSimulationHalf('2H');
-          setSimulationElapsed(46);
-          setSimulationLog(prev => [...prev, `🟢 46' - Reprise 2ème mi-temps`]);
-        }, 10000);
-        
+    try {
+      const matchData = SIMULATION_MATCHES[selectedSimulationMatch];
+      if (!matchData) {
+        alert('❌ Aucun match sélectionné');
         return;
       }
       
-      if (elapsed === 90) {
-        half = 'FT';
-        setSimulationHalf('FT');
-        setSimulationLog(prev => [...prev, `🏁 90' - Fin du match (${score.home}-${score.away})`]);
-        clearInterval(simulationIntervalRef.current);
-        setSimulationActive(false);
-        
-        await update(ref(db, `bars/${barId}/simulation`), {
-          active: false,
-          half: 'FT',
-          elapsed: 90
-        });
-        return;
-      }
+      const simulationBarId = barId || 'BAR-SIMULATION-TEST';
       
-      const currentEvents = matchData.events.filter(e => e.elapsed === elapsed);
-      for (const event of currentEvents) {
-        if (event.type === 'Goal') {
-          if (event.team === 'home') score.home++;
-          else score.away++;
-          setSimulationScore({ ...score });
-          const teamName = event.team === 'home' ? matchData.homeTeam : matchData.awayTeam;
-          setSimulationLog(prev => [
-            ...prev,
-            `⚽ ${elapsed}' - BUT ! ${event.player} marque pour ${teamName} (${score.home}-${score.away})`
-          ]);
-        }
-        if (event.type === 'Card') {
-          const cardEmoji = event.detail === 'Red Card' ? '🟥' : '🟨';
-          setSimulationLog(prev => [
-            ...prev,
-            `${cardEmoji} ${elapsed}' - ${event.detail} ${event.player ? 'pour ' + event.player : ''}`
-          ]);
-        }
-      }
-      
-      setSimulationElapsed(elapsed);
-      
-      await update(ref(db, `bars/${barId}/simulation`), {
-        elapsed,
-        score: `${score.home}-${score.away}`,
-        half
+      console.log('🎬 Démarrage simulation:', {
+        selectedMatch: selectedSimulationMatch,
+        matchData,
+        barId: simulationBarId
       });
       
-    }, 60000);
+      setSimulationActive(true);
+      setSimulationElapsed(0);
+      setSimulationScore({ home: 0, away: 0 });
+      setSimulationHalf('1H');
+      setSimulationLog([`🟢 0' - Coup d'envoi !`]);
+      
+      await set(ref(db, `bars/${simulationBarId}/simulation`), {
+        active: true,
+        match: matchData,
+        elapsed: 0,
+        score: '0-0',
+        half: '1H',
+        startedAt: Date.now()
+      });
+      
+      console.log('✅ Firebase initialisé');
+      
+      let elapsed = 0;
+      let score = { home: 0, away: 0 };
+      let half = '1H';
+      let isPaused = false;
+      
+      simulationIntervalRef.current = setInterval(async () => {
+        if (isPaused) return;
+        
+        elapsed++;
+        console.log(`⏱️ ${elapsed}'`);
+        
+        if (elapsed === 45) {
+          half = 'HT';
+          setSimulationHalf('HT');
+          setSimulationLog(prev => [...prev, `⏸️ 45' - Mi-temps`]);
+          isPaused = true;
+          
+          await update(ref(db, `bars/${simulationBarId}/simulation`), {
+            half: 'HT',
+            elapsed: 45
+          });
+          
+          setTimeout(() => {
+            half = '2H';
+            elapsed = 46;
+            isPaused = false;
+            setSimulationHalf('2H');
+            setSimulationElapsed(46);
+            setSimulationLog(prev => [...prev, `🟢 46' - Reprise 2ème mi-temps`]);
+            console.log('🟢 Reprise 2ème mi-temps');
+          }, 10000);
+          
+          return;
+        }
+        
+        if (elapsed >= 90) {
+          half = 'FT';
+          setSimulationHalf('FT');
+          setSimulationLog(prev => [...prev, `🏁 90' - Fin du match (${score.home}-${score.away})`]);
+          clearInterval(simulationIntervalRef.current);
+          setSimulationActive(false);
+          
+          await update(ref(db, `bars/${simulationBarId}/simulation`), {
+            active: false,
+            half: 'FT',
+            elapsed: 90
+          });
+          
+          console.log('🏁 Match terminé');
+          return;
+        }
+        
+        const currentEvents = matchData.events.filter(e => e.elapsed === elapsed);
+        for (const event of currentEvents) {
+          if (event.type === 'Goal') {
+            if (event.team === 'home') score.home++;
+            else score.away++;
+            setSimulationScore({ ...score });
+            const teamName = event.team === 'home' ? matchData.homeTeam : matchData.awayTeam;
+            setSimulationLog(prev => [...prev, 
+              `⚽ ${elapsed}' - BUT ! ${event.player} marque pour ${teamName} (${score.home}-${score.away})`
+            ]);
+            console.log(`⚽ ${elapsed}' - BUT de ${event.player}`);
+          }
+          if (event.type === 'Card') {
+            const cardEmoji = event.detail === 'Red Card' ? '🟥' : '🟨';
+            setSimulationLog(prev => [...prev, 
+              `${cardEmoji} ${elapsed}' - ${event.detail} ${event.player ? 'pour ' + event.player : ''}`
+            ]);
+            console.log(`${cardEmoji} ${elapsed}' - ${event.detail}`);
+          }
+        }
+        
+        setSimulationElapsed(elapsed);
+        
+        await update(ref(db, `bars/${simulationBarId}/simulation`), {
+          elapsed,
+          score: `${score.home}-${score.away}`,
+          half
+        });
+        
+      }, 60000);
+      
+      console.log('✅ Intervalle démarré (1 min = 60 secondes)');
+      
+    } catch (error) {
+      console.error('❌ Erreur démarrage simulation:', error);
+      alert('❌ Erreur lors du démarrage de la simulation : ' + error.message);
+      setSimulationActive(false);
+    }
   };
 
   const stopSimulation = () => {
