@@ -302,6 +302,9 @@ export default function App() {
 const firstQuestionTimeoutRef = useRef(null);
   const wakeLockRef = useRef(null);
   const matchCheckInterval = useRef(null);
+  const [playerName, setPlayerName] = useState('');
+  const [myPlayerId, setMyPlayerId] = useState(null);
+  const [hasJoined, setHasJoined] = useState(false);
 
   const SIMULATION_MATCHES = {
     'psg-om': {
@@ -1533,6 +1536,42 @@ const firstQuestionTimeoutRef = useRef(null);
     setSimulationPlayers({});
   };
 
+  const handleJoinBar = async () => {
+    console.log('📱 Mobile - barId:', barId);
+    console.log('📱 Mobile - playerName:', playerName);
+
+    const trimmedName = playerName.trim();
+    if (!trimmedName) {
+      alert('❌ Entre ton nom');
+      return;
+    }
+
+    const effectiveBarId = barId || (typeof window !== 'undefined' ? window.simulationBarId : null);
+    if (!effectiveBarId) {
+      alert('❌ Code bar manquant');
+      return;
+    }
+
+    try {
+      const playerId = 'player-' + Date.now();
+      const playerData = {
+        id: playerId,
+        name: trimmedName,
+        score: 0,
+        joinedAt: Date.now()
+      };
+
+      await set(ref(db, `bars/${effectiveBarId}/players/${playerId}`), playerData);
+      console.log('✅ Joueur enregistré:', playerData, 'Path:', `bars/${effectiveBarId}/players/${playerId}`);
+
+      setMyPlayerId(playerId);
+      setHasJoined(true);
+    } catch (error) {
+      console.error('❌ Erreur enregistrement joueur:', error);
+      alert('❌ Erreur: ' + error.message);
+    }
+  };
+
   useEffect(() => {
     if (!simulationActive) {
       setSimulationPlayers({});
@@ -2744,6 +2783,33 @@ const firstQuestionTimeoutRef = useRef(null);
               className="bg-green-900 text-white px-8 py-4 rounded-xl text-xl font-bold hover:bg-green-800"
             >
               ← Retour à l'accueil
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (!hasJoined) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+            <div className="text-6xl mb-4">🎉</div>
+            <h2 className="text-3xl font-black text-green-900 mb-2">{barInfo?.name || 'Quiz Buteur'}</h2>
+            <p className="text-gray-600 mb-6">Entre ton nom pour rejoindre le quiz</p>
+
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="Ton nom ou pseudo"
+              className="w-full px-6 py-4 text-xl border-4 border-green-900 rounded-xl mb-4 focus:outline-none focus:border-green-600"
+            />
+
+            <button
+              onClick={handleJoinBar}
+              className="bg-green-600 hover:bg-green-700 px-8 py-4 rounded-xl text-white font-bold text-xl w-full"
+            >
+              ✅ Rejoindre le quiz
             </button>
           </div>
         </div>
