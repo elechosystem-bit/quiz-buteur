@@ -353,6 +353,7 @@ const firstQuestionTimeoutRef = useRef(null);
   const [simulationScore, setSimulationScore] = useState({ home: 0, away: 0 });
   const [simulationHalf, setSimulationHalf] = useState('1H');
   const [simulationLog, setSimulationLog] = useState([]);
+  const [simulationPlayers, setSimulationPlayers] = useState({});
   const simulationIntervalRef = useRef(null);
 
   const searchMatches = async () => {
@@ -1519,7 +1520,27 @@ const firstQuestionTimeoutRef = useRef(null);
     setSimulationHalf('1H');
     setSimulationLog([]);
     setSelectedSimulationMatch(null);
+    setSimulationPlayers({});
   };
+
+  useEffect(() => {
+    if (!simulationActive) return;
+    const simMatch = SIMULATION_MATCHES[selectedSimulationMatch];
+    if (!simMatch) return;
+
+    const simulationBarId = barId || (typeof window !== 'undefined' ? window.simulationBarId : null) || 'BAR-SIMULATION-TEST';
+    const playersRef = ref(db, `bars/${simulationBarId}/matches/${simMatch.id}/players`);
+
+    const unsubscribe = onValue(playersRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setSimulationPlayers(snapshot.val());
+      } else {
+        setSimulationPlayers({});
+      }
+    });
+
+    return () => unsubscribe();
+  }, [simulationActive, barId, selectedSimulationMatch]);
 
   const createRandomQuestion = async () => {
     if (!matchState?.active) {
@@ -3226,128 +3247,83 @@ const firstQuestionTimeoutRef = useRef(null);
           </button>
         </div>
 
-        <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto mb-6">
-          <h2 className="text-3xl font-bold mb-4 text-purple-900">📋 Matchs disponibles</h2>
-          <p className="text-gray-600 mb-6">Sélectionne un match à rejouer en temps réel (1 minute = 1 minute)</p>
-          <p className="text-purple-600 text-sm mt-2">
-            ⚡ Mode accéléré : 20 minutes réelles = 90 minutes de match (ratio x4.5)
-            <br />
-            🎯 Questions toutes les 2 minutes réelles (~10 questions au total)
-          </p>
-          
-          <div className="grid grid-cols-1 gap-4">
-            <div
-              onClick={() => {
-                if (!simulationActive) {
-                  setSelectedSimulationMatch('psg-om');
-                  setSimulationLog([]);
-                }
-              }}
-              className={`border-4 rounded-xl p-6 cursor-pointer transition-all ${
-                simulationActive ? 'opacity-50 cursor-not-allowed' :
-                selectedSimulationMatch === 'psg-om' 
-                  ? 'border-purple-600 bg-purple-50' 
-                  : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="text-5xl">⚽</div>
-                  <div>
-                    <div className="text-2xl font-bold">PSG vs OM</div>
-                    <div className="text-gray-600">Ligue 1 • Score final: 3-0</div>
-                    <div className="text-sm text-purple-600 mt-1">
-                      5 events • 3 buts • 2 cartons • 90 minutes
+        {!simulationActive ? (
+          <>
+            <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto mb-6">
+              <h2 className="text-3xl font-bold mb-4 text-purple-900">📋 Matchs disponibles</h2>
+              <p className="text-gray-600 mb-6">Sélectionne un match à rejouer en temps réel</p>
+              <p className="text-purple-600 text-sm mb-6">
+                ⚡ Mode accéléré : 20 minutes réelles = 90 minutes de match (ratio x4.5)
+                <br />
+                🎯 Questions toutes les 2 minutes réelles (~10 questions au total)
+              </p>
+              
+              <div className="grid grid-cols-1 gap-4">
+                {['psg-om', 'liverpool-city', 'real-barca'].map((key) => {
+                  const matchInfoSim = SIMULATION_MATCHES[key];
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => {
+                        if (!simulationActive) {
+                          setSelectedSimulationMatch(key);
+                          setSimulationLog([]);
+                        }
+                      }}
+                      className={`border-4 rounded-xl p-6 cursor-pointer transition-all ${
+                        simulationActive ? 'opacity-50 cursor-not-allowed' :
+                        selectedSimulationMatch === key 
+                          ? 'border-purple-600 bg-purple-50' 
+                          : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-6">
+                          <div className="text-5xl">⚽</div>
+                          <div>
+                            <div className="text-2xl font-bold">{matchInfoSim.homeTeam} vs {matchInfoSim.awayTeam}</div>
+                            <div className="text-gray-600">{matchInfoSim.league} • Score final: {matchInfoSim.finalScore}</div>
+                            <div className="text-sm text-purple-600 mt-1">
+                              {matchInfoSim.events.length} events • {matchInfoSim.events.filter(e => e.type === 'Goal').length} buts
+                            </div>
+                          </div>
+                        </div>
+                        {selectedSimulationMatch === key && !simulationActive && (
+                          <div className="text-3xl">✅</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-                {selectedSimulationMatch === 'psg-om' && !simulationActive && (
-                  <div className="text-3xl">✅</div>
-                )}
+                  );
+                })}
               </div>
             </div>
 
-            <div
-              onClick={() => {
-                if (!simulationActive) {
-                  setSelectedSimulationMatch('liverpool-city');
-                  setSimulationLog([]);
-                }
-              }}
-              className={`border-4 rounded-xl p-6 cursor-pointer transition-all ${
-                simulationActive ? 'opacity-50 cursor-not-allowed' :
-                selectedSimulationMatch === 'liverpool-city' 
-                  ? 'border-purple-600 bg-purple-50' 
-                  : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="text-5xl">⚽</div>
-                  <div>
-                    <div className="text-2xl font-bold">Liverpool vs Manchester City</div>
-                    <div className="text-gray-600">Premier League • Score final: 2-1</div>
-                    <div className="text-sm text-purple-600 mt-1">
-                      3 events • 3 buts • 90 minutes
-                    </div>
-                  </div>
-                </div>
-                {selectedSimulationMatch === 'liverpool-city' && !simulationActive && (
-                  <div className="text-3xl">✅</div>
-                )}
+            {selectedSimulationMatch && (
+              <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto">
+                <h3 className="text-2xl font-bold mb-6 text-purple-900">
+                  {SIMULATION_MATCHES[selectedSimulationMatch].homeTeam} vs{' '}
+                  {SIMULATION_MATCHES[selectedSimulationMatch].awayTeam}
+                </h3>
+                
+                <button
+                  onClick={startSimulation}
+                  className="bg-green-600 hover:bg-green-700 px-12 py-6 rounded-xl text-white text-2xl font-bold w-full shadow-xl transition-all"
+                >
+                  ▶️ LANCER LA SIMULATION (20 min réelles = 90 min match)
+                </button>
               </div>
-            </div>
-
-            <div
-              onClick={() => {
-                if (!simulationActive) {
-                  setSelectedSimulationMatch('real-barca');
-                  setSimulationLog([]);
-                }
-              }}
-              className={`border-4 rounded-xl p-6 cursor-pointer transition-all ${
-                simulationActive ? 'opacity-50 cursor-not-allowed' :
-                selectedSimulationMatch === 'real-barca' 
-                  ? 'border-purple-600 bg-purple-50' 
-                  : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="text-5xl">⚽</div>
-                  <div>
-                    <div className="text-2xl font-bold">Real Madrid vs Barcelona</div>
-                    <div className="text-gray-600">La Liga • Score final: 4-0</div>
-                    <div className="text-sm text-purple-600 mt-1">
-                      6 events • 4 buts • 2 cartons • 90 minutes
-                    </div>
-                  </div>
-                </div>
-                {selectedSimulationMatch === 'real-barca' && !simulationActive && (
-                  <div className="text-3xl">✅</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {selectedSimulationMatch && (
-          <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto">
-            <h3 className="text-2xl font-bold mb-6 text-purple-900">
-              {SIMULATION_MATCHES[selectedSimulationMatch].homeTeam} vs{' '}
-              {SIMULATION_MATCHES[selectedSimulationMatch].awayTeam}
-            </h3>
-            
-            {!simulationActive ? (
-              <button
-                onClick={startSimulation}
-                className="bg-green-600 hover:bg-green-700 px-12 py-6 rounded-xl text-white text-2xl font-bold w-full shadow-xl transition-all"
-              >
-                ▶️ LANCER LA SIMULATION (20 min réelles = 90 min match)
-              </button>
-            ) : (
-              <div>
-                <div className="text-center mb-6 bg-gradient-to-br from-purple-100 to-pink-100 rounded-2xl p-8">
+            )}
+          </>
+        ) : (
+          <>
+            <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto mb-6">
+              <div className="text-center mb-6">
+                <h3 className="text-3xl font-bold text-purple-900 mb-4">
+                  {SIMULATION_MATCHES[selectedSimulationMatch].homeTeam} vs{' '}
+                  {SIMULATION_MATCHES[selectedSimulationMatch].awayTeam}
+                </h3>
+                
+                <div className="bg-gradient-to-br from-purple-100 to-pink-100 rounded-2xl p-8 mb-6">
                   <div className="text-7xl font-black text-purple-900 mb-2">
                     {simulationElapsed}'
                   </div>
@@ -3361,47 +3337,93 @@ const firstQuestionTimeoutRef = useRef(null);
                     {simulationHalf === 'FT' && '🏁 Match Terminé'}
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl p-6 mb-6">
-                  <h4 className="font-bold text-xl mb-4 text-purple-900 text-center">
-                    📱 Rejoindre le quiz
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white rounded-xl p-6 text-center">
-                      <div className="text-sm text-gray-600 mb-2">Code du bar :</div>
-                      <div className="text-4xl font-black text-purple-900 mb-2">
-                        {simulationBarDisplayId}
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        URL : quiz-buteur.vercel.app
-                      </div>
+              <div className="bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl p-6 mb-6">
+                <h4 className="font-bold text-xl mb-4 text-purple-900 text-center">
+                  📱 Rejoindre le quiz
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl p-6 text-center">
+                    <div className="text-sm text-gray-600 mb-2">Code du bar :</div>
+                    <div className="text-4xl font-black text-purple-900 mb-2">
+                      {simulationBarDisplayId}
                     </div>
-                    
-                    <div className="bg-white rounded-xl p-6 flex items-center justify-center">
-                      <QRCodeSVG 
-                        value={simulationJoinUrl}
-                        size={150}
-                        level="H"
-                      />
+                    <div className="text-sm text-gray-600">
+                      quiz-buteur.vercel.app
                     </div>
                   </div>
-                  <div className="text-center mt-4 text-sm text-purple-700">
-                    Les joueurs peuvent scanner le QR code ou entrer le code pour rejoindre
+                  
+                  <div className="bg-white rounded-xl p-6 flex items-center justify-center">
+                    <QRCodeSVG 
+                      value={simulationJoinUrl}
+                      size={150}
+                      level="H"
+                    />
                   </div>
                 </div>
-                
-                <button
-                  onClick={stopSimulation}
-                  className="bg-red-600 hover:bg-red-700 px-12 py-4 rounded-xl text-white text-xl font-bold w-full transition-all"
-                >
-                  ⏹️ ARRÊTER LA SIMULATION
-                </button>
+                <div className="text-center mt-4 text-sm text-purple-700">
+                  Les joueurs peuvent scanner le QR code ou entrer le code pour rejoindre
+                </div>
               </div>
-            )}
+
+              <div className="bg-gradient-to-br from-green-100 to-blue-100 rounded-2xl p-6 mb-6">
+                <h4 className="font-bold text-xl mb-4 text-purple-900 flex items-center gap-2">
+                  <span className="text-2xl">👥</span>
+                  Joueurs connectés ({Object.keys(simulationPlayers || {}).length})
+                </h4>
+                
+                {Object.keys(simulationPlayers || {}).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="text-5xl mb-3">📱</div>
+                    <div className="text-lg">En attente de joueurs...</div>
+                    <div className="text-sm mt-2">Scannez le QR code pour rejoindre !</div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {Object.entries(simulationPlayers || {})
+                      .sort(([, a], [, b]) => (b.score || 0) - (a.score || 0))
+                      .map(([pid, player], index) => {
+                        const joinedText = player?.joinedAt
+                          ? new Date(player.joinedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                          : 'Heure inconnue';
+                        return (
+                          <div 
+                            key={pid}
+                            className="bg-white rounded-xl p-4 flex items-center justify-between shadow-sm"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="text-2xl font-black text-purple-900 w-8">
+                                #{index + 1}
+                              </div>
+                              <div>
+                                <div className="font-bold text-lg">{player?.name || player?.pseudo || 'Joueur'}</div>
+                                <div className="text-sm text-gray-500">
+                                  Rejoint à {joinedText}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-3xl font-black text-green-600">
+                              {player?.score || 0} pts
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={stopSimulation}
+                className="bg-red-600 hover:bg-red-700 px-12 py-4 rounded-xl text-white text-xl font-bold w-full transition-all"
+              >
+                ⏹️ ARRÊTER LA SIMULATION
+              </button>
+            </div>
 
             {simulationLog.length > 0 && (
-              <div className="mt-6 bg-gray-100 rounded-xl p-6">
-                <h4 className="font-bold text-lg mb-3 text-purple-900 flex items-center gap-2">
+              <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto">
+                <h4 className="font-bold text-xl mb-4 text-purple-900 flex items-center gap-2">
                   <span className="text-2xl">📋</span>
                   Historique des events
                 </h4>
@@ -3409,7 +3431,7 @@ const firstQuestionTimeoutRef = useRef(null);
                   {simulationLog.map((log, i) => (
                     <div 
                       key={i} 
-                      className="bg-white rounded-lg px-4 py-3 text-sm border-l-4 border-purple-500 shadow-sm"
+                      className="bg-gray-50 rounded-lg px-4 py-3 text-sm border-l-4 border-purple-500"
                     >
                       {log}
                     </div>
@@ -3417,7 +3439,7 @@ const firstQuestionTimeoutRef = useRef(null);
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     );
