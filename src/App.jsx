@@ -1439,15 +1439,15 @@ const firstQuestionTimeoutRef = useRef(null);
             elapsed: 45
           });
           
-          setTimeout(() => {
-            half = '2H';
-            elapsed = 46;
-            isPaused = false;
-            setSimulationHalf('2H');
-            setSimulationElapsed(46);
-            setSimulationLog(prev => [...prev, `🟢 46' - Reprise 2ème mi-temps`]);
-            console.log('🟢 Reprise 2ème mi-temps');
-          }, 10000);
+        setTimeout(() => {
+          half = '2H';
+          elapsed = 46;
+          isPaused = false;
+          setSimulationHalf('2H');
+          setSimulationElapsed(46);
+          setSimulationLog(prev => [...prev, `🟢 46' - Reprise 2ème mi-temps`]);
+          console.log('🟢 Reprise 2ème mi-temps');
+        }, 5000);
           
           return;
         }
@@ -1498,7 +1498,7 @@ const firstQuestionTimeoutRef = useRef(null);
           half
         });
         
-      }, 60000);
+      }, 13333);
       
       console.log('✅ Intervalle démarré (1 min = 60 secondes)');
       
@@ -1560,33 +1560,45 @@ const firstQuestionTimeoutRef = useRef(null);
         } else {
           const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
           if (!apiKey) {
-            console.error('❌ Clé API manquante');
-            alert('❌ VITE_ANTHROPIC_KEY manquante');
-            return;
+            console.warn('⚠️ VITE_ANTHROPIC_KEY manquante, fallback sur questions prédictives');
+            let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+            if (pool.length === 0) {
+              usedQuestionsRef.current = [];
+              pool = QUESTIONS.slice();
+            }
+            const question = pool[Math.floor(Math.random() * pool.length)];
+            usedQuestionsRef.current.push(question.text);
+            questionData = {
+              ...question,
+              id: now,
+              createdAt: now,
+              timeLeft: 15,
+              type: 'predictive'
+            };
+          } else {
+            const matchContext = {
+              homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
+              awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
+              league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
+              score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
+              elapsed: matchState?.matchClock?.apiElapsed || 0,
+              players: matchPlayers.map(p => p.name) || []
+            };
+            
+            const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
+            questionData = {
+              text: claudeQuestion.question,
+              options: claudeQuestion.options,
+              correctAnswer: claudeQuestion.correctAnswer,
+              explanation: claudeQuestion.explanation,
+              id: now,
+              createdAt: now,
+              timeLeft: 15,
+              type: 'culture',
+              isFallback: claudeQuestion.isFallback || false
+            };
+            console.log('✅ Question culture créée');
           }
-          
-          const matchContext = {
-            homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
-            awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
-            league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
-            score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
-            elapsed: matchState?.matchClock?.apiElapsed || 0,
-            players: matchPlayers.map(p => p.name) || []
-          };
-          
-          const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
-          questionData = {
-            text: claudeQuestion.question,
-            options: claudeQuestion.options,
-            correctAnswer: claudeQuestion.correctAnswer,
-            explanation: claudeQuestion.explanation,
-            id: now,
-            createdAt: now,
-            timeLeft: 15,
-            type: 'culture',
-            isFallback: claudeQuestion.isFallback || false
-          };
-          console.log('✅ Question culture créée');
         }
       } else {
         console.log('🔮 Question prédictive');
@@ -3217,6 +3229,11 @@ const firstQuestionTimeoutRef = useRef(null);
         <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto mb-6">
           <h2 className="text-3xl font-bold mb-4 text-purple-900">📋 Matchs disponibles</h2>
           <p className="text-gray-600 mb-6">Sélectionne un match à rejouer en temps réel (1 minute = 1 minute)</p>
+          <p className="text-purple-600 text-sm mt-2">
+            ⚡ Mode accéléré : 20 minutes réelles = 90 minutes de match (ratio x4.5)
+            <br />
+            🎯 Questions toutes les 2 minutes réelles (~10 questions au total)
+          </p>
           
           <div className="grid grid-cols-1 gap-4">
             <div
@@ -3326,7 +3343,7 @@ const firstQuestionTimeoutRef = useRef(null);
                 onClick={startSimulation}
                 className="bg-green-600 hover:bg-green-700 px-12 py-6 rounded-xl text-white text-2xl font-bold w-full shadow-xl transition-all"
               >
-                ▶️ LANCER LA SIMULATION (90 min en temps réel)
+                ▶️ LANCER LA SIMULATION (20 min réelles = 90 min match)
               </button>
             ) : (
               <div>
