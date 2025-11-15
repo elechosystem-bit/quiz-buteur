@@ -4,6 +4,8 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, on
 import { db, auth } from './firebase';
 import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, checkClaudeQuota } from './generateCultureQuestion';
+import SimulationMatchSetup from './components/SimulationMatchSetup';
+import QuestionsContainer from './components/QuestionsContainer';
 
 // ---- Server time utils (Firebase server clock) ----
 const serverOffsetRef = ref(db, '.info/serverTimeOffset');
@@ -344,6 +346,7 @@ const firstQuestionTimeoutRef = useRef(null);
   const [simulationLog, setSimulationLog] = useState([]);
   const [simulationPlayers, setSimulationPlayers] = useState({});
   const simulationIntervalRef = useRef(null);
+  const [simulationMatchId, setSimulationMatchId] = useState(null);
 
   const searchMatches = async () => {
     setLoadingMatches(true);
@@ -2501,11 +2504,11 @@ const firstQuestionTimeoutRef = useRef(null);
             👑 GESTIONNAIRE
           </button>
           <button 
-            onClick={() => setScreen('simulation')}
+            onClick={() => setScreen('demo')}
             className="bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-3xl p-12 text-white shadow-2xl transform hover:scale-105 transition-all"
           >
             <div className="text-6xl mb-4">🎬</div>
-            <div className="text-4xl font-black mb-2">SIMULATION</div>
+            <div className="text-4xl font-black mb-2">DEMO</div>
             <div className="text-lg opacity-90">Mode test sans API réelle</div>
           </button>
         </div>
@@ -3397,219 +3400,66 @@ const firstQuestionTimeoutRef = useRef(null);
     );
   }
 
-  if (screen === 'simulation') {
+  if (screen === 'demo') {
     const windowSimId = typeof window !== 'undefined' ? window.simulationBarId : null;
-    const simulationBarDisplayId = barId || windowSimId || 'BAR-SIM-TEST';
-    const simulationJoinUrl = `https://quiz-buteur.vercel.app/?bar=${simulationBarDisplayId}`;
-    console.log('🎬 Mode simulation - barId:', barId, 'window.simulationBarId:', windowSimId);
-
-    if (!simulationActive) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 to-pink-900 p-8">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-4xl font-bold text-white flex items-center gap-4">
-              <span className="text-5xl">🎬</span>
-              Mode Simulation
-            </h1>
-            <button 
-              onClick={() => {
-                stopSimulation();
-                setScreen('home');
-              }}
-              className="bg-white hover:bg-gray-100 px-6 py-3 rounded-xl font-bold text-purple-900 transition-all"
-            >
-              ← Retour Accueil
-            </button>
-          </div>
-
-          <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto mb-6">
-            <h2 className="text-3xl font-bold mb-4 text-purple-900">📋 Matchs disponibles</h2>
-            <p className="text-gray-600 mb-6">Sélectionne un match à rejouer en temps réel</p>
-            <p className="text-purple-600 text-sm mb-6">
-              ⚡ Mode accéléré : 20 minutes réelles = 90 minutes de match (ratio x4.5)
-              <br />
-              🎯 Questions toutes les 2 minutes réelles (~10 questions au total)
-            </p>
-            
-            <div className="grid grid-cols-1 gap-4">
-              {['psg-om', 'liverpool-city', 'real-barca'].map((key) => {
-                const matchInfoSim = SIMULATION_MATCHES[key];
-                return (
-                  <div
-                    key={key}
-                    onClick={() => {
-                      if (!simulationActive) {
-                        setSelectedSimulationMatch(key);
-                        setSimulationLog([]);
-                      }
-                    }}
-                    className={`border-4 rounded-xl p-6 cursor-pointer transition-all ${
-                      simulationActive ? 'opacity-50 cursor-not-allowed' :
-                      selectedSimulationMatch === key 
-                        ? 'border-purple-600 bg-purple-50' 
-                        : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-6">
-                        <div className="text-5xl">⚽</div>
-                        <div>
-                          <div className="text-2xl font-bold">{matchInfoSim.homeTeam} vs {matchInfoSim.awayTeam}</div>
-                          <div className="text-gray-600">{matchInfoSim.league} • Score final: {matchInfoSim.finalScore}</div>
-                          <div className="text-sm text-purple-600 mt-1">
-                            {matchInfoSim.events.length} events • {matchInfoSim.events.filter(e => e.type === 'Goal').length} buts
-                          </div>
-                        </div>
-                      </div>
-                      {selectedSimulationMatch === key && !simulationActive && (
-                        <div className="text-3xl">✅</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {selectedSimulationMatch && (
-            <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto">
-              <h3 className="text-2xl font-bold mb-6 text-purple-900">
-                {SIMULATION_MATCHES[selectedSimulationMatch].homeTeam} vs{' '}
-                {SIMULATION_MATCHES[selectedSimulationMatch].awayTeam}
-              </h3>
-              
-              <button
-                onClick={startSimulation}
-                className="bg-green-600 hover:bg-green-700 px-12 py-6 rounded-xl text-white text-2xl font-bold w-full shadow-xl transition-all"
-              >
-                ▶️ LANCER LA SIMULATION (20 min réelles = 90 min match)
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
+    const displayedCode = barId || windowSimId || 'BAR-SIM-TEST';
+    const joinUrl = `${window.location.origin}/?bar=${displayedCode}`;
+    const simulationUserId = user?.uid || 'sim-user';
 
     return (
-      <div className="h-screen overflow-hidden bg-gradient-to-br from-purple-900 to-pink-900 p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <span className="text-4xl">🎬</span>
-            {SIMULATION_MATCHES[selectedSimulationMatch].homeTeam} vs {SIMULATION_MATCHES[selectedSimulationMatch].awayTeam}
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 to-pink-900 p-6">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-bold text-white flex items-center gap-4">
+            <span className="text-5xl">🎬</span>
+            Mode Démo
           </h1>
-          <button 
+          <button
             onClick={() => {
-              stopSimulation();
+              setSimulationMatchId(null);
               setScreen('home');
             }}
-            className="bg-white hover:bg-gray-100 px-4 py-2 rounded-lg font-bold text-purple-900"
+            className="bg-white hover:bg-gray-100 px-6 py-3 rounded-xl font-bold text-purple-900 transition-all"
           >
-            ← Retour
+            ← Retour Accueil
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 h-[calc(100vh-120px)]">
+        <div className="grid lg:grid-cols-3 gap-6">
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl p-4">
-              <div className="text-center">
-                <div className="text-5xl font-black text-purple-900 mb-1">
-                  {simulationElapsed}'
-                </div>
-                <div className="text-4xl font-bold text-gray-700 mb-2">
-                  {simulationScore.home} - {simulationScore.away}
-                </div>
-                <div className="text-lg font-bold text-purple-600">
-                  {simulationHalf === '1H' && '⚽ 1ère MT'}
-                  {simulationHalf === 'HT' && '⏸️ Mi-temps'}
-                  {simulationHalf === '2H' && '⚽ 2ème MT'}
-                  {simulationHalf === 'FT' && '🏁 Terminé'}
-                </div>
+            <div className="bg-white rounded-3xl p-6 shadow-2xl text-center">
+              <h3 className="text-xl font-bold text-purple-900 mb-2">📱 Code du bar</h3>
+              <p className="text-3xl font-black text-gray-900 tracking-widest mb-4">{displayedCode}</p>
+              <div className="flex justify-center mb-3">
+                <QRCodeSVG value={joinUrl} size={160} level="H" />
               </div>
+              <p className="text-gray-500 text-sm">
+                Scanne ce QR code pour rejoindre depuis un mobile
+              </p>
             </div>
 
-            <div className="bg-white rounded-2xl p-4">
-              <h4 className="font-bold text-lg mb-2 text-purple-900 text-center">
-                📱 Rejoindre
-              </h4>
-              <div className="text-center mb-3">
-                <div className="text-2xl font-black text-purple-900">
-                  {simulationBarDisplayId}
-                </div>
-              </div>
-              <div className="flex justify-center">
-                <QRCodeSVG 
-                  value={simulationJoinUrl}
-                  size={120}
-                  level="H"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={stopSimulation}
-              className="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl text-white font-bold w-full"
-            >
-              ⏹️ ARRÊTER
-            </button>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 overflow-hidden flex flex-col">
-            <h4 className="font-bold text-xl mb-3 text-purple-900 flex items-center gap-2">
-              <span className="text-2xl">👥</span>
-              Joueurs ({Object.keys(simulationPlayers || {}).length})
-            </h4>
-            
-            {Object.keys(simulationPlayers || {}).length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-                <div className="text-5xl mb-2">📱</div>
-                <div className="text-sm text-center">En attente de joueurs...</div>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto space-y-2">
-                {Object.entries(simulationPlayers || {})
-                  .sort(([, a], [, b]) => (b.score || 0) - (a.score || 0))
-                  .map(([pid, player], index) => (
-                    <div 
-                      key={pid}
-                      className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="text-xl font-black text-purple-900 w-6">
-                          #{index + 1}
-                        </div>
-                        <div className="font-bold text-base truncate max-w-[120px]">
-                          {player.name || 'Joueur'}
-                        </div>
-                      </div>
-                      <div className="text-2xl font-black text-green-600">
-                        {player.score || 0}
-                      </div>
-                    </div>
-                  ))}
+            {simulationMatchId && (
+              <div className="bg-white/90 rounded-3xl p-6 shadow-xl text-center">
+                <p className="text-sm uppercase text-purple-500 font-bold mb-1">Match de test</p>
+                <p className="text-xl font-black text-gray-900">{simulationMatchId}</p>
               </div>
             )}
           </div>
 
-          <div className="bg-white rounded-2xl p-4 overflow-hidden flex flex-col">
-            <h4 className="font-bold text-xl mb-3 text-purple-900 flex items-center gap-2">
-              <span className="text-2xl">📋</span>
-              Events
-            </h4>
-            
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {simulationLog.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-400">
-                  Aucun event pour le moment
-                </div>
+          <div className="lg:col-span-2 space-y-6">
+            <SimulationMatchSetup onMatchCreated={setSimulationMatchId} />
+
+            <div className="bg-white/95 rounded-3xl p-6 shadow-2xl min-h-[420px]">
+              {simulationMatchId ? (
+                <QuestionsContainer matchId={simulationMatchId} userId={simulationUserId} />
               ) : (
-                simulationLog.slice().reverse().map((log, i) => (
-                  <div 
-                    key={i} 
-                    className="bg-gray-50 rounded-lg px-3 py-2 text-sm border-l-4 border-purple-500"
-                  >
-                    {log}
-                  </div>
-                ))
+                <div className="h-full flex flex-col items-center justify-center text-center text-gray-600">
+                  <div className="text-5xl mb-4">⚙️</div>
+                  <p className="text-xl font-bold mb-2">Crée un match de démo</p>
+                  <p className="text-sm max-w-md">
+                    Utilise le module ci-dessus pour générer un match PSG vs OM avec questions automatiques,
+                    puis surveille toutes les questions ici.
+                  </p>
+                </div>
               )}
             </div>
           </div>

@@ -20,7 +20,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
         onMatchCreated(newMatchId);
       }
 
-      alert(`Match de simulation créé : ${newMatchId}`);
+      alert(`Match de démonstration créé : ${newMatchId}`);
     } catch (error) {
       console.error('Erreur lors de la création du match:', error);
       alert('Erreur lors de la création du match');
@@ -114,8 +114,8 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
   return (
     <div className="simulation-setup">
       <div className="setup-header">
-        <h2>🎮 Mode Simulation</h2>
-        <p>Créez un match de test PSG vs Marseille</p>
+        <h2>🎬 Mode Démo</h2>
+        <p>Créez un match de démo PSG vs Marseille</p>
       </div>
 
       {!matchId ? (
@@ -124,7 +124,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
           onClick={handleCreateMatch}
           disabled={isCreating}
         >
-          {isCreating ? 'Création...' : '⚽ Créer un match de simulation'}
+          {isCreating ? 'Création...' : '⚽ Créer un match de démo'}
         </button>
       ) : (
         <div className="match-controls">
