@@ -2,7 +2,7 @@
 // Gestionnaire de validation des réponses
 
 import { ref, update, onValue, get } from 'firebase/database';
-import { database } from './firebase';
+import { db } from './firebase';
 
 const activeListeners = new Map();
 
@@ -45,7 +45,7 @@ const validateCultureAnswer = async (userId, matchId, questionId, answer, questi
   };
   
   await update(
-    ref(database, `matches/${matchId}/players/${userId}/answers/${questionId}`),
+    ref(db, `matches/${matchId}/players/${userId}/answers/${questionId}`),
     answerData
   );
   
@@ -88,7 +88,7 @@ const handlePredictionAnswer = async (userId, matchId, questionId, answer, quest
   }
   
   await update(
-    ref(database, `matches/${matchId}/players/${userId}/answers/${questionId}`),
+    ref(db, `matches/${matchId}/players/${userId}/answers/${questionId}`),
     answerData
   );
   
@@ -109,7 +109,7 @@ const handlePredictionAnswer = async (userId, matchId, questionId, answer, quest
 const startEventListener = (userId, matchId, questionId, question, submittedAt, deadline) => {
   console.log(`👂 Démarrage écoute événement - Type: ${question.eventType}`);
   
-  const eventsRef = ref(database, `matches/${matchId}/events`);
+  const eventsRef = ref(db, `matches/${matchId}/events`);
   const listenerKey = `${userId}_${questionId}`;
   
   const unsubscribe = onValue(eventsRef, (snapshot) => {
@@ -141,7 +141,7 @@ const startEventListener = (userId, matchId, questionId, question, submittedAt, 
 const startTimeoutValidator = (userId, matchId, questionId, question, submittedAt, deadline) => {
   console.log(`⏳ Démarrage validation différée - Attente jusqu'à ${new Date(deadline).toLocaleTimeString()}`);
   
-  const eventsRef = ref(database, `matches/${matchId}/events`);
+  const eventsRef = ref(db, `matches/${matchId}/events`);
   const listenerKey = `${userId}_${questionId}`;
   
   const unsubscribe = onValue(eventsRef, (snapshot) => {
@@ -196,7 +196,7 @@ const validatePrediction = async (userId, matchId, questionId, isCorrect, eventT
   console.log(`📊 Validation finale - Correct: ${isCorrect}, Points: ${updateData.points}`);
   
   await update(
-    ref(database, `matches/${matchId}/players/${userId}/answers/${questionId}`),
+    ref(db, `matches/${matchId}/players/${userId}/answers/${questionId}`),
     updateData
   );
   
@@ -206,7 +206,7 @@ const validatePrediction = async (userId, matchId, questionId, isCorrect, eventT
 };
 
 const updatePlayerScore = async (userId, matchId, points) => {
-  const playerRef = ref(database, `matches/${matchId}/players/${userId}`);
+  const playerRef = ref(db, `matches/${matchId}/players/${userId}`);
   const snapshot = await get(playerRef);
   const currentData = snapshot.val() || {};
   const currentScore = currentData.score || 0;

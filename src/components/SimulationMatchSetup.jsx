@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ref, update, get } from 'firebase/database';
-import { database } from './firebase';
-import { createSimulationMatch } from './questionManager';
+import { db } from '../firebase';
+import { createSimulationMatch } from '../questionManager';
 import './SimulationMatchSetup.css';
 
 const SimulationMatchSetup = ({ onMatchCreated }) => {
@@ -31,7 +31,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
   const handleStartTimer = async () => {
     if (!matchId) return;
 
-    const timerRef = ref(database, `matches/${matchId}/timer`);
+    const timerRef = ref(db, `matches/${matchId}/timer`);
     await update(timerRef, {
       running: true,
       startedAt: Date.now()
@@ -40,7 +40,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
     setTimerRunning(true);
 
     const interval = setInterval(async () => {
-      const snapshot = await get(ref(database, `matches/${matchId}/timer`));
+      const snapshot = await get(ref(db, `matches/${matchId}/timer`));
       const timerData = snapshot.val();
 
       if (!timerData?.running) {
@@ -67,7 +67,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
   const handleStopTimer = async () => {
     if (!matchId) return;
 
-    const timerRef = ref(database, `matches/${matchId}/timer`);
+    const timerRef = ref(db, `matches/${matchId}/timer`);
     await update(timerRef, {
       running: false
     });
@@ -78,7 +78,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
   const handleFastForward = async (minutes) => {
     if (!matchId) return;
 
-    const timerRef = ref(database, `matches/${matchId}/timer`);
+    const timerRef = ref(db, `matches/${matchId}/timer`);
     const snapshot = await get(timerRef);
     const currentElapsed = snapshot.val()?.elapsed || 0;
 

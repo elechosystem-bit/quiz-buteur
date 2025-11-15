@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { submitAnswer } from './answerValidator';
+import { submitAnswer } from '../answerValidator';
 import './QuestionCard.css';
 
 const QuestionCard = ({ question, matchId, userId, existingAnswer }) => {
@@ -187,10 +187,10 @@ const QuestionCard = ({ question, matchId, userId, existingAnswer }) => {
   return (
     <div className="question-card">
       {renderQuestionType()}
-      
+
       <div className="question-content">
         <h3 className="question-text">{question.question}</h3>
-        
+
         <div className="question-points">
           {question.points} point{question.points > 1 ? 's' : ''}
         </div>

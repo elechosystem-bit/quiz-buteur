@@ -1,6 +1,6 @@
 // questionManager.js
 import { ref, set, get, update, onValue } from 'firebase/database';
-import { database } from './firebase';
+import { db } from './firebase';
 import { getRandomCultureQuestions } from './cultureQuestions';
 import {
   generatePredictionQuestion,
@@ -44,7 +44,7 @@ export const generateMatchQuestions = (matchId, matchDuration = 90) => {
 };
 
 export const initializeMatchQuestions = async (matchId, questions) => {
-  const questionsRef = ref(database, `matches/${matchId}/questions`);
+  const questionsRef = ref(db, `matches/${matchId}/questions`);
 
   const questionsData = {};
   questions.forEach(question => {
@@ -234,7 +234,7 @@ export const createSimulationMatch = async () => {
     createdAt: Date.now()
   };
 
-  await set(ref(database, `matches/${matchId}`), matchData);
+  await set(ref(db, `matches/${matchId}`), matchData);
 
   const questions = generateMatchQuestions(matchId);
   await initializeMatchQuestions(matchId, questions);
@@ -263,7 +263,7 @@ const generateSimulationEvents = async (matchId) => {
       assist: { id: 2, name: 'Player Out' },
       player: { id: 3, name: 'Player In' },
       time: { elapsed: 23 },
-      timestamp: Date.Now() + 23 * 60 * 1000
+      timestamp: Date.now() + 23 * 60 * 1000
     },
     {
       id: 'evt_3',
@@ -302,7 +302,7 @@ const generateSimulationEvents = async (matchId) => {
     }
   ];
 
-  const eventsRef = ref(database, `matches/${matchId}/events`);
+  const eventsRef = ref(db, `matches/${matchId}/events`);
   const eventsData = {};
   events.forEach(event => {
     eventsData[event.id] = event;

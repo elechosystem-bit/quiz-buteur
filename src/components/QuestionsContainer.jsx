@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
-import { database } from './firebase';
+import { db } from '../firebase';
 import QuestionCard from './QuestionCard';
 import './QuestionsContainer.css';
 
 const QuestionsContainer = ({ matchId, userId }) => {
   const [questions, setQuestions] = useState([]);
   const [playerAnswers, setPlayerAnswers] = useState({});
-  const [activeQuestions, setActiveQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!matchId) return;
 
-    const questionsRef = ref(database, `matches/${matchId}/questions`);
+    const questionsRef = ref(db, `matches/${matchId}/questions`);
     const unsubscribe = onValue(questionsRef, (snapshot) => {
       const questionsData = snapshot.val() || {};
       const questionsList = Object.values(questionsData);
@@ -21,10 +20,6 @@ const QuestionsContainer = ({ matchId, userId }) => {
       questionsList.sort((a, b) => a.order - b.order);
 
       setQuestions(questionsList);
-
-      const active = questionsList.filter(q => q.status === 'active');
-      setActiveQuestions(active);
-
       setLoading(false);
     });
 
@@ -34,7 +29,7 @@ const QuestionsContainer = ({ matchId, userId }) => {
   useEffect(() => {
     if (!matchId || !userId) return;
 
-    const answersRef = ref(database, `matches/${matchId}/players/${userId}/answers`);
+    const answersRef = ref(db, `matches/${matchId}/players/${userId}/answers`);
     const unsubscribe = onValue(answersRef, (snapshot) => {
       const answersData = snapshot.val() || {};
       setPlayerAnswers(answersData);
@@ -137,8 +132,7 @@ const QuestionsContainer = ({ matchId, userId }) => {
           </div>
           <div className="pending-info">
             <p>
-              {groupedQuestions.pending.length} question{groupedQuestions.pending.length > 1 ? 's' : ''} 
-              {' '}à venir pendant le match
+              {groupedQuestions.pending.length} question{groupedQuestions.pending.length > 1 ? 's' : ''} à venir pendant le match
             </p>
           </div>
         </section>
