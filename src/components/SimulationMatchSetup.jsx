@@ -8,6 +8,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [matchId, setMatchId] = useState(null);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [activationMessage, setActivationMessage] = useState('');
 
   const handleCreateMatch = async () => {
     setIsCreating(true);
@@ -87,6 +88,29 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
     });
   };
 
+  const handleActivateAllQuestions = async () => {
+    if (!matchId) return;
+    try {
+      const questionsRef = ref(db, `matches/${matchId}/questions`);
+      const snapshot = await get(questionsRef);
+      if (!snapshot.exists()) {
+        alert('Aucune question à activer.');
+        return;
+      }
+
+      const questionsData = snapshot.val();
+      const updates = {};
+      Object.keys(questionsData).forEach((questionKey) => {
+        updates[`${questionKey}/status`] = 'active';
+      });
+      await update(questionsRef, updates);
+      setActivationMessage('Questions activées !');
+    } catch (error) {
+      console.error('Erreur lors de l’activation des questions :', error);
+      alert('Impossible d’activer les questions.');
+    }
+  };
+
   return (
     <div className="simulation-setup">
       <div className="setup-header">
@@ -124,6 +148,7 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
                 <button
                   className="control-btn start"
                   onClick={handleStartTimer}
+                  disabled={!matchId}
                 >
                   ▶️ Démarrer
                 </button>
@@ -159,7 +184,18 @@ const SimulationMatchSetup = ({ onMatchCreated }) => {
               >
                 ⏩ +15 min
               </button>
+
+              <button
+                className="control-btn activate"
+                onClick={handleActivateAllQuestions}
+                disabled={!matchId}
+              >
+                🔥 Activer toutes les questions
+              </button>
             </div>
+            {activationMessage && (
+              <p className="activation-message">{activationMessage}</p>
+            )}
           </div>
 
           <div className="simulation-info">

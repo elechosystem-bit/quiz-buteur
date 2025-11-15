@@ -175,6 +175,22 @@
   background: #2563eb;
 }
 
+.control-btn.activate {
+  background: #f97316;
+  color: white;
+  grid-column: span 2 / span 2;
+}
+
+.control-btn.activate:hover:not(:disabled) {
+  background: #ea580c;
+}
+
+.activation-message {
+  margin-top: 12px;
+  font-weight: 600;
+  color: #fef3c7;
+}
+
 .simulation-info {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 12px;
