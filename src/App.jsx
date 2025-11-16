@@ -350,6 +350,55 @@ const firstQuestionTimeoutRef = useRef(null);
   const [simulationMatchId, setSimulationMatchId] = useState(null);
   const simulationMatchIdRef = useRef(null);
   const simulationQuestionSchedulerRef = useRef(null);
+  // --- États spécifiques à l'UI DEMO (ancienne mise en page TV/Mobile) ---
+  const [demoMatchInfo, setDemoMatchInfo] = useState(null);
+  const [demoElapsed, setDemoElapsed] = useState(0);
+  const [demoEvents, setDemoEvents] = useState([]);
+  const [demoPlayers, setDemoPlayers] = useState([]);
+
+  useEffect(() => {
+    if (screen !== 'demo' || !simulationMatchId) return;
+
+    const matchRef = ref(db, `matches/${simulationMatchId}`);
+    const timerRef = ref(db, `matches/${simulationMatchId}/timer/elapsed`);
+    const eventsRef = ref(db, `matches/${simulationMatchId}/events`);
+    const playersRef = ref(db, `matches/${simulationMatchId}/players`);
+
+    const unsubMatch = onValue(matchRef, snap => {
+      const v = snap.val();
+      if (!v) return;
+      setDemoMatchInfo({
+        homeTeam: v.homeTeam?.name || 'Paris Saint Germain',
+        homeLogo: v.homeTeam?.logo || null,
+        awayTeam: v.awayTeam?.name || 'Marseille',
+        awayLogo: v.awayTeam?.logo || null,
+      });
+    });
+
+    const unsubTimer = onValue(timerRef, snap => {
+      setDemoElapsed(snap.val() || 0);
+    });
+
+    const unsubEvents = onValue(eventsRef, snap => {
+      const v = snap.val() || {};
+      const list = Object.values(v).sort((a, b) => (a.time?.elapsed || 0) - (b.time?.elapsed || 0));
+      setDemoEvents(list);
+    });
+
+    const unsubPlayers = onValue(playersRef, snap => {
+      const v = snap.val() || {};
+      const list = Object.entries(v).map(([id, p]) => ({ id, pseudo: p.pseudo || id, score: p.score || 0 }));
+      list.sort((a, b) => (b.score || 0) - (a.score || 0));
+      setDemoPlayers(list);
+    });
+
+    return () => {
+      unsubMatch?.();
+      unsubTimer?.();
+      unsubEvents?.();
+      unsubPlayers?.();
+    };
+  }, [screen, simulationMatchId]);
 
   const searchMatches = async () => {
     setLoadingMatches(true);
@@ -3540,15 +3589,80 @@ const firstQuestionTimeoutRef = useRef(null);
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="space-y-4">
-            <div className="bg-white rounded-3xl p-6 shadow-2xl text-center">
-              <h3 className="text-xl font-bold text-purple-900 mb-2">📱 Code du bar</h3>
-              <p className="text-3xl font-black text-gray-900 tracking-widest mb-4">{displayedCode}</p>
-              <div className="flex justify-center mb-3">
-                <QRCodeSVG value={joinUrl} size={160} level="H" />
+            <div className="bg-white rounded-3xl p-6 shadow-2xl">
+              <div className="flex items-center justify-center gap-4 mb-4">
+                {demoMatchInfo?.homeLogo && <img src={demoMatchInfo.homeLogo} alt={demoMatchInfo.homeTeam} className="w-10 h-10 object-contain" />}
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-purple-900">
+                    {demoMatchInfo?.homeTeam || 'PSG'} <span className="mx-2 text-gray-700">0 - 0</span> {demoMatchInfo?.awayTeam || 'OM'}
+                  </div>
+                  <div className="text-sm text-gray-500 mt-1">⏱️ {demoElapsed}'</div>
+                </div>
+                {demoMatchInfo?.awayLogo && <img src={demoMatchInfo.awayLogo} alt={demoMatchInfo.awayTeam} className="w-10 h-10 object-contain" />}
               </div>
-              <p className="text-gray-500 text-sm">
-                Scanne ce QR code pour rejoindre depuis un mobile
-              </p>
+
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-bold text-purple-900 mb-2">📢 Événements</h3>
+                <div className="max-h-40 overflow-y-auto space-y-2">
+                  {demoEvents.length === 0 ? (
+                    <p className="text-gray-500 text-sm">Aucun événement pour l’instant</p>
+                  ) : (
+                    demoEvents.map(evt => (
+                      <div key={evt.id} className="text-sm text-gray-800 flex items-center gap-2">
+                        <span className="font-bold text-gray-600">{evt.time?.elapsed || 0}'</span>
+                        <span className="text-gray-900">
+                          {evt.type === 'Card' ? (evt.detail === 'Red Card' ? '🟥' : '🟨') :
+                           evt.type?.toLowerCase() === 'var' ? '🖥️ VAR' :
+                           evt.type?.toLowerCase() === 'subst' ? '🔁 Changement' : '⚽ Événement'}
+                        </span>
+                        <span className="truncate">{evt.team?.name}</span>
+                        {evt.player?.name && <span className="truncate">- {evt.player?.name}</span>}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 text-center">
+                <div className="flex justify-center mb-3">
+                  <QRCodeSVG value={joinUrl} size={160} level="H" />
+                </div>
+                <p className="text-gray-500 text-sm">
+                  Scanne ce QR code pour rejoindre depuis un mobile
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white/95 rounded-3xl p-6 shadow-2xl">
+              <div className="grid grid-cols-12 gap-3 text-xs font-bold text-gray-600 mb-3 px-3">
+                <div className="col-span-1">#</div>
+                <div className="col-span-7">JOUEUR</div>
+                <div className="col-span-4 text-right">SCORE</div>
+              </div>
+              <div className="space-y-1">
+                {demoPlayers.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <div className="text-4xl mb-4">👥</div>
+                    <p className="text-xl">En attente de joueurs...</p>
+                  </div>
+                ) : (
+                  demoPlayers.slice(0, 16).map((p, i) => (
+                    <div
+                      key={p.id}
+                      className={`grid grid-cols-12 gap-3 items-center py-3 px-3 rounded-lg transition-all ${
+                        i === 0 ? 'bg-yellow-400 text-gray-900 font-black text-2xl'
+                        : i === 1 ? 'bg-gray-300 text-gray-900 font-bold text-xl'
+                        : i === 2 ? 'bg-orange-300 text-gray-900 font-bold text-xl'
+                        : 'bg-gray-50 text-lg'
+                      }`}
+                    >
+                      <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
+                      <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
+                      <div className="col-span-4 text-right font-black">{p.score} pts</div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
             {simulationMatchId && (
@@ -3557,7 +3671,6 @@ const firstQuestionTimeoutRef = useRef(null);
                 <p className="text-xl font-black text-gray-900">{simulationMatchId}</p>
               </div>
             )}
-
           </div>
 
           <div className="lg:col-span-2 space-y-6">
