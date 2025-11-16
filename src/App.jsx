@@ -5,8 +5,8 @@ import { db, auth } from './firebase';
 import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, checkClaudeQuota } from './generateCultureQuestion';
 import SimulationMatchSetup from './components/SimulationMatchSetup';
-import QuestionsContainer from './components/QuestionsContainer';
 import { createSimulationMatch, startQuestionScheduler } from './questionManager';
+
 
 // ---- Server time utils (Firebase server clock) ----
 const serverOffsetRef = ref(db, '.info/serverTimeOffset');
@@ -2563,7 +2563,7 @@ const firstQuestionTimeoutRef = useRef(null);
           </button>
           <button 
             onClick={() => setScreen('demo')}
-            className="bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-3xl p-12 text-white shadow-2xl transform hover:scale-105 transition-all"
+            className="bg-gradient-to-br from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 rounded-3xl p-12 text-white shadow-2xl transform hover:scale-105 transition-all"
           >
             <div className="text-6xl mb-4">🎬</div>
             <div className="text-4xl font-black mb-2">DEMO</div>
@@ -2962,9 +2962,6 @@ const firstQuestionTimeoutRef = useRef(null);
     try {
       const myScore = players.find(p => p.id === user?.uid);
       const score = myScore?.score || 0;
-      const mobileQuestionsMatchId = matchState?.questionMatchId || null;
-      const mobileQuestionsUserId = user?.uid || null;
-      const hasQuestionManager = Boolean(mobileQuestionsMatchId && mobileQuestionsUserId);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
@@ -3018,20 +3015,7 @@ const firstQuestionTimeoutRef = useRef(null);
               </div>
             )}
 
-          {hasQuestionManager ? (
-            <div className="bg-white rounded-3xl p-4 shadow-2xl mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2 text-green-900 font-bold text-lg">
-                  <span className="text-2xl">❓</span>
-                  Questions en direct
-                </div>
-              </div>
-              <QuestionsContainer
-                matchId={mobileQuestionsMatchId}
-                userId={mobileQuestionsUserId}
-              />
-            </div>
-          ) : currentQuestion?.text && currentQuestion?.options ? (
+          {currentQuestion?.text && currentQuestion?.options ? (
             <div className="bg-white rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-center gap-2 mb-4">
                 {currentQuestion.type === 'culture' ? (
