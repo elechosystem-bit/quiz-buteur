@@ -3587,7 +3587,7 @@ const firstQuestionTimeoutRef = useRef(null);
           </button>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-1 gap-6">
           <div className="space-y-4">
             <div className="bg-white rounded-3xl p-6 shadow-2xl">
               <div className="flex items-center justify-center gap-4 mb-4">
@@ -3607,7 +3607,7 @@ const firstQuestionTimeoutRef = useRef(null);
                   {demoEvents.length === 0 ? (
                     <p className="text-gray-500 text-sm">Aucun événement pour l’instant</p>
                   ) : (
-                    demoEvents.map(evt => (
+                    demoEvents.filter(evt => (evt.time?.elapsed || 0) <= demoElapsed).map(evt => (
                       <div key={evt.id} className="text-sm text-gray-800 flex items-center gap-2">
                         <span className="font-bold text-gray-600">{evt.time?.elapsed || 0}'</span>
                         <span className="text-gray-900">
@@ -3673,24 +3673,7 @@ const firstQuestionTimeoutRef = useRef(null);
             )}
           </div>
 
-          <div className="lg:col-span-2 space-y-6">
-            <SimulationMatchSetup onMatchCreated={setSimulationMatchId} />
 
-            <div className="bg-white/95 rounded-3xl p-6 shadow-2xl min-h-[420px]">
-              {simulationMatchId ? (
-                <QuestionsContainer matchId={simulationMatchId} userId={simulationUserId} />
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center text-gray-600">
-                  <div className="text-5xl mb-4">⚙️</div>
-                  <p className="text-xl font-bold mb-2">Crée un match de démo</p>
-                  <p className="text-sm max-w-md">
-                    Utilise le module ci-dessus pour générer un match PSG vs OM avec questions automatiques,
-                    puis surveille toutes les questions ici.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     );
