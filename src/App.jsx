@@ -158,16 +158,21 @@ function detectQuestionType(text = '') {
   return 'unknown';
 }
 
+// 🔥 Helper pour appeler l'API Football via le proxy Vercel (contourne CORS)
+async function fetchFootballAPI(endpoint, queryParams = {}) {
+  const params = new URLSearchParams({ endpoint, ...queryParams });
+  const res = await fetch(`/api/football?${params.toString()}`);
+  
+  if (!res.ok) {
+    throw new Error(`API Football error: ${res.status}`);
+  }
+  
+  return await res.json();
+}
+
 // Récupération du fixture (events + elapsed)
 async function fetchFixtureNow(fixtureId, apiKey) {
-  const res = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
-    method: 'GET',
-    headers: {
-      'x-rapidapi-key': apiKey,
-      'x-rapidapi-host': 'v3.football.api-sports.io'
-    }
-  });
-  const data = await res.json();
+  const data = await fetchFootballAPI('fixtures', { id: fixtureId });
   const fx = data?.response?.[0];
   return {
     events: Array.isArray(fx?.events) ? fx.events : [],
@@ -406,23 +411,8 @@ const firstQuestionTimeoutRef = useRef(null);
     setLoadingMatches(true);
 
     try {
-      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-
-      if (!apiKey) {
-        alert('❌ Clé API non configurée');
-        setLoadingMatches(false);
-        return;
-      }
-
-      const response = await fetch('https://v3.football.api-sports.io/fixtures?live=all', {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-rapidapi-host': 'v3.football.api-sports.io'
-        }
-      });
-
-      const data = await response.json();
+      // Utiliser le proxy Vercel pour contourner CORS
+      const data = await fetchFootballAPI('fixtures', { live: 'all' });
 
       if (data.errors && Object.keys(data.errors).length > 0) {
         alert('❌ Erreur API: ' + JSON.stringify(data.errors));
@@ -432,15 +422,7 @@ const firstQuestionTimeoutRef = useRef(null);
 
       if (!data.response || data.response.length === 0) {
         const today = new Date().toISOString().split('T')[0];
-        const responseToday = await fetch(`https://v3.football.api-sports.io/fixtures?date=${today}`, {
-          method: 'GET',
-          headers: {
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': 'v3.football.api-sports.io'
-          }
-        });
-
-        const dataToday = await responseToday.json();
+        const dataToday = await fetchFootballAPI('fixtures', { date: today });
 
         if (dataToday.response && dataToday.response.length > 0) {
           const matches = dataToday.response
@@ -554,22 +536,8 @@ const firstQuestionTimeoutRef = useRef(null);
     setLoadingPlayers(true);
     
     try {
-      const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-      
-      if (!apiKey) {
-        setLoadingPlayers(false);
-        return;
-      }
-
-      const response = await fetch(`https://v3.football.api-sports.io/fixtures/lineups?fixture=${fixtureId}`, {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-rapidapi-host': 'v3.football.api-sports.io'
-        }
-      });
-
-      const data = await response.json();
+      // Utiliser le proxy Vercel pour contourner CORS
+      const data = await fetchFootballAPI('fixtures/lineups', { fixture: fixtureId });
 
       if (data.response && data.response.length > 0) {
         const allPlayers = [];
@@ -1207,30 +1175,20 @@ const firstQuestionTimeoutRef = useRef(null);
       let realTimeScore = selectedMatch?.score || 'vs';
       
       if (selectedMatch?.id) {
-        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-        if (apiKey) {
-          try {
-            const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${selectedMatch.id}`, {
-              method: 'GET',
-              headers: {
-                'x-rapidapi-key': apiKey,
-                'x-rapidapi-host': 'v3.football.api-sports.io'
-              }
-            });
+        try {
+          // Utiliser le proxy Vercel pour contourner CORS
+          const data = await fetchFootballAPI('fixtures', { id: selectedMatch.id });
+          
+          if (data.response && data.response.length > 0) {
+            const fixture = data.response[0];
+            realTimeElapsed = fixture.fixture.status.elapsed || 0;
+            realTimeHalf = fixture.fixture.status.short;
+            realTimeScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
             
-            const data = await response.json();
-            
-            if (data.response && data.response.length > 0) {
-              const fixture = data.response[0];
-              realTimeElapsed = fixture.fixture.status.elapsed || 0;
-              realTimeHalf = fixture.fixture.status.short;
-              realTimeScore = `${fixture.goals.home || 0}-${fixture.goals.away || 0}`;
-              
-              console.log(`✅ Synchro réussie : ${realTimeElapsed}' - ${realTimeHalf} - ${realTimeScore}`);
-            }
-          } catch (apiError) {
-            console.warn('⚠️ Impossible de synchroniser, utilisation des données locales', apiError);
+            console.log(`✅ Synchro réussie : ${realTimeElapsed}' - ${realTimeHalf} - ${realTimeScore}`);
           }
+        } catch (apiError) {
+          console.warn('⚠️ Impossible de synchroniser, utilisation des données locales', apiError);
         }
       }
       
@@ -2190,23 +2148,10 @@ const firstQuestionTimeoutRef = useRef(null);
 
   const syncMatchData = async (fixtureId) => {
       try {
-        const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY;
-      if (!apiKey) {
-        console.error('❌ Clé API manquante');
-        return null;
-      }
-
-      console.log('🔄 Synchronisation API pour fixture:', fixtureId);
-
-        const response = await fetch(`https://v3.football.api-sports.io/fixtures?id=${fixtureId}`, {
-          method: 'GET',
-          headers: {
-            'x-rapidapi-key': apiKey,
-            'x-rapidapi-host': 'v3.football.api-sports.io'
-          }
-        });
-
-        const data = await response.json();
+        console.log('🔄 Synchronisation API pour fixture:', fixtureId);
+        
+        // Utiliser le proxy Vercel pour contourner CORS
+        const data = await fetchFootballAPI('fixtures', { id: fixtureId });
         
         if (data.response && data.response.length > 0) {
           const fixture = data.response[0];
