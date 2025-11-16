@@ -1769,6 +1769,8 @@ const firstQuestionTimeoutRef = useRef(null);
       // Vérifier le quota Claude
       const canGenerate = await checkClaudeQuota(db, ref, get, set, 200);
       const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
+      console.log('🔑 API Key présente :', !!apiKey);
+      console.log('✅ Quota OK :', canGenerate);
       
       if (!canGenerate || !apiKey) {
         console.warn('⚠️ Quota atteint ou clé API manquante, fallback');
