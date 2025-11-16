@@ -6,6 +6,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, checkClaudeQuota } from './generateCultureQuestion';
 import SimulationMatchSetup from './components/SimulationMatchSetup';
 import QuestionsContainer from './components/QuestionsContainer';
+import { createSimulationMatch, startQuestionScheduler } from './questionManager';
 
 // ---- Server time utils (Firebase server clock) ----
 const serverOffsetRef = ref(db, '.info/serverTimeOffset');
@@ -347,6 +348,8 @@ const firstQuestionTimeoutRef = useRef(null);
   const [simulationPlayers, setSimulationPlayers] = useState({});
   const simulationIntervalRef = useRef(null);
   const [simulationMatchId, setSimulationMatchId] = useState(null);
+  const simulationMatchIdRef = useRef(null);
+  const simulationQuestionSchedulerRef = useRef(null);
 
   const searchMatches = async () => {
     setLoadingMatches(true);
@@ -1332,11 +1335,80 @@ const firstQuestionTimeoutRef = useRef(null);
     }
   };
 
+  const updateSimulationQuestionTimer = async (elapsedValue, halfValue, runningValue = true) => {
+    const matchId = simulationMatchIdRef.current;
+    if (!matchId) return;
+
+    try {
+      await update(ref(db, `matches/${matchId}/timer`), {
+        elapsed: elapsedValue,
+        half: halfValue,
+        running: runningValue,
+        updatedAt: Date.now()
+      });
+    } catch (error) {
+      console.error('❌ Erreur mise à jour timer questions simulation:', error);
+    }
+  };
+
+  const recordSimulationQuestionEvent = async (eventData) => {
+    const matchId = simulationMatchIdRef.current;
+    if (!matchId) return;
+
+    try {
+      await set(ref(db, `matches/${matchId}/events/${eventData.id}`), eventData);
+    } catch (error) {
+      console.error('❌ Erreur enregistrement événement simulation:', error);
+    }
+  };
+
+  const cleanupSimulationQuestionSystem = async () => {
+    if (simulationQuestionSchedulerRef.current) {
+      simulationQuestionSchedulerRef.current();
+      simulationQuestionSchedulerRef.current = null;
+    }
+    const simBarId = barId || (typeof window !== 'undefined' ? window.simulationBarId : null);
+    if (simBarId) {
+      try {
+        await update(ref(db, `bars/${simBarId}/matchState`), {
+          questionMatchId: null
+        });
+      } catch (err) {
+        console.error('❌ Erreur réinitialisation questionMatchId:', err);
+      }
+    }
+    simulationMatchIdRef.current = null;
+    setSimulationMatchId(null);
+  };
+
   const startSimulation = async () => {
     try {
       const matchData = SIMULATION_MATCHES[selectedSimulationMatch];
       if (!matchData) {
         alert('❌ Aucun match sélectionné');
+        return;
+      }
+
+      let simulationQuestionMatchId = null;
+      try {
+        simulationQuestionMatchId = await createSimulationMatch();
+        setSimulationMatchId(simulationQuestionMatchId);
+        simulationMatchIdRef.current = simulationQuestionMatchId;
+        if (simulationQuestionSchedulerRef.current) {
+          simulationQuestionSchedulerRef.current();
+        }
+        simulationQuestionSchedulerRef.current = startQuestionScheduler(simulationQuestionMatchId);
+        await set(ref(db, `matches/${simulationQuestionMatchId}/timer`), {
+          elapsed: 0,
+          half: '1H',
+          running: true,
+          startedAt: Date.now()
+        });
+        await updateSimulationQuestionTimer(0, '1H', true);
+      } catch (err) {
+        console.error('❌ Erreur préparation des questions de simulation:', err);
+        alert('❌ Impossible de préparer les questions du match de simulation');
+        await cleanupSimulationQuestionSystem();
         return;
       }
 
@@ -1393,6 +1465,7 @@ const firstQuestionTimeoutRef = useRef(null);
         startedAt: Date.now(),
         questionCount: 0,
         nextQuestionTime: Date.now() + 120000,
+        questionMatchId: simulationQuestionMatchId,
         matchInfo: {
           homeTeam: matchData.homeTeam,
           awayTeam: matchData.awayTeam,
@@ -1431,6 +1504,8 @@ const firstQuestionTimeoutRef = useRef(null);
         elapsed++;
         console.log(`⏱️ ${elapsed}'`);
         
+        await updateSimulationQuestionTimer(elapsed, half, true);
+
         if (elapsed === 45) {
           half = 'HT';
           setSimulationHalf('HT');
@@ -1441,6 +1516,7 @@ const firstQuestionTimeoutRef = useRef(null);
             half: 'HT',
             elapsed: 45
           });
+          await updateSimulationQuestionTimer(elapsed, half, false);
           
         setTimeout(() => {
           half = '2H';
@@ -1449,6 +1525,7 @@ const firstQuestionTimeoutRef = useRef(null);
           setSimulationHalf('2H');
           setSimulationElapsed(46);
           setSimulationLog(prev => [...prev, `🟢 46' - Reprise 2ème mi-temps`]);
+          updateSimulationQuestionTimer(46, half, true);
           console.log('🟢 Reprise 2ème mi-temps');
         }, 5000);
           
@@ -1460,6 +1537,7 @@ const firstQuestionTimeoutRef = useRef(null);
           setSimulationHalf('FT');
           setSimulationLog(prev => [...prev, `🏁 90' - Fin du match (${score.home}-${score.away})`]);
           clearInterval(simulationIntervalRef.current);
+          simulationIntervalRef.current = null;
           setSimulationActive(false);
           
           await update(ref(db, `bars/${simulationBarId}/simulation`), {
@@ -1467,6 +1545,8 @@ const firstQuestionTimeoutRef = useRef(null);
             half: 'FT',
             elapsed: 90
           });
+          await updateSimulationQuestionTimer(90, half, false);
+          await cleanupSimulationQuestionSystem();
           
           console.log('🏁 Match terminé');
           return;
@@ -1492,47 +1572,18 @@ const firstQuestionTimeoutRef = useRef(null);
             ]);
             console.log(`${cardEmoji} ${elapsed}' - ${event.detail}`);
           }
-
-          try {
-            console.log('🔔 Event détecté, vérification des questions actives...');
-            const currentQuestionRef = ref(db, `bars/${simulationBarId}/currentQuestion`);
-            const questionSnap = await get(currentQuestionRef);
-
-            if (questionSnap.exists()) {
-              const question = questionSnap.val();
-              const qType = detectQuestionType(question.text);
-              const winMin = parsePredictionWindowMinutes(question.text);
-
-              const simSnap = await get(ref(db, `bars/${simulationBarId}/simulation`));
-              const simData = simSnap.val() || {};
-              const startedAt = simData.startedAt || question.createdAt || Date.now();
-              const createdAt = question.createdAt || Date.now();
-              const questionStartMin = Math.max(0, Math.floor((createdAt - startedAt) / SIMULATION_MINUTE_MS));
-              const questionEndMin = questionStartMin + winMin;
-
-              console.log(`❓ Question active: "${question.text}"`);
-              console.log(`⏱️ Fenêtre: ${questionStartMin}' à ${questionEndMin}'`);
-              console.log(`📍 Event actuel: ${elapsed}'`);
-
-              if (elapsed >= questionStartMin && elapsed <= questionEndMin) {
-                let shouldValidate = false;
-                if (qType === 'goal' && event.type === 'Goal') shouldValidate = true;
-                else if (qType === 'card' && event.type === 'Card') shouldValidate = true;
-                else if (qType === 'own_goal' && event.type === 'Goal' && event.detail === 'Own Goal') shouldValidate = true;
-
-                if (shouldValidate) {
-                  console.log('✅ Déclenchement validation immédiate');
-                  await validateQuestionNow(simulationBarId, question, event);
-                } else {
-                  console.log('⏭️ Event non pertinent pour la question active');
-                }
-              } else {
-                console.log('⏭️ Event hors fenêtre de question, pas de validation');
-              }
-            }
-          } catch (eventErr) {
-            console.error('❌ Erreur vérification question/événement:', eventErr);
-          }
+          await recordSimulationQuestionEvent({
+            id: `sim_evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            type: event.type,
+            detail: event.detail || (event.type === 'Goal' ? 'Goal' : null),
+            team: {
+              name: event.team === 'home' ? matchData.homeTeam : matchData.awayTeam,
+              side: event.team
+            },
+            player: event.player ? { name: event.player } : null,
+            time: { elapsed, extra: 0 },
+            timestamp: Date.now()
+          });
         }
         }
         
@@ -1551,14 +1602,25 @@ const firstQuestionTimeoutRef = useRef(null);
     } catch (error) {
       console.error('❌ Erreur démarrage simulation:', error);
       alert('❌ Erreur lors du démarrage de la simulation : ' + error.message);
+      await cleanupSimulationQuestionSystem();
       setSimulationActive(false);
     }
   };
 
-  const stopSimulation = () => {
+  const stopSimulation = async () => {
     if (simulationIntervalRef.current) {
       clearInterval(simulationIntervalRef.current);
+      simulationIntervalRef.current = null;
     }
+
+    const finalElapsed = simulationElapsed;
+    const finalHalf = simulationHalf;
+
+    if (simulationMatchIdRef.current) {
+      await updateSimulationQuestionTimer(finalElapsed, finalHalf, false);
+      await cleanupSimulationQuestionSystem();
+    }
+
     setSimulationActive(false);
     setSimulationElapsed(0);
     setSimulationScore({ home: 0, away: 0 });
@@ -1566,59 +1628,6 @@ const firstQuestionTimeoutRef = useRef(null);
     setSimulationLog([]);
     setSelectedSimulationMatch(null);
     setSimulationPlayers({});
-  };
-
-  const validateQuestionNow = async (simBarId, question, triggeringEvent) => {
-    try {
-      const qid = String(question.id);
-      const answersPath = `bars/${simBarId}/answers/${qid}`;
-      const playersPath = `bars/${simBarId}/players`;
-
-      const answersSnap = await get(ref(db, answersPath));
-      const counts = {};
-      const byPlayer = {};
-      if (answersSnap.exists()) {
-        const raw = answersSnap.val();
-        for (const [pid, a] of Object.entries(raw)) {
-          counts[a.answer] = (counts[a.answer] || 0) + 1;
-          byPlayer[pid] = a.answer;
-        }
-      }
-
-      let correctAnswer = 'Oui';
-
-      const playersSnap = await get(ref(db, playersPath));
-      if (playersSnap.exists()) {
-        const playersData = playersSnap.val();
-        const updates = {};
-        for (const [pid, p] of Object.entries(playersData)) {
-          const ans = byPlayer[pid];
-          if (ans === correctAnswer) {
-            updates[`${pid}/score`] = (p.score || 0) + 10;
-          }
-        }
-        if (Object.keys(updates).length) {
-          await update(ref(db, playersPath), updates);
-        }
-      }
-
-      const resultData = {
-        correctAnswer,
-        validatedAt: Date.now(),
-        totals: counts,
-        questionText: question.text,
-        type: question.type || detectQuestionType(question.text),
-        explanation: `${triggeringEvent.type === 'Goal' ? '⚽' : '🟨'} ${triggeringEvent.elapsed || 0}' - ${triggeringEvent.player || 'Event'}`
-      };
-
-      await set(ref(db, `bars/${simBarId}/results/${qid}`), resultData);
-      await remove(ref(db, `bars/${simBarId}/currentQuestion`));
-      await remove(ref(db, answersPath));
-
-      console.log('✅ Validation immédiate terminée');
-    } catch (error) {
-      console.error('❌ Erreur validation immédiate:', error);
-    }
   };
 
   const handleJoinBar = async () => {
@@ -2903,7 +2912,10 @@ const firstQuestionTimeoutRef = useRef(null);
 
     try {
       const myScore = players.find(p => p.id === user?.uid);
-    const score = myScore?.score || 0;
+      const score = myScore?.score || 0;
+      const mobileQuestionsMatchId = matchState?.questionMatchId || null;
+      const mobileQuestionsUserId = user?.uid || null;
+      const hasQuestionManager = Boolean(mobileQuestionsMatchId && mobileQuestionsUserId);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 p-6">
@@ -2957,7 +2969,20 @@ const firstQuestionTimeoutRef = useRef(null);
               </div>
             )}
 
-          {currentQuestion?.text && currentQuestion?.options ? (
+          {hasQuestionManager ? (
+            <div className="bg-white rounded-3xl p-4 shadow-2xl mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-green-900 font-bold text-lg">
+                  <span className="text-2xl">❓</span>
+                  Questions en direct
+                </div>
+              </div>
+              <QuestionsContainer
+                matchId={mobileQuestionsMatchId}
+                userId={mobileQuestionsUserId}
+              />
+            </div>
+          ) : currentQuestion?.text && currentQuestion?.options ? (
             <div className="bg-white rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-center gap-2 mb-4">
                 {currentQuestion.type === 'culture' ? (
@@ -3405,6 +3430,93 @@ const firstQuestionTimeoutRef = useRef(null);
     const displayedCode = barId || windowSimId || 'BAR-SIM-TEST';
     const joinUrl = `${window.location.origin}/?bar=${displayedCode}`;
     const simulationUserId = user?.uid || 'sim-user';
+    console.log('🎬 Mode simulation - barId:', barId, 'window.simulationBarId:', windowSimId);
+    if (!simulationActive) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-900 to-pink-900 p-8">
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-4xl font-bold text-white flex items-center gap-4">
+              <span className="text-5xl">🎬</span>
+              Mode Simulation
+            </h1>
+            <button 
+              onClick={async () => {
+                await stopSimulation();
+                setScreen('home');
+              }}
+              className="bg-white hover:bg-gray-100 px-6 py-3 rounded-xl font-bold text-purple-900 transition-all"
+            >
+              ← Retour Accueil
+            </button>
+          </div>
+
+          <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto mb-6">
+            <h2 className="text-3xl font-bold mb-4 text-purple-900">📋 Matchs disponibles</h2>
+            <p className="text-gray-600 mb-6">Sélectionne un match à rejouer en temps réel</p>
+            <p className="text-purple-600 text-sm mb-6">
+              ⚡ Mode accéléré : 20 minutes réelles = 90 minutes de match (ratio x4.5)
+              <br />
+              🎯 Questions toutes les 2 minutes réelles (~10 questions au total)
+            </p>
+            
+            <div className="grid grid-cols-1 gap-4">
+              {['psg-om', 'liverpool-city', 'real-barca'].map((key) => {
+                const matchInfoSim = SIMULATION_MATCHES[key];
+                return (
+                  <div
+                    key={key}
+                    onClick={() => {
+                      if (!simulationActive) {
+                        setSelectedSimulationMatch(key);
+                        setSimulationLog([]);
+                      }
+                    }}
+                    className={`border-4 rounded-xl p-6 cursor-pointer transition-all ${
+                      simulationActive ? 'opacity-50 cursor-not-allowed' :
+                      selectedSimulationMatch === key 
+                        ? 'border-purple-600 bg-purple-50' 
+                        : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-6">
+                        <div className="text-5xl">⚽</div>
+                        <div>
+                          <div className="text-2xl font-bold">{matchInfoSim.homeTeam} vs {matchInfoSim.awayTeam}</div>
+                          <div className="text-gray-600">{matchInfoSim.league} • Score final: {matchInfoSim.finalScore}</div>
+                          <div className="text-sm text-purple-600 mt-1">
+                            {matchInfoSim.events.length} events • {matchInfoSim.events.filter(e => e.type === 'Goal').length} buts
+                          </div>
+                        </div>
+                      </div>
+                      {selectedSimulationMatch === key && !simulationActive && (
+                        <div className="text-3xl">✅</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {selectedSimulationMatch && (
+            <div className="bg-white rounded-3xl p-8 max-w-5xl mx-auto">
+              <h3 className="text-2xl font-bold mb-6 text-purple-900">
+                {SIMULATION_MATCHES[selectedSimulationMatch].homeTeam} vs{' '}
+                {SIMULATION_MATCHES[selectedSimulationMatch].awayTeam}
+              </h3>
+              
+              <button
+                onClick={startSimulation}
+                className="bg-green-600 hover:bg-green-700 px-12 py-6 rounded-xl text-white text-2xl font-bold w-full shadow-xl transition-all"
+              >
+                ▶️ LANCER LA SIMULATION (20 min réelles = 90 min match)
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-pink-900 p-6">
@@ -3413,9 +3525,9 @@ const firstQuestionTimeoutRef = useRef(null);
             <span className="text-5xl">🎬</span>
             Mode Démo
           </h1>
-          <button
-            onClick={() => {
-              setSimulationMatchId(null);
+          <button 
+            onClick={async () => {
+              await stopSimulation();
               setScreen('home');
             }}
             className="bg-white hover:bg-gray-100 px-6 py-3 rounded-xl font-bold text-purple-900 transition-all"
@@ -3443,6 +3555,7 @@ const firstQuestionTimeoutRef = useRef(null);
                 <p className="text-xl font-black text-gray-900">{simulationMatchId}</p>
               </div>
             )}
+
           </div>
 
           <div className="lg:col-span-2 space-y-6">

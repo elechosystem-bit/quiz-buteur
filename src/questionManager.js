@@ -62,7 +62,7 @@ export const initializeMatchQuestions = async (matchId, questions) => {
 };
 
 export const activateQuestion = async (matchId, questionId) => {
-  const questionRef = ref(database, `matches/${matchId}/questions/${questionId}`);
+  const questionRef = ref(db, `matches/${matchId}/questions/${questionId}`);
 
   await update(questionRef, {
     status: 'active',
@@ -73,7 +73,7 @@ export const activateQuestion = async (matchId, questionId) => {
 };
 
 export const closeQuestion = async (matchId, questionId) => {
-  const questionRef = ref(database, `matches/${matchId}/questions/${questionId}`);
+  const questionRef = ref(db, `matches/${matchId}/questions/${questionId}`);
 
   await update(questionRef, {
     status: 'closed',
@@ -84,8 +84,8 @@ export const closeQuestion = async (matchId, questionId) => {
 };
 
 export const startQuestionScheduler = (matchId, onQuestionActivated) => {
-  const timerRef = ref(database, `matches/${matchId}/timer/elapsed`);
-  const questionsRef = ref(database, `matches/${matchId}/questions`);
+  const timerRef = ref(db, `matches/${matchId}/timer/elapsed`);
+  const questionsRef = ref(db, `matches/${matchId}/questions`);
 
   let questions = [];
 
@@ -128,7 +128,7 @@ export const startQuestionScheduler = (matchId, onQuestionActivated) => {
 };
 
 export const getMatchQuestions = async (matchId) => {
-  const questionsRef = ref(database, `matches/${matchId}/questions`);
+  const questionsRef = ref(db, `matches/${matchId}/questions`);
   const snapshot = await get(questionsRef);
 
   if (!snapshot.exists()) {
@@ -140,7 +140,7 @@ export const getMatchQuestions = async (matchId) => {
 };
 
 export const getQuestion = async (matchId, questionId) => {
-  const questionRef = ref(database, `matches/${matchId}/questions/${questionId}`);
+  const questionRef = ref(db, `matches/${matchId}/questions/${questionId}`);
   const snapshot = await get(questionRef);
 
   if (!snapshot.exists()) {
@@ -156,7 +156,7 @@ export const getActiveQuestions = async (matchId) => {
 };
 
 export const getPlayerAnswers = async (matchId, userId) => {
-  const answersRef = ref(database, `matches/${matchId}/players/${userId}/answers`);
+  const answersRef = ref(db, `matches/${matchId}/players/${userId}/answers`);
   const snapshot = await get(answersRef);
 
   if (!snapshot.exists()) {
@@ -172,7 +172,7 @@ export const hasPlayerAnswered = async (matchId, userId, questionId) => {
 };
 
 export const getQuestionStats = async (matchId, questionId) => {
-  const matchRef = ref(database, `matches/${matchId}/players`);
+  const matchRef = ref(db, `matches/${matchId}/players`);
   const snapshot = await get(matchRef);
 
   if (!snapshot.exists()) {
