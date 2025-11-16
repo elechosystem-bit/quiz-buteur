@@ -3,9 +3,10 @@ import { ref, onValue, set, update, remove, get, push, serverTimestamp, runTrans
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { QRCodeSVG } from 'qrcode.react';
-import { generateCultureQuestion, checkClaudeQuota } from './generateCultureQuestion';
+import { generateCultureQuestion, generatePredictionQuestion, checkClaudeQuota } from './generateCultureQuestion';
 import SimulationMatchSetup from './components/SimulationMatchSetup';
 import { createSimulationMatch, startQuestionScheduler } from './questionManager';
+
 
 
 // ---- Server time utils (Firebase server clock) ----
@@ -1760,74 +1761,18 @@ const firstQuestionTimeoutRef = useRef(null);
     try {
       const questionCount = matchState?.questionCount || 0;
       const now = Date.now();
-      const shouldUseClaude = questionCount % 2 === 1;
+      
+      // 🔥 ALTERNANCE : pair = culture, impair = prédiction
+      const shouldUseCulture = questionCount % 2 === 0;
       let questionData;
       
-      if (shouldUseClaude) {
-        console.log('🧠 Génération question culture avec Claude...');
-        const canGenerate = await checkClaudeQuota(db, ref, get, set, 200);
-        
-        if (!canGenerate) {
-          console.warn('⚠️ Quota atteint, question prédictive');
-          let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
-          if (pool.length === 0) {
-            usedQuestionsRef.current = [];
-            pool = QUESTIONS.slice();
-          }
-          const question = pool[Math.floor(Math.random() * pool.length)];
-          usedQuestionsRef.current.push(question.text);
-          questionData = {
-            ...question,
-            id: now,
-            createdAt: now,
-            timeLeft: 15,
-            type: 'predictive'
-          };
-        } else {
-          const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
-          if (!apiKey) {
-            console.warn('⚠️ VITE_ANTHROPIC_KEY manquante, fallback sur questions prédictives');
-            let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
-            if (pool.length === 0) {
-              usedQuestionsRef.current = [];
-              pool = QUESTIONS.slice();
-            }
-            const question = pool[Math.floor(Math.random() * pool.length)];
-            usedQuestionsRef.current.push(question.text);
-            questionData = {
-              ...question,
-              id: now,
-              createdAt: now,
-              timeLeft: 15,
-              type: 'predictive'
-            };
-          } else {
-            const matchContext = {
-              homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
-              awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
-              league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
-              score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
-              elapsed: matchState?.matchClock?.apiElapsed || 0,
-              players: matchPlayers.map(p => p.name) || []
-            };
-            
-            const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
-            questionData = {
-              text: claudeQuestion.question,
-              options: claudeQuestion.options,
-              correctAnswer: claudeQuestion.correctAnswer,
-              explanation: claudeQuestion.explanation,
-              id: now,
-              createdAt: now,
-              timeLeft: 15,
-              type: 'culture',
-              isFallback: claudeQuestion.isFallback || false
-            };
-            console.log('✅ Question culture créée');
-          }
-        }
-      } else {
-        console.log('🔮 Question prédictive');
+      // Vérifier le quota Claude
+      const canGenerate = await checkClaudeQuota(db, ref, get, set, 200);
+      const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
+      
+      if (!canGenerate || !apiKey) {
+        console.warn('⚠️ Quota atteint ou clé API manquante, fallback');
+        // Fallback sur questions prédéfinies du tableau QUESTIONS
         let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
         if (pool.length === 0) {
           usedQuestionsRef.current = [];
@@ -1842,6 +1787,48 @@ const firstQuestionTimeoutRef = useRef(null);
           timeLeft: 15,
           type: 'predictive'
         };
+      } else {
+        // Contexte du match pour Claude AI
+        const matchContext = {
+          homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
+          awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
+          league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
+          score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
+          elapsed: matchState?.matchClock?.apiElapsed || 0,
+          players: matchPlayers.map(p => p.name) || []
+        };
+        
+        if (shouldUseCulture) {
+          // 🧠 QUESTION CULTURE via Claude AI
+          console.log('🧠 Génération question CULTURE avec Claude AI...');
+          const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
+          questionData = {
+            text: claudeQuestion.question,
+            options: claudeQuestion.options,
+            correctAnswer: claudeQuestion.correctAnswer,
+            explanation: claudeQuestion.explanation,
+            id: now,
+            createdAt: now,
+            timeLeft: 15,
+            type: 'culture',
+            isFallback: claudeQuestion.isFallback || false
+          };
+          console.log('✅ Question culture créée:', claudeQuestion.question);
+        } else {
+          // 🔮 QUESTION PRÉDICTION via Claude AI
+          console.log('🔮 Génération question PRÉDICTION avec Claude AI...');
+          const claudeQuestion = await generatePredictionQuestion(matchContext, apiKey);
+          questionData = {
+            text: claudeQuestion.question,
+            options: claudeQuestion.options,
+            id: now,
+            createdAt: now,
+            timeLeft: 15,
+            type: 'predictive',
+            isFallback: claudeQuestion.isFallback || false
+          };
+          console.log('✅ Question prédiction créée:', claudeQuestion.question);
+        }
       }
       
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
