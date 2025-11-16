@@ -292,6 +292,7 @@ export default function App() {
 const firstQuestionTimeoutRef = useRef(null);
   const wakeLockRef = useRef(null);
   const matchCheckInterval = useRef(null);
+  const questionIntervalRef = useRef(null);
   const [playerName, setPlayerName] = useState('');
   const [myPlayerId, setMyPlayerId] = useState(null);
   const [hasJoined, setHasJoined] = useState(false);
@@ -1327,6 +1328,24 @@ const firstQuestionTimeoutRef = useRef(null);
           console.log('🚀 Relance startMatchMonitoring lors du démarrage');
           startMatchMonitoring(selectedMatch.id);
         }
+
+        // 🔥 SYSTÈME DE QUESTIONS AUTOMATIQUES
+        // Créer la première question immédiatement
+        setTimeout(async () => {
+          await createRandomQuestion();
+        }, 3000); // 3 secondes après le démarrage
+
+        // Puis créer une question toutes les 2 minutes automatiquement
+        const questionInterval = setInterval(async () => {
+          if (matchState?.active) {
+            console.log('⏰ Génération automatique de question...');
+            await createRandomQuestion();
+          }
+        }, 120000); // 2 minutes = 120000ms
+
+        // Stocker l'interval pour pouvoir l'arrêter plus tard
+        questionIntervalRef.current = questionInterval;
+        console.log('✅ Système de questions automatiques activé (toutes les 2 minutes)');
       } else {
         throw new Error('Vérification échouée');
       }
@@ -1371,6 +1390,11 @@ const firstQuestionTimeoutRef = useRef(null);
       if (firstQuestionTimeoutRef.current) {
         clearTimeout(firstQuestionTimeoutRef.current);
         firstQuestionTimeoutRef.current = null;
+      }
+      if (questionIntervalRef.current) {
+        clearInterval(questionIntervalRef.current);
+        questionIntervalRef.current = null;
+        console.log('🛑 Système de questions automatiques arrêté');
       }
       
       stopMatchMonitoring();
@@ -3834,19 +3858,6 @@ const firstQuestionTimeoutRef = useRef(null);
                   >
                     🛑 Arrêter manuellement
                   </button>
-                      <button
-                    onClick={async () => {
-                      if (currentQuestion) {
-                        await autoValidate();
-                        setTimeout(() => createRandomQuestion(), 1000);
-                      } else {
-                        await createRandomQuestion();
-                      }
-                    }}
-                    className="bg-blue-600 px-8 py-4 rounded-lg font-bold hover:bg-blue-700"
-                  >
-                    🎲 Question
-                      </button>
                     </div>
               </div>
             )}
