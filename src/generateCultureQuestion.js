@@ -4,6 +4,7 @@
 
 /**
  * Génère une question de CULTURE GÉNÉRALE via Claude AI
+ * Utilise la route API proxy /api/claude pour garder la clé API sécurisée
  */
 export async function generateCultureQuestion(matchContext, apiKey) {
   const playersList = matchContext.players
@@ -46,22 +47,21 @@ FORMAT DE RÉPONSE (JSON UNIQUEMENT, RIEN D'AUTRE) :
 IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Utiliser la route API proxy Vercel pour garder la clé API sécurisée
+    const response = await fetch('/api/claude', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1024
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Erreur API Claude: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Erreur API Claude: ${response.status} - ${errorData.error || 'Unknown error'}`);
     }
 
     const data = await response.json();
@@ -99,6 +99,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`;
 
 /**
  * 🆕 Génère une question de PRÉDICTION via Claude AI
+ * Utilise la route API proxy /api/claude pour garder la clé API sécurisée
  */
 export async function generatePredictionQuestion(matchContext, apiKey) {
   const playersList = matchContext.players
@@ -147,22 +148,21 @@ IMPORTANT :
 - PAS de champ "explanation"`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Utiliser la route API proxy Vercel pour garder la clé API sécurisée
+    const response = await fetch('/api/claude', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 512,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Erreur API Claude: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Erreur API Claude: ${response.status} - ${errorData.error || 'Unknown error'}`);
     }
 
     const data = await response.json();
