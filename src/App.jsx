@@ -1796,9 +1796,72 @@ const firstQuestionTimeoutRef = useRef(null);
       console.log('🔑 API Key présente :', !!apiKey);
       console.log('✅ Quota OK :', canGenerate);
       
-      if (!canGenerate || !apiKey) {
-        console.warn('⚠️ Quota atteint ou clé API manquante, fallback');
-        // Fallback sur questions prédéfinies du tableau QUESTIONS
+      // Contexte du match pour Claude AI
+      const matchContext = {
+        homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
+        awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
+        league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
+        score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
+        elapsed: matchState?.matchClock?.apiElapsed || 0,
+        players: matchPlayers.map(p => p.name) || []
+      };
+      
+      // 🔥 TOUJOURS ESSAYER CLAUDE AI D'ABORD si possible
+      if (canGenerate && apiKey) {
+        try {
+          if (shouldUseCulture) {
+            // 🧠 QUESTION CULTURE via Claude AI
+            console.log('🧠 Génération question CULTURE avec Claude AI...');
+            const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
+            questionData = {
+              text: claudeQuestion.question,
+              options: claudeQuestion.options,
+              correctAnswer: claudeQuestion.correctAnswer,
+              explanation: claudeQuestion.explanation,
+              id: now,
+              createdAt: now,
+              timeLeft: 15,
+              type: 'culture',
+              isFallback: claudeQuestion.isFallback || false
+            };
+            console.log('✅ Question culture créée:', claudeQuestion.question);
+          } else {
+            // 🔮 QUESTION PRÉDICTION via Claude AI
+            console.log('🔮 Génération question PRÉDICTION avec Claude AI...');
+            const claudeQuestion = await generatePredictionQuestion(matchContext, apiKey);
+            questionData = {
+              text: claudeQuestion.question,
+              options: claudeQuestion.options,
+              id: now,
+              createdAt: now,
+              timeLeft: 15,
+              type: 'predictive',
+              isFallback: claudeQuestion.isFallback || false
+            };
+            console.log('✅ Question prédiction créée:', claudeQuestion.question);
+          }
+        } catch (claudeError) {
+          console.error('❌ Erreur génération Claude AI:', claudeError);
+          console.warn('⚠️ Fallback sur questions prédéfinies');
+          // Fallback sur questions prédéfinies en cas d'erreur
+          let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+          if (pool.length === 0) {
+            usedQuestionsRef.current = [];
+            pool = QUESTIONS.slice();
+          }
+          const question = pool[Math.floor(Math.random() * pool.length)];
+          usedQuestionsRef.current.push(question.text);
+          questionData = {
+            ...question,
+            id: now,
+            createdAt: now,
+            timeLeft: 15,
+            type: 'predictive'
+          };
+        }
+      } else {
+        // Fallback si quota atteint ou clé API manquante
+        console.warn('⚠️ Quota atteint ou clé API manquante, fallback sur QUESTIONS');
         let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
         if (pool.length === 0) {
           usedQuestionsRef.current = [];
@@ -1813,48 +1876,6 @@ const firstQuestionTimeoutRef = useRef(null);
           timeLeft: 15,
           type: 'predictive'
         };
-      } else {
-        // Contexte du match pour Claude AI
-        const matchContext = {
-          homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
-          awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
-          league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
-          score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
-          elapsed: matchState?.matchClock?.apiElapsed || 0,
-          players: matchPlayers.map(p => p.name) || []
-        };
-        
-        if (shouldUseCulture) {
-          // 🧠 QUESTION CULTURE via Claude AI
-          console.log('🧠 Génération question CULTURE avec Claude AI...');
-          const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
-          questionData = {
-            text: claudeQuestion.question,
-            options: claudeQuestion.options,
-            correctAnswer: claudeQuestion.correctAnswer,
-            explanation: claudeQuestion.explanation,
-            id: now,
-            createdAt: now,
-            timeLeft: 15,
-            type: 'culture',
-            isFallback: claudeQuestion.isFallback || false
-          };
-          console.log('✅ Question culture créée:', claudeQuestion.question);
-        } else {
-          // 🔮 QUESTION PRÉDICTION via Claude AI
-          console.log('🔮 Génération question PRÉDICTION avec Claude AI...');
-          const claudeQuestion = await generatePredictionQuestion(matchContext, apiKey);
-          questionData = {
-            text: claudeQuestion.question,
-            options: claudeQuestion.options,
-            id: now,
-            createdAt: now,
-            timeLeft: 15,
-            type: 'predictive',
-            isFallback: claudeQuestion.isFallback || false
-          };
-          console.log('✅ Question prédiction créée:', claudeQuestion.question);
-        }
       }
       
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
