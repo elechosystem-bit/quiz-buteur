@@ -3428,7 +3428,9 @@ const firstQuestionTimeoutRef = useRef(null);
   if (screen === 'demo') {
     const windowSimId = typeof window !== 'undefined' ? window.simulationBarId : null;
     const displayedCode = barId || windowSimId || 'BAR-SIM-TEST';
-    const joinUrl = `${window.location.origin}/?bar=${displayedCode}`;
+    const isProdVercel = typeof window !== 'undefined' && /\.vercel\.app$/.test(window.location.hostname);
+    const baseUrl = isProdVercel ? 'https://quiz-buteur-2.vercel.app' : window.location.origin;
+    const joinUrl = `${baseUrl}/?bar=${displayedCode}`;
     const simulationUserId = user?.uid || 'sim-user';
     console.log('🎬 Mode simulation - barId:', barId, 'window.simulationBarId:', windowSimId);
     if (!simulationActive) {
