@@ -1174,7 +1174,10 @@ export default function App() {
           firstQuestionTimeoutRef.current = setTimeout(async () => {
             console.log('🚀 [QUESTIONS AUTO] Timeout première question déclenché !');
             firstQuestionTimeoutRef.current = null;
-            await createRandomQuestion();
+            // Utiliser les valeurs depuis matchState si disponibles
+            const currentBarId = barId;
+            const currentMatchIdValue = currentMatchId || matchState?.currentMatchId;
+            await createRandomQuestion(currentBarId, currentMatchIdValue);
           }, 2 * 60 * 1000);
         } else {
           console.log('⏸️ [QUESTIONS AUTO] Timeout première question déjà en cours');
@@ -1184,7 +1187,10 @@ export default function App() {
 
       if (now >= nextTime) {
         console.log('✅ [QUESTIONS AUTO] TEMPS ÉCOULÉ - Création de question maintenant !');
-        await createRandomQuestion();
+        // Utiliser les valeurs depuis matchState si disponibles
+        const currentBarId = barId;
+        const currentMatchId = currentMatchId || matchState?.currentMatchId;
+        await createRandomQuestion(currentBarId, currentMatchId);
       } else {
         console.log('⏳ [QUESTIONS AUTO] Pas encore le moment, on attend...');
       }
@@ -1412,20 +1418,29 @@ export default function App() {
         // 🔥 SYSTÈME DE QUESTIONS AUTOMATIQUES
         // Créer la première question immédiatement
         console.log('🚀 [START MATCH] Création première question dans 3 secondes...');
+        console.log('🚀 [START MATCH] barId:', barId, 'matchId:', matchId);
         setTimeout(async () => {
           console.log('🚀 [START MATCH] Timeout 3s déclenché - création première question');
-          await createRandomQuestion();
+          await createRandomQuestion(barId, matchId);
         }, 3000); // 3 secondes après le démarrage
 
         // Puis créer une question toutes les 2 minutes automatiquement
         console.log('⏰ [START MATCH] Création interval questions automatiques (toutes les 2 minutes)');
         const questionInterval = setInterval(async () => {
-          console.log('⏰ [START MATCH] Interval déclenché - vérification matchState.active:', matchState?.active);
-          if (matchState?.active) {
-            console.log('✅ [START MATCH] Génération automatique de question...');
-            await createRandomQuestion();
-          } else {
-            console.log('⚠️ [START MATCH] Match non actif, question non créée');
+          console.log('⏰ [START MATCH] Interval déclenché - vérification matchState.active');
+          // Récupérer matchState depuis Firebase pour vérifier si actif
+          try {
+            const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
+            const isActive = matchStateSnap.exists() && matchStateSnap.val().active;
+            console.log('⏰ [START MATCH] matchState.active:', isActive);
+            if (isActive) {
+              console.log('✅ [START MATCH] Génération automatique de question...');
+              await createRandomQuestion(barId, matchId);
+            } else {
+              console.log('⚠️ [START MATCH] Match non actif, question non créée');
+            }
+          } catch (e) {
+            console.error('❌ [START MATCH] Erreur vérification matchState:', e);
           }
         }, 120000); // 2 minutes = 120000ms
 
@@ -1869,21 +1884,40 @@ export default function App() {
     };
   }, [simulationActive, barId, selectedSimulationMatch]);
 
-  const createRandomQuestion = async () => {
-    console.log('🎲 [CREATE QUESTION] ========== DÉBUT CRÉATION QUESTION ==========');
-    console.log('🎲 [CREATE QUESTION] barId:', barId);
-    console.log('🎲 [CREATE QUESTION] currentMatchId:', currentMatchId);
-    console.log('🎲 [CREATE QUESTION] matchState?.active:', matchState?.active);
-    console.log('🎲 [CREATE QUESTION] matchState:', matchState);
+  const createRandomQuestion = async (providedBarId = null, providedMatchId = null) => {
+    // 🔥 BUG 1 FIX: Utiliser TOUJOURS les paramètres fournis en priorité
+    const effectiveBarId = providedBarId || barId;
+    const effectiveMatchId = providedMatchId || currentMatchId;
     
-    if (!barId || !currentMatchId || !matchState?.active) {
-      console.warn('⚠️ [CREATE QUESTION] Conditions non remplies - arrêt');
-      console.warn('⚠️ [CREATE QUESTION] barId:', !!barId);
-      console.warn('⚠️ [CREATE QUESTION] currentMatchId:', !!currentMatchId);
-      console.warn('⚠️ [CREATE QUESTION] matchState?.active:', matchState?.active);
-      if (!matchState?.active) {
-        alert('❌ Le match n\'est pas actif');
+    console.log('🎲 [CREATE QUESTION] ========== DÉBUT CRÉATION QUESTION ==========');
+    console.log('🎲 [CREATE QUESTION] providedBarId:', providedBarId);
+    console.log('🎲 [CREATE QUESTION] providedMatchId:', providedMatchId);
+    console.log('🎲 [CREATE QUESTION] effectiveBarId:', effectiveBarId);
+    console.log('🎲 [CREATE QUESTION] effectiveMatchId:', effectiveMatchId);
+    
+    // 🔥 BUG 1 FIX: TOUJOURS récupérer matchState depuis Firebase quand on a les paramètres
+    let isActive = false;
+    if (effectiveBarId) {
+      try {
+        const matchStateSnap = await get(ref(db, `bars/${effectiveBarId}/matchState`));
+        if (matchStateSnap.exists()) {
+          const state = matchStateSnap.val();
+          isActive = state.active;
+          console.log('🔍 [CREATE QUESTION] matchState récupéré depuis Firebase - active:', isActive);
+          console.log('🔍 [CREATE QUESTION] matchState.currentMatchId:', state.currentMatchId);
+        } else {
+          console.warn('⚠️ [CREATE QUESTION] matchState n\'existe pas dans Firebase');
+        }
+      } catch (e) {
+        console.error('❌ [CREATE QUESTION] Erreur récupération matchState:', e);
       }
+    }
+    
+    if (!effectiveBarId || !effectiveMatchId || !isActive) {
+      console.warn('⚠️ [CREATE QUESTION] Conditions non remplies - arrêt');
+      console.warn('⚠️ [CREATE QUESTION] effectiveBarId:', !!effectiveBarId, effectiveBarId);
+      console.warn('⚠️ [CREATE QUESTION] effectiveMatchId:', !!effectiveMatchId, effectiveMatchId);
+      console.warn('⚠️ [CREATE QUESTION] isActive:', isActive);
       return;
     }
     
@@ -1894,7 +1928,21 @@ export default function App() {
     }
     
     try {
-      const questionCount = matchState?.questionCount || 0;
+      // 🔥 BUG 1 FIX: TOUJOURS récupérer matchState depuis Firebase avec les paramètres
+      let effectiveMatchState = null;
+      if (effectiveBarId) {
+        try {
+          const matchStateSnap = await get(ref(db, `bars/${effectiveBarId}/matchState`));
+          if (matchStateSnap.exists()) {
+            effectiveMatchState = matchStateSnap.val();
+            console.log('🔍 [CREATE QUESTION] matchState récupéré depuis Firebase pour questionCount');
+          }
+        } catch (e) {
+          console.error('❌ [CREATE QUESTION] Erreur récupération matchState:', e);
+        }
+      }
+      
+      const questionCount = effectiveMatchState?.questionCount || 0;
       const now = Date.now();
       
       // 🔥 ALTERNANCE : pair = culture, impair = prédiction
@@ -1907,13 +1955,14 @@ export default function App() {
       console.log('🔑 API Key présente :', !!apiKey);
       console.log('✅ Quota OK :', canGenerate);
       
+      // 🔥 BUG 1 FIX: Utiliser effectiveMatchState au lieu de matchState
       // Contexte du match pour Claude AI
       const matchContext = {
-        homeTeam: selectedMatch?.homeTeam || matchState?.matchInfo?.homeTeam || 'Équipe A',
-        awayTeam: selectedMatch?.awayTeam || matchState?.matchInfo?.awayTeam || 'Équipe B',
-        league: selectedMatch?.league || matchState?.matchInfo?.league || 'Football',
-        score: selectedMatch?.score || matchState?.matchInfo?.score || 'vs',
-        elapsed: matchState?.matchClock?.apiElapsed || 0,
+        homeTeam: selectedMatch?.homeTeam || effectiveMatchState?.matchInfo?.homeTeam || 'Équipe A',
+        awayTeam: selectedMatch?.awayTeam || effectiveMatchState?.matchInfo?.awayTeam || 'Équipe B',
+        league: selectedMatch?.league || effectiveMatchState?.matchInfo?.league || 'Football',
+        score: selectedMatch?.score || effectiveMatchState?.matchInfo?.score || 'vs',
+        elapsed: effectiveMatchState?.matchClock?.apiElapsed || 0,
         players: matchPlayers.map(p => p.name) || []
       };
       
@@ -2044,9 +2093,9 @@ export default function App() {
         }
       }
       
-      await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
+      await set(ref(db, `bars/${effectiveBarId}/currentQuestion`), questionData);
       const nextTime = now + QUESTION_INTERVAL;
-      await update(ref(db, `bars/${barId}/matchState`), {
+      await update(ref(db, `bars/${effectiveBarId}/matchState`), {
         nextQuestionTime: nextTime,
         questionCount: questionCount + 1
       });
@@ -2072,30 +2121,36 @@ export default function App() {
         }
         
         // Capturer les valeurs actuelles pour éviter les problèmes de closure
-        const capturedBarId = barId;
-        const capturedMatchId = currentMatchId;
+        const capturedBarId = effectiveBarId;
+        const capturedMatchId = effectiveMatchId;
         const capturedQuestionData = { ...questionData };
         
         console.log('📦 [CULTURE] Valeurs capturées - barId:', capturedBarId, 'matchId:', capturedMatchId);
         console.log('📦 [CULTURE] Question capturée:', capturedQuestionData.text);
+        console.log('📦 [CULTURE] correctAnswer:', capturedQuestionData.correctAnswer);
         
         // Créer le nouveau timeout et stocker la référence
+        console.log('⏰ [CULTURE] Création du timeout de validation (15 secondes)...');
         cultureValidationTimeoutRef.current = setTimeout(async () => {
-          console.log('✅ [CULTURE] VALIDATION MAINTENANT ! (15 secondes écoulées)');
+          console.log('✅ [CULTURE] VALIDATION DÉCLENCHÉE après 15s !');
           console.log('✅ [CULTURE] BarId capturé:', capturedBarId);
           console.log('✅ [CULTURE] MatchId capturé:', capturedMatchId);
           console.log('✅ [CULTURE] Question à valider:', capturedQuestionData.text);
+          console.log('✅ [CULTURE] Bonne réponse:', capturedQuestionData.correctAnswer);
           
           try {
+            console.log('🚀 [CULTURE] Appel autoValidateCultureQuestionWithParams...');
             await autoValidateCultureQuestionWithParams(capturedQuestionData, capturedBarId, capturedMatchId);
             console.log('✅ [CULTURE] Validation terminée avec succès');
+            console.log('💾 [CULTURE] Résultats écrits dans Firebase');
           } catch (error) {
             console.error('❌ [CULTURE] Erreur lors de la validation:', error);
           }
           cultureValidationTimeoutRef.current = null;
         }, 15000); // 15 secondes = temps de réponse
         
-        console.log('✅ [CULTURE] Timeout créé et stocké:', cultureValidationTimeoutRef.current);
+        console.log('⏰ [CULTURE] Timeout créé');
+        console.log('✅ [CULTURE] Timeout créé et stocké dans cultureValidationTimeoutRef:', !!cultureValidationTimeoutRef.current);
       }
     } catch (e) {
       console.error('❌ Erreur création question:', e);
@@ -2318,6 +2373,7 @@ export default function App() {
         winners: winners,
         validatedAt: Date.now()
       });
+      console.log('💾 [CULTURE] Résultats écrits dans Firebase');
       console.log('✅ [CULTURE] Résultat publié pour les joueurs');
       
       // Supprimer la question en cours et les réponses
