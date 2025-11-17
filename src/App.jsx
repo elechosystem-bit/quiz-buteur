@@ -1055,41 +1055,78 @@ export default function App() {
   }, [matchState?.nextQuestionTime]);
 
   useEffect(() => {
+    console.log('🔍 [QUESTIONS AUTO] useEffect déclenché');
+    console.log('🔍 [QUESTIONS AUTO] barId:', barId);
+    console.log('🔍 [QUESTIONS AUTO] matchState?.active:', matchState?.active);
+    console.log('🔍 [QUESTIONS AUTO] matchState?.nextQuestionTime:', matchState?.nextQuestionTime);
+    console.log('🔍 [QUESTIONS AUTO] currentQuestion:', !!currentQuestion);
+    
     if (!barId || !matchState?.active) {
+      console.log('⚠️ [QUESTIONS AUTO] Conditions non remplies - arrêt du timer');
+      console.log('⚠️ [QUESTIONS AUTO] barId présent:', !!barId);
+      console.log('⚠️ [QUESTIONS AUTO] matchState?.active:', matchState?.active);
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
         nextQuestionTimer.current = null;
+        console.log('🛑 [QUESTIONS AUTO] Timer arrêté');
       }
       if (firstQuestionTimeoutRef.current) {
         clearTimeout(firstQuestionTimeoutRef.current);
         firstQuestionTimeoutRef.current = null;
+        console.log('🛑 [QUESTIONS AUTO] First question timeout annulé');
       }
       return;
     }
 
-    if (nextQuestionTimer.current) clearInterval(nextQuestionTimer.current);
+    console.log('✅ [QUESTIONS AUTO] Conditions OK - démarrage du timer');
+    if (nextQuestionTimer.current) {
+      clearInterval(nextQuestionTimer.current);
+      console.log('🧹 [QUESTIONS AUTO] Ancien timer nettoyé');
+    }
 
     nextQuestionTimer.current = setInterval(async () => {
-      if (currentQuestion) return;
-      
       const now = Date.now();
       const nextTime = matchState.nextQuestionTime || 0;
       const questionCount = matchState?.questionCount || 0;
-
+      
+      console.log('⏰ [QUESTIONS AUTO] Vérification timer questions');
+      console.log('⏰ [QUESTIONS AUTO] Maintenant:', now);
+      console.log('⏰ [QUESTIONS AUTO] nextQuestionTime:', nextTime);
+      console.log('⏰ [QUESTIONS AUTO] Différence:', nextTime - now, 'ms');
+      console.log('⏰ [QUESTIONS AUTO] Création de question dans:', Math.max(0, nextTime - now) / 1000, 'secondes');
+      console.log('⏰ [QUESTIONS AUTO] questionCount:', questionCount);
+      console.log('⏰ [QUESTIONS AUTO] currentQuestion présente:', !!currentQuestion);
+      console.log('⏰ [QUESTIONS AUTO] matchState.active:', matchState?.active);
+      
+      if (currentQuestion) {
+        console.log('⏸️ [QUESTIONS AUTO] Question en cours, on attend...');
+        return;
+      }
+      
       if (questionCount === 0) {
+        console.log('🎯 [QUESTIONS AUTO] Première question - utilisation du timeout');
         if (!firstQuestionTimeoutRef.current) {
+          console.log('⏰ [QUESTIONS AUTO] Création timeout première question (2 minutes)');
           firstQuestionTimeoutRef.current = setTimeout(async () => {
+            console.log('🚀 [QUESTIONS AUTO] Timeout première question déclenché !');
             firstQuestionTimeoutRef.current = null;
             await createRandomQuestion();
           }, 2 * 60 * 1000);
+        } else {
+          console.log('⏸️ [QUESTIONS AUTO] Timeout première question déjà en cours');
         }
         return;
       }
 
       if (now >= nextTime) {
+        console.log('✅ [QUESTIONS AUTO] TEMPS ÉCOULÉ - Création de question maintenant !');
         await createRandomQuestion();
+      } else {
+        console.log('⏳ [QUESTIONS AUTO] Pas encore le moment, on attend...');
       }
     }, 10000);
+    
+    console.log('✅ [QUESTIONS AUTO] Timer créé et démarré (vérification toutes les 10s)');
 
     return () => {
       if (nextQuestionTimer.current) {
@@ -1310,21 +1347,28 @@ export default function App() {
 
         // 🔥 SYSTÈME DE QUESTIONS AUTOMATIQUES
         // Créer la première question immédiatement
+        console.log('🚀 [START MATCH] Création première question dans 3 secondes...');
         setTimeout(async () => {
+          console.log('🚀 [START MATCH] Timeout 3s déclenché - création première question');
           await createRandomQuestion();
         }, 3000); // 3 secondes après le démarrage
 
         // Puis créer une question toutes les 2 minutes automatiquement
+        console.log('⏰ [START MATCH] Création interval questions automatiques (toutes les 2 minutes)');
         const questionInterval = setInterval(async () => {
+          console.log('⏰ [START MATCH] Interval déclenché - vérification matchState.active:', matchState?.active);
           if (matchState?.active) {
-            console.log('⏰ Génération automatique de question...');
+            console.log('✅ [START MATCH] Génération automatique de question...');
             await createRandomQuestion();
+          } else {
+            console.log('⚠️ [START MATCH] Match non actif, question non créée');
           }
         }, 120000); // 2 minutes = 120000ms
 
         // Stocker l'interval pour pouvoir l'arrêter plus tard
         questionIntervalRef.current = questionInterval;
-        console.log('✅ Système de questions automatiques activé (toutes les 2 minutes)');
+        console.log('✅ [START MATCH] Système de questions automatiques activé (toutes les 2 minutes)');
+        console.log('✅ [START MATCH] questionIntervalRef stocké:', !!questionIntervalRef.current);
       } else {
         throw new Error('Vérification échouée');
       }
@@ -1762,10 +1806,24 @@ export default function App() {
   }, [simulationActive, barId, selectedSimulationMatch]);
 
   const createRandomQuestion = async () => {
-    if (!matchState?.active) {
-      alert('❌ Le match n\'est pas actif');
+    console.log('🎲 [CREATE QUESTION] ========== DÉBUT CRÉATION QUESTION ==========');
+    console.log('🎲 [CREATE QUESTION] barId:', barId);
+    console.log('🎲 [CREATE QUESTION] currentMatchId:', currentMatchId);
+    console.log('🎲 [CREATE QUESTION] matchState?.active:', matchState?.active);
+    console.log('🎲 [CREATE QUESTION] matchState:', matchState);
+    
+    if (!barId || !currentMatchId || !matchState?.active) {
+      console.warn('⚠️ [CREATE QUESTION] Conditions non remplies - arrêt');
+      console.warn('⚠️ [CREATE QUESTION] barId:', !!barId);
+      console.warn('⚠️ [CREATE QUESTION] currentMatchId:', !!currentMatchId);
+      console.warn('⚠️ [CREATE QUESTION] matchState?.active:', matchState?.active);
+      if (!matchState?.active) {
+        alert('❌ Le match n\'est pas actif');
+      }
       return;
     }
+    
+    console.log('✅ [CREATE QUESTION] Conditions OK - poursuite de la création');
     if (firstQuestionTimeoutRef.current) {
       clearTimeout(firstQuestionTimeoutRef.current);
       firstQuestionTimeoutRef.current = null;
