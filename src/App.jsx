@@ -1933,6 +1933,13 @@ export default function App() {
       });
       console.log(`✅ Question ${questionData.type} publiée`);
       
+      // 🔍 DEBUG - Vérifier les valeurs avant la condition culture
+      console.log('🔍 [DEBUG] questionData.type:', questionData.type);
+      console.log('🔍 [DEBUG] questionData.correctAnswer:', questionData.correctAnswer);
+      console.log('🔍 [DEBUG] Condition culture:', questionData.type === 'culture');
+      console.log('🔍 [DEBUG] Condition correctAnswer:', !!questionData.correctAnswer);
+      console.log('🔍 [DEBUG] questionData complet:', questionData);
+      
       // 🔥 VALIDATION IMMÉDIATE pour les questions CULTURE (après 15 secondes)
       if (questionData.type === 'culture' && questionData.correctAnswer) {
         console.log('⏰ [CULTURE] Validation automatique programmée dans 15 secondes...');
