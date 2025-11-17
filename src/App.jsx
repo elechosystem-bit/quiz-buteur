@@ -33,8 +33,72 @@ const QUESTION_INTERVAL = 120000;
 const API_SYNC_INTERVAL = 10000; // 🔥 Synchronisation toutes les 10 secondes (au lieu de 30)
 const SIMULATION_MINUTE_MS = 13333;
 
-// --- QUESTIONS par défaut (fallback pour le quiz) ---
-const QUESTIONS = [
+// --- QUESTIONS CULTURE par défaut (fallback pour le quiz) ---
+const CULTURE_QUESTIONS = [
+  { 
+    text: "En quelle année la France a-t-elle remporté sa première Coupe du Monde ?", 
+    options: ["1998", "2000", "2006", "2018"],
+    correctAnswer: "1998",
+    explanation: "La France a gagné sa première Coupe du Monde en 1998 à domicile."
+  },
+  { 
+    text: "Qui a marqué deux buts de la tête en finale de la Coupe du Monde 1998 ?", 
+    options: ["Zidane", "Henry", "Trezeguet", "Platini"],
+    correctAnswer: "Zidane",
+    explanation: "Zinedine Zidane a marqué deux buts de la tête contre le Brésil en finale."
+  },
+  { 
+    text: "Quel joueur détient le record de buts en Coupe du Monde ?", 
+    options: ["Pelé", "Ronaldo", "Messi", "Klose"],
+    correctAnswer: "Klose",
+    explanation: "Miroslav Klose a marqué 16 buts en Coupe du Monde entre 2002 et 2014."
+  },
+  { 
+    text: "Combien de fois le Brésil a-t-il gagné la Coupe du Monde ?", 
+    options: ["3 fois", "4 fois", "5 fois", "6 fois"],
+    correctAnswer: "5 fois",
+    explanation: "Le Brésil a gagné 5 Coupes du Monde (1958, 1962, 1970, 1994, 2002)."
+  },
+  { 
+    text: "Quel club a remporté le plus de Ligue des Champions ?", 
+    options: ["Real Madrid", "AC Milan", "Bayern Munich", "Liverpool"],
+    correctAnswer: "Real Madrid",
+    explanation: "Le Real Madrid a remporté 14 Ligues des Champions."
+  },
+  { 
+    text: "En quelle année a été créée la Ligue des Champions ?", 
+    options: ["1955", "1992", "1998", "2000"],
+    correctAnswer: "1992",
+    explanation: "La Ligue des Champions a été créée en 1992, remplaçant la Coupe des clubs champions européens."
+  },
+  { 
+    text: "Quel joueur a marqué le 'but de la main de Dieu' en 1986 ?", 
+    options: ["Maradona", "Pelé", "Platini", "Cruyff"],
+    correctAnswer: "Maradona",
+    explanation: "Diego Maradona a marqué ce but controversé contre l'Angleterre en quart de finale."
+  },
+  { 
+    text: "Qui est le meilleur buteur de l'histoire du PSG ?", 
+    options: ["Cavani", "Ibrahimovic", "Pauleta", "Mbappé"],
+    correctAnswer: "Cavani",
+    explanation: "Edinson Cavani a marqué 200 buts pour le PSG."
+  },
+  { 
+    text: "Quel pays a accueilli la première Coupe du Monde en 1930 ?", 
+    options: ["Brésil", "Uruguay", "Argentine", "Italie"],
+    correctAnswer: "Uruguay",
+    explanation: "L'Uruguay a accueilli et gagné la première Coupe du Monde en 1930."
+  },
+  { 
+    text: "Combien de joueurs y a-t-il sur le terrain par équipe ?", 
+    options: ["10", "11", "12", "9"],
+    correctAnswer: "11",
+    explanation: "Chaque équipe a 11 joueurs sur le terrain (dont 1 gardien)."
+  }
+];
+
+// --- QUESTIONS PRÉDICTION par défaut (fallback pour le quiz) ---
+const PREDICTION_QUESTIONS = [
   { text: "Y aura-t-il un but dans les 5 prochaines minutes ?", options: ["Oui", "Non"] },
   { text: "Y aura-t-il un corner dans les 5 prochaines minutes ?", options: ["Oui", "Non"] },
   { text: "Y aura-t-il un carton jaune dans les 10 prochaines minutes ?", options: ["Oui", "Non"] },
@@ -1890,11 +1954,81 @@ export default function App() {
         } catch (claudeError) {
           console.error('❌ Erreur génération Claude AI:', claudeError);
           console.warn('⚠️ Fallback sur questions prédéfinies');
-          // Fallback sur questions prédéfinies en cas d'erreur
-          let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+          
+          // 🔥 FALLBACK avec alternance culture/prédiction
+          if (shouldUseCulture) {
+            // Question de culture depuis le fallback
+            let pool = CULTURE_QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+            if (pool.length === 0) {
+              usedQuestionsRef.current = [];
+              pool = CULTURE_QUESTIONS.slice();
+            }
+            const question = pool[Math.floor(Math.random() * pool.length)];
+            usedQuestionsRef.current.push(question.text);
+            questionData = {
+              text: question.text,
+              options: question.options,
+              correctAnswer: question.correctAnswer,
+              explanation: question.explanation,
+              id: now,
+              createdAt: now,
+              timeLeft: 15,
+              type: 'culture',
+              isFallback: true
+            };
+            console.log('✅ Question culture fallback créée:', question.text);
+          } else {
+            // Question de prédiction depuis le fallback
+            let pool = PREDICTION_QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+            if (pool.length === 0) {
+              usedQuestionsRef.current = [];
+              pool = PREDICTION_QUESTIONS.slice();
+            }
+            const question = pool[Math.floor(Math.random() * pool.length)];
+            usedQuestionsRef.current.push(question.text);
+            questionData = {
+              ...question,
+              id: now,
+              createdAt: now,
+              timeLeft: 15,
+              type: 'predictive',
+              isFallback: true
+            };
+            console.log('✅ Question prédiction fallback créée:', question.text);
+          }
+        }
+      } else {
+        // Fallback si quota atteint ou clé API manquante
+        console.warn('⚠️ Quota atteint ou clé API manquante, fallback sur questions prédéfinies');
+        
+        // 🔥 FALLBACK avec alternance culture/prédiction
+        if (shouldUseCulture) {
+          // Question de culture depuis le fallback
+          let pool = CULTURE_QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
           if (pool.length === 0) {
             usedQuestionsRef.current = [];
-            pool = QUESTIONS.slice();
+            pool = CULTURE_QUESTIONS.slice();
+          }
+          const question = pool[Math.floor(Math.random() * pool.length)];
+          usedQuestionsRef.current.push(question.text);
+          questionData = {
+            text: question.text,
+            options: question.options,
+            correctAnswer: question.correctAnswer,
+            explanation: question.explanation,
+            id: now,
+            createdAt: now,
+            timeLeft: 15,
+            type: 'culture',
+            isFallback: true
+          };
+          console.log('✅ Question culture fallback créée (quota):', question.text);
+        } else {
+          // Question de prédiction depuis le fallback
+          let pool = PREDICTION_QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
+          if (pool.length === 0) {
+            usedQuestionsRef.current = [];
+            pool = PREDICTION_QUESTIONS.slice();
           }
           const question = pool[Math.floor(Math.random() * pool.length)];
           usedQuestionsRef.current.push(question.text);
@@ -1903,26 +2037,11 @@ export default function App() {
             id: now,
             createdAt: now,
             timeLeft: 15,
-            type: 'predictive'
+            type: 'predictive',
+            isFallback: true
           };
+          console.log('✅ Question prédiction fallback créée (quota):', question.text);
         }
-      } else {
-        // Fallback si quota atteint ou clé API manquante
-        console.warn('⚠️ Quota atteint ou clé API manquante, fallback sur QUESTIONS');
-        let pool = QUESTIONS.filter(q => !usedQuestionsRef.current.includes(q.text));
-        if (pool.length === 0) {
-          usedQuestionsRef.current = [];
-          pool = QUESTIONS.slice();
-        }
-        const question = pool[Math.floor(Math.random() * pool.length)];
-        usedQuestionsRef.current.push(question.text);
-        questionData = {
-          ...question,
-          id: now,
-          createdAt: now,
-          timeLeft: 15,
-          type: 'predictive'
-        };
       }
       
       await set(ref(db, `bars/${barId}/currentQuestion`), questionData);
