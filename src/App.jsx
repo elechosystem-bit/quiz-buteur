@@ -1887,12 +1887,23 @@ export default function App() {
           console.log('🧹 [CULTURE] Ancien timeout annulé');
         }
         
+        // Capturer les valeurs actuelles pour éviter les problèmes de closure
+        const capturedBarId = barId;
+        const capturedMatchId = currentMatchId;
+        const capturedQuestionData = { ...questionData };
+        
+        console.log('📦 [CULTURE] Valeurs capturées - barId:', capturedBarId, 'matchId:', capturedMatchId);
+        console.log('📦 [CULTURE] Question capturée:', capturedQuestionData.text);
+        
         // Créer le nouveau timeout et stocker la référence
         cultureValidationTimeoutRef.current = setTimeout(async () => {
           console.log('✅ [CULTURE] VALIDATION MAINTENANT ! (15 secondes écoulées)');
-          console.log('✅ [CULTURE] Question à valider:', questionData.text);
+          console.log('✅ [CULTURE] BarId capturé:', capturedBarId);
+          console.log('✅ [CULTURE] MatchId capturé:', capturedMatchId);
+          console.log('✅ [CULTURE] Question à valider:', capturedQuestionData.text);
+          
           try {
-            await autoValidateCultureQuestion(questionData);
+            await autoValidateCultureQuestionWithParams(capturedQuestionData, capturedBarId, capturedMatchId);
             console.log('✅ [CULTURE] Validation terminée avec succès');
           } catch (error) {
             console.error('❌ [CULTURE] Erreur lors de la validation:', error);
@@ -2003,6 +2014,141 @@ export default function App() {
       console.error('❌ [PREDICTIVE] Erreur validation prédictive:', err);
     } finally {
       isProcessingRef.current = false;
+    }
+  };
+
+  // 🔥 VALIDATION IMMÉDIATE pour les questions CULTURE (avec paramètres capturés)
+  const autoValidateCultureQuestionWithParams = async (questionData, capturedBarId, capturedMatchId) => {
+    console.log('🧠 [CULTURE] Début validation avec params...');
+    console.log('🧠 [CULTURE] questionData:', questionData);
+    console.log('🧠 [CULTURE] barId:', capturedBarId);
+    console.log('🧠 [CULTURE] matchId:', capturedMatchId);
+    
+    if (!questionData || !capturedBarId || !capturedMatchId) {
+      console.warn('⚠️ [CULTURE] Données manquantes');
+      return;
+    }
+    
+    if (isProcessingRef.current) {
+      console.warn('⚠️ [CULTURE] Validation déjà en cours');
+      return;
+    }
+    
+    isProcessingRef.current = true;
+    console.log('🔒 [CULTURE] isProcessingRef verrouillé');
+    
+    try {
+      const qid = String(questionData.id);
+      const answersPath = `bars/${capturedBarId}/answers/${qid}`;
+      const playersPath = `bars/${capturedBarId}/matches/${capturedMatchId}/players`;
+      const correctAnswer = questionData.correctAnswer;
+      
+      console.log('🔍 [CULTURE] Question ID:', qid);
+      console.log('🔍 [CULTURE] Answers path:', answersPath);
+      console.log('🔍 [CULTURE] Players path:', playersPath);
+      
+      if (!correctAnswer) {
+        console.error('❌ [CULTURE] Pas de correctAnswer pour la question culture');
+        isProcessingRef.current = false;
+        return;
+      }
+      
+      console.log('🧠 [CULTURE] Validation immédiate question culture:', questionData.text);
+      console.log('✅ [CULTURE] Bonne réponse:', correctAnswer);
+      
+      // Récupérer toutes les réponses
+      console.log('📥 [CULTURE] Récupération des réponses...');
+      const answersSnap = await get(ref(db, answersPath));
+      const counts = {};
+      const byPlayer = {};
+      
+      if (answersSnap.exists()) {
+        const raw = answersSnap.val();
+        console.log('📥 [CULTURE] Réponses trouvées:', Object.keys(raw).length);
+        for (const [pid, a] of Object.entries(raw)) {
+          counts[a.answer] = (counts[a.answer] || 0) + 1;
+          byPlayer[pid] = a.answer;
+        }
+        console.log('📊 [CULTURE] Répartition des réponses:', counts);
+      } else {
+        console.log('⚠️ [CULTURE] Aucune réponse trouvée');
+      }
+      
+      // Attribuer les points aux joueurs qui ont bien répondu
+      console.log('👥 [CULTURE] Récupération des joueurs...');
+      const playersSnap = await get(ref(db, playersPath));
+      if (playersSnap.exists()) {
+        const playersData = playersSnap.val();
+        console.log('👥 [CULTURE] Joueurs trouvés:', Object.keys(playersData).length);
+        const updates = {};
+        const winners = [];
+        
+        for (const [pid, p] of Object.entries(playersData)) {
+          const ans = byPlayer[pid];
+          if (ans != null && ans === correctAnswer) {
+            const newScore = (p.score || 0) + 10;
+            updates[`${pid}/score`] = newScore;
+            winners.push({
+              userId: pid,
+              pseudo: p.pseudo || pid,
+              points: 10,
+              newScore: newScore
+            });
+            console.log(`✅ [CULTURE] ${p.pseudo || pid} a gagné 10 points (réponse: ${ans})`);
+          }
+        }
+        
+        if (Object.keys(updates).length) {
+          console.log('💾 [CULTURE] Mise à jour des scores...');
+          await update(ref(db, playersPath), updates);
+          console.log(`🎉 [CULTURE] ${winners.length} joueur(s) ont gagné des points`);
+        } else {
+          console.log('😔 [CULTURE] Aucun joueur n\'a trouvé la bonne réponse');
+        }
+      } else {
+        console.log('⚠️ [CULTURE] Aucun joueur trouvé');
+      }
+      
+      // Enregistrer les résultats dans Firebase
+      const resultData = {
+        correctAnswer: correctAnswer,
+        validatedAt: Date.now(),
+        totals: counts,
+        questionText: questionData.text,
+        type: 'culture',
+        explanation: questionData.explanation || null,
+        winners: winners
+      };
+      
+      // Enregistrer les résultats dans Firebase
+      console.log('💾 [CULTURE] Enregistrement des résultats...');
+      await set(ref(db, `bars/${capturedBarId}/results/${qid}`), resultData);
+      console.log('✅ [CULTURE] Résultats enregistrés dans Firebase');
+      
+      // Publier le résultat pour les joueurs (lastQuestionResult)
+      console.log('📢 [CULTURE] Publication du résultat pour les joueurs...');
+      await set(ref(db, `bars/${capturedBarId}/lastQuestionResult`), {
+        questionText: questionData.text,
+        correctAnswer: correctAnswer,
+        explanation: questionData.explanation || null,
+        winners: winners,
+        validatedAt: Date.now()
+      });
+      console.log('✅ [CULTURE] Résultat publié pour les joueurs');
+      
+      // Supprimer la question en cours et les réponses
+      console.log('🗑️ [CULTURE] Suppression de la question et des réponses...');
+      await remove(ref(db, `bars/${capturedBarId}/currentQuestion`));
+      await remove(ref(db, answersPath));
+      console.log('✅ [CULTURE] Question et réponses supprimées');
+      
+      console.log('✅ [CULTURE] Question culture validée et résultats publiés avec succès !');
+      
+    } catch (err) {
+      console.error('❌ [CULTURE] Erreur validation culture:', err);
+    } finally {
+      isProcessingRef.current = false;
+      console.log('🔓 [CULTURE] isProcessingRef déverrouillé');
     }
   };
 
