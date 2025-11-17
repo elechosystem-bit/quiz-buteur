@@ -2313,14 +2313,16 @@ export default function App() {
         console.log('⚠️ [CULTURE] Aucune réponse trouvée');
       }
       
+      // 🔥 BUG FIX: Initialiser winners AVANT le bloc if pour éviter ReferenceError
+      const winners = [];
+      const updates = {};
+      
       // Attribuer les points aux joueurs qui ont bien répondu
       console.log('👥 [CULTURE] Récupération des joueurs...');
       const playersSnap = await get(ref(db, playersPath));
       if (playersSnap.exists()) {
         const playersData = playersSnap.val();
         console.log('👥 [CULTURE] Joueurs trouvés:', Object.keys(playersData).length);
-        const updates = {};
-        const winners = [];
         
         for (const [pid, p] of Object.entries(playersData)) {
           const ans = byPlayer[pid];
