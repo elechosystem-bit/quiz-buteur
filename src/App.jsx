@@ -6,7 +6,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, generatePredictionQuestion, checkClaudeQuota } from './generateCultureQuestion';
 import SimulationMatchSetup from './components/SimulationMatchSetup';
 import { createSimulationMatch, startQuestionScheduler } from './questionManager';
-import confetti from 'canvas-confetti';
+// 🔥 FIX: Import dynamique de canvas-confetti pour éviter ReferenceError
 
 
 
@@ -799,28 +799,33 @@ export default function App() {
             // 🎆 AMÉLIORATION : Déclencher les confettis si le joueur a gagné
             if (result?.winners && Array.isArray(result.winners) && result.winners.some(w => w.userId === user?.uid)) {
               console.log('🎉 Déclenchement des confettis pour la victoire !');
-              // Confettis multiples pour un effet plus spectaculaire
-              confetti({
-                particleCount: 100,
-                spread: 70,
-                origin: { y: 0.6 }
+              // 🔥 FIX: Import dynamique pour éviter ReferenceError
+              import('canvas-confetti').then(({ default: confetti }) => {
+                // Confettis multiples pour un effet plus spectaculaire
+                confetti({
+                  particleCount: 100,
+                  spread: 70,
+                  origin: { y: 0.6 }
+                });
+                
+                // Second burst après un court délai
+                setTimeout(() => {
+                  confetti({
+                    particleCount: 50,
+                    angle: 60,
+                    spread: 55,
+                    origin: { x: 0 }
+                  });
+                  confetti({
+                    particleCount: 50,
+                    angle: 120,
+                    spread: 55,
+                    origin: { x: 1 }
+                  });
+                }, 250);
+              }).catch((error) => {
+                console.error('❌ Erreur chargement canvas-confetti:', error);
               });
-              
-              // Second burst après un court délai
-              setTimeout(() => {
-                confetti({
-                  particleCount: 50,
-                  angle: 60,
-                  spread: 55,
-                  origin: { x: 0 }
-                });
-                confetti({
-                  particleCount: 50,
-                  angle: 120,
-                  spread: 55,
-                  origin: { x: 1 }
-                });
-              }, 250);
             }
             
             // Effacer le résultat après 5 secondes
