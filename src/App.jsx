@@ -294,7 +294,8 @@ export default function App() {
   const usedQuestionsRef = useRef([]);
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
-const firstQuestionTimeoutRef = useRef(null);
+  const firstQuestionTimeoutRef = useRef(null);
+  const cultureValidationTimeoutRef = useRef(null); // 🔥 Référence pour validation culture
   const wakeLockRef = useRef(null);
   const matchCheckInterval = useRef(null);
   const questionIntervalRef = useRef(null);
@@ -1358,6 +1359,16 @@ const firstQuestionTimeoutRef = useRef(null);
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, `bars/${barId}/answers`));
       await remove(ref(db, `bars/${barId}/notifications`));
+      await remove(ref(db, `bars/${barId}/lastQuestionResult`));
+      await remove(ref(db, `bars/${barId}/pendingQuestions`));
+      console.log('🗑️ Toutes les questions supprimées');
+      
+      // Nettoyer tous les timeouts
+      if (cultureValidationTimeoutRef.current) {
+        clearTimeout(cultureValidationTimeoutRef.current);
+        cultureValidationTimeoutRef.current = null;
+        console.log('🧹 Timeout validation culture annulé');
+      }
       
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
@@ -1866,10 +1877,30 @@ const firstQuestionTimeoutRef = useRef(null);
       
       // 🔥 VALIDATION IMMÉDIATE pour les questions CULTURE (après 15 secondes)
       if (questionData.type === 'culture' && questionData.correctAnswer) {
-        console.log('⏰ Validation automatique culture programmée dans 15 secondes...');
-        setTimeout(async () => {
-          await autoValidateCultureQuestion(questionData);
+        console.log('⏰ [CULTURE] Validation automatique programmée dans 15 secondes...');
+        console.log('⏰ [CULTURE] Question ID:', questionData.id);
+        console.log('⏰ [CULTURE] Bonne réponse:', questionData.correctAnswer);
+        
+        // Nettoyer le timeout précédent s'il existe
+        if (cultureValidationTimeoutRef.current) {
+          clearTimeout(cultureValidationTimeoutRef.current);
+          console.log('🧹 [CULTURE] Ancien timeout annulé');
+        }
+        
+        // Créer le nouveau timeout et stocker la référence
+        cultureValidationTimeoutRef.current = setTimeout(async () => {
+          console.log('✅ [CULTURE] VALIDATION MAINTENANT ! (15 secondes écoulées)');
+          console.log('✅ [CULTURE] Question à valider:', questionData.text);
+          try {
+            await autoValidateCultureQuestion(questionData);
+            console.log('✅ [CULTURE] Validation terminée avec succès');
+          } catch (error) {
+            console.error('❌ [CULTURE] Erreur lors de la validation:', error);
+          }
+          cultureValidationTimeoutRef.current = null;
         }, 15000); // 15 secondes = temps de réponse
+        
+        console.log('✅ [CULTURE] Timeout créé et stocké:', cultureValidationTimeoutRef.current);
       }
     } catch (e) {
       console.error('❌ Erreur création question:', e);
@@ -1877,15 +1908,15 @@ const firstQuestionTimeoutRef = useRef(null);
     }
   };
 
-  // 🔥 VALIDATION IMMÉDIATE pour les questions CULTURE
-  const autoValidateCultureQuestion = async (questionData) => {
-    if (!questionData || !barId || !currentMatchId) {
-      console.warn('⚠️ Données manquantes pour validation culture');
+  // 🔥 VALIDATION IMMÉDIATE pour les questions PRÉDICTIVES (quand l'événement arrive)
+  const autoValidatePredictiveQuestion = async (questionData, correctAnswer) => {
+    if (!questionData || !barId || !currentMatchId || !correctAnswer) {
+      console.warn('⚠️ [PREDICTIVE] Données manquantes pour validation prédictive');
       return;
     }
     
     if (isProcessingRef.current) {
-      console.warn('⚠️ Validation déjà en cours');
+      console.warn('⚠️ [PREDICTIVE] Validation déjà en cours');
       return;
     }
     
@@ -1895,15 +1926,9 @@ const firstQuestionTimeoutRef = useRef(null);
       const qid = String(questionData.id);
       const answersPath = `bars/${barId}/answers/${qid}`;
       const playersPath = `bars/${barId}/matches/${currentMatchId}/players`;
-      const correctAnswer = questionData.correctAnswer;
       
-      if (!correctAnswer) {
-        console.error('❌ Pas de correctAnswer pour la question culture');
-        return;
-      }
-      
-      console.log('🧠 Validation immédiate question culture:', questionData.text);
-      console.log('✅ Bonne réponse:', correctAnswer);
+      console.log('🔮 [PREDICTIVE] Validation immédiate question:', questionData.text);
+      console.log('✅ [PREDICTIVE] Bonne réponse:', correctAnswer);
       
       // Récupérer toutes les réponses
       const answersSnap = await get(ref(db, answersPath));
@@ -1936,16 +1961,141 @@ const firstQuestionTimeoutRef = useRef(null);
               points: 10,
               newScore: newScore
             });
-            console.log(`✅ ${p.pseudo || pid} a gagné 10 points (réponse: ${ans})`);
+            console.log(`✅ [PREDICTIVE] ${p.pseudo || pid} a gagné 10 points (réponse: ${ans})`);
           }
         }
         
         if (Object.keys(updates).length) {
           await update(ref(db, playersPath), updates);
-          console.log(`🎉 ${winners.length} joueur(s) ont gagné des points`);
+          console.log(`🎉 [PREDICTIVE] ${winners.length} joueur(s) ont gagné des points`);
         } else {
-          console.log('😔 Aucun joueur n\'a trouvé la bonne réponse');
+          console.log('😔 [PREDICTIVE] Aucun joueur n\'a trouvé la bonne réponse');
         }
+      }
+      
+      // Enregistrer les résultats dans Firebase
+      const resultData = {
+        correctAnswer: correctAnswer,
+        validatedAt: Date.now(),
+        totals: counts,
+        questionText: questionData.text,
+        type: 'predictive',
+        winners: winners
+      };
+      
+      await set(ref(db, `bars/${barId}/results/${qid}`), resultData);
+      
+      // Publier le résultat pour les joueurs (lastQuestionResult)
+      await set(ref(db, `bars/${barId}/lastQuestionResult`), {
+        questionText: questionData.text,
+        correctAnswer: correctAnswer,
+        winners: winners,
+        validatedAt: Date.now()
+      });
+      
+      // Supprimer la question en cours et les réponses
+      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, answersPath));
+      
+      console.log('✅ [PREDICTIVE] Question prédictive validée et résultats publiés');
+      
+    } catch (err) {
+      console.error('❌ [PREDICTIVE] Erreur validation prédictive:', err);
+    } finally {
+      isProcessingRef.current = false;
+    }
+  };
+
+  // 🔥 VALIDATION IMMÉDIATE pour les questions CULTURE
+  const autoValidateCultureQuestion = async (questionData) => {
+    console.log('🧠 [CULTURE] Début validation culture...');
+    console.log('🧠 [CULTURE] questionData:', questionData);
+    console.log('🧠 [CULTURE] barId:', barId);
+    console.log('🧠 [CULTURE] currentMatchId:', currentMatchId);
+    
+    if (!questionData || !barId || !currentMatchId) {
+      console.warn('⚠️ [CULTURE] Données manquantes pour validation culture');
+      return;
+    }
+    
+    if (isProcessingRef.current) {
+      console.warn('⚠️ [CULTURE] Validation déjà en cours');
+      return;
+    }
+    
+    isProcessingRef.current = true;
+    console.log('🔒 [CULTURE] isProcessingRef verrouillé');
+    
+    try {
+      const qid = String(questionData.id);
+      const answersPath = `bars/${barId}/answers/${qid}`;
+      const playersPath = `bars/${barId}/matches/${currentMatchId}/players`;
+      const correctAnswer = questionData.correctAnswer;
+      
+      console.log('🔍 [CULTURE] Question ID:', qid);
+      console.log('🔍 [CULTURE] Answers path:', answersPath);
+      console.log('🔍 [CULTURE] Players path:', playersPath);
+      
+      if (!correctAnswer) {
+        console.error('❌ [CULTURE] Pas de correctAnswer pour la question culture');
+        isProcessingRef.current = false;
+        return;
+      }
+      
+      console.log('🧠 [CULTURE] Validation immédiate question culture:', questionData.text);
+      console.log('✅ [CULTURE] Bonne réponse:', correctAnswer);
+      
+      // Récupérer toutes les réponses
+      console.log('📥 [CULTURE] Récupération des réponses...');
+      const answersSnap = await get(ref(db, answersPath));
+      const counts = {};
+      const byPlayer = {};
+      
+      if (answersSnap.exists()) {
+        const raw = answersSnap.val();
+        console.log('📥 [CULTURE] Réponses trouvées:', Object.keys(raw).length);
+        for (const [pid, a] of Object.entries(raw)) {
+          counts[a.answer] = (counts[a.answer] || 0) + 1;
+          byPlayer[pid] = a.answer;
+        }
+        console.log('📊 [CULTURE] Répartition des réponses:', counts);
+      } else {
+        console.log('⚠️ [CULTURE] Aucune réponse trouvée');
+      }
+      
+      // Attribuer les points aux joueurs qui ont bien répondu
+      console.log('👥 [CULTURE] Récupération des joueurs...');
+      const playersSnap = await get(ref(db, playersPath));
+      if (playersSnap.exists()) {
+        const playersData = playersSnap.val();
+        console.log('👥 [CULTURE] Joueurs trouvés:', Object.keys(playersData).length);
+        const updates = {};
+        const winners = [];
+        
+        for (const [pid, p] of Object.entries(playersData)) {
+          const ans = byPlayer[pid];
+          if (ans != null && ans === correctAnswer) {
+            const newScore = (p.score || 0) + 10;
+            updates[`${pid}/score`] = newScore;
+            winners.push({
+              userId: pid,
+              pseudo: p.pseudo || pid,
+              points: 10,
+              newScore: newScore
+            });
+            console.log(`✅ [CULTURE] ${p.pseudo || pid} a gagné 10 points (réponse: ${ans})`);
+          }
+        }
+        
+        if (Object.keys(updates).length) {
+          console.log('💾 [CULTURE] Mise à jour des scores...');
+          await update(ref(db, playersPath), updates);
+          console.log(`🎉 [CULTURE] ${winners.length} joueur(s) ont gagné des points`);
+        } else {
+          console.log('😔 [CULTURE] Aucun joueur n\'a trouvé la bonne réponse');
+        }
+      } else {
+        console.log('⚠️ [CULTURE] Aucun joueur trouvé');
       }
       
       // Enregistrer les résultats dans Firebase
@@ -1959,9 +2109,13 @@ const firstQuestionTimeoutRef = useRef(null);
         winners: winners
       };
       
+      // Enregistrer les résultats dans Firebase
+      console.log('💾 [CULTURE] Enregistrement des résultats...');
       await set(ref(db, `bars/${barId}/results/${qid}`), resultData);
+      console.log('✅ [CULTURE] Résultats enregistrés dans Firebase');
       
       // Publier le résultat pour les joueurs (lastQuestionResult)
+      console.log('📢 [CULTURE] Publication du résultat pour les joueurs...');
       await set(ref(db, `bars/${barId}/lastQuestionResult`), {
         questionText: questionData.text,
         correctAnswer: correctAnswer,
@@ -1969,12 +2123,15 @@ const firstQuestionTimeoutRef = useRef(null);
         winners: winners,
         validatedAt: Date.now()
       });
+      console.log('✅ [CULTURE] Résultat publié pour les joueurs');
       
       // Supprimer la question en cours et les réponses
+      console.log('🗑️ [CULTURE] Suppression de la question et des réponses...');
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, answersPath));
+      console.log('✅ [CULTURE] Question et réponses supprimées');
       
-      console.log('✅ Question culture validée et résultats publiés');
+      console.log('✅ [CULTURE] Question culture validée et résultats publiés avec succès !');
       
     } catch (err) {
       console.error('❌ Erreur validation culture:', err);
@@ -2388,6 +2545,88 @@ const firstQuestionTimeoutRef = useRef(null);
           const statusShort = fixture.fixture.status.short;
           const apiElapsed = fixture.fixture.status.elapsed || 0;
           const isPaused = PAUSE_STATUSES.has(statusShort);
+          
+          // 🔥 VALIDATION IMMÉDIATE des questions PRÉDICTIVES si l'événement arrive
+          try {
+            if (barId) {
+              // Récupérer la question en cours depuis Firebase (plus fiable que currentQuestion state)
+              const currentQuestionSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
+              
+              if (currentQuestionSnap.exists()) {
+                const currentQuestionData = currentQuestionSnap.val();
+                
+                if (currentQuestionData && currentQuestionData.type === 'predictive') {
+                  const events = Array.isArray(fixture.events) ? fixture.events : [];
+                  console.log('🎯 [PREDICTIVE] Vérification événements pour validation immédiate');
+                  console.log('❓ [PREDICTIVE] Question en cours:', currentQuestionData.text);
+                  console.log('📊 [PREDICTIVE] Nombre d\'événements:', events.length);
+                  
+                  // Détecter si un événement correspond à la question prédictive
+                  const questionText = (currentQuestionData.text || '').toLowerCase();
+                  const qType = detectQuestionType(questionText);
+                  const winMin = parsePredictionWindowMinutes(questionText);
+                  const questionCreatedAt = currentQuestionData.createdAt || Date.now();
+                  const deltaMinutes = Math.floor((Date.now() - questionCreatedAt) / 60000);
+                  const startMin = Math.max(0, apiElapsed - deltaMinutes);
+                  const endMin = startMin + winMin;
+                  
+                  console.log('🔍 [PREDICTIVE] Fenêtre de validation:', `${startMin}' - ${endMin}'`);
+                  console.log('🔍 [PREDICTIVE] Type recherché:', qType);
+                  
+                  let eventFound = false;
+                  let correctAnswer = null;
+                  
+                  for (const ev of events) {
+                    const evMin = (ev?.time?.elapsed || 0) + ((ev?.time?.extra || 0) / 1);
+                    
+                    if (evMin >= startMin && evMin <= endMin) {
+                      console.log('🎯 [PREDICTIVE] Événement détecté:', ev.type, 'à', evMin, 'minutes');
+                      
+                      if (qType === 'goal' && ev.type === 'Goal') {
+                        eventFound = true;
+                        correctAnswer = 'Oui';
+                        console.log('✅ [PREDICTIVE] VALIDATION IMMÉDIATE - But détecté !');
+                        break;
+                      } else if (qType === 'card' && ev.type === 'Card') {
+                        const detail = (ev.detail || '').toLowerCase();
+                        if (questionText.includes('jaune') && detail.includes('yellow')) {
+                          eventFound = true;
+                          correctAnswer = 'Oui';
+                          console.log('✅ [PREDICTIVE] VALIDATION IMMÉDIATE - Carton jaune détecté !');
+                          break;
+                        } else if (questionText.includes('rouge') && detail.includes('red')) {
+                          eventFound = true;
+                          correctAnswer = 'Oui';
+                          console.log('✅ [PREDICTIVE] VALIDATION IMMÉDIATE - Carton rouge détecté !');
+                          break;
+                        }
+                      } else if (qType === 'corner' && (ev.type === 'Corner' || (ev.detail || '').toLowerCase().includes('corner'))) {
+                        eventFound = true;
+                        correctAnswer = 'Oui';
+                        console.log('✅ [PREDICTIVE] VALIDATION IMMÉDIATE - Corner détecté !');
+                        break;
+                      } else if (qType === 'penalty' && (ev.type === 'Penalty' || (ev.detail || '').toLowerCase().includes('penalty'))) {
+                        eventFound = true;
+                        correctAnswer = 'Oui';
+                        console.log('✅ [PREDICTIVE] VALIDATION IMMÉDIATE - Penalty détecté !');
+                        break;
+                      }
+                    }
+                  }
+                  
+                  if (eventFound && correctAnswer) {
+                    console.log('🚀 [PREDICTIVE] LANCEMENT VALIDATION IMMÉDIATE...');
+                    // Valider immédiatement la question prédictive
+                    await autoValidatePredictiveQuestion(currentQuestionData, correctAnswer);
+                  } else if (!eventFound && qType !== 'unknown') {
+                    console.log('⏳ [PREDICTIVE] Aucun événement correspondant pour l\'instant');
+                  }
+                }
+              }
+            }
+          } catch (predError) {
+            console.error('❌ [PREDICTIVE] Erreur validation immédiate:', predError);
+          }
 
           if (currentMatchId && barId) {
             await update(ref(db, `bars/${barId}/matchState`), {
@@ -3206,9 +3445,16 @@ const firstQuestionTimeoutRef = useRef(null);
             ) : lastQuestionResult ? (
               <div className="bg-white rounded-3xl p-8 shadow-2xl">
                 <div className="text-center mb-6">
-                  <div className="text-5xl mb-4">
-                    {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) ? '🎉' : '❌'}
-                  </div>
+                  {/* 🔥 FEEDBACK VISUEL pour bonne réponse */}
+                  {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) ? (
+                    <div className="mb-6 animate-bounce">
+                      <div className="text-6xl mb-2">💚</div>
+                      <div className="text-6xl mb-3">👍</div>
+                      <div className="text-2xl text-green-500 font-bold">Bonne réponse !</div>
+                    </div>
+                  ) : (
+                    <div className="text-5xl mb-4">❌</div>
+                  )}
                   <h3 className="text-2xl font-bold text-gray-800 mb-4">{lastQuestionResult.questionText || ''}</h3>
                   <div className="bg-green-100 rounded-xl p-4 mb-4">
                     <p className="text-lg font-semibold text-green-800">
