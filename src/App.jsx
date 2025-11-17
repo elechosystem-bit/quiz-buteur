@@ -6,6 +6,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, generatePredictionQuestion, checkClaudeQuota } from './generateCultureQuestion';
 import SimulationMatchSetup from './components/SimulationMatchSetup';
 import { createSimulationMatch, startQuestionScheduler } from './questionManager';
+import confetti from 'canvas-confetti';
 
 
 
@@ -795,6 +796,33 @@ export default function App() {
             setLastQuestionResult(result);
             setPlayerAnswer(null); // Réinitialiser la réponse du joueur
             
+            // 🎆 AMÉLIORATION : Déclencher les confettis si le joueur a gagné
+            if (result?.winners && Array.isArray(result.winners) && result.winners.some(w => w.userId === user?.uid)) {
+              console.log('🎉 Déclenchement des confettis pour la victoire !');
+              // Confettis multiples pour un effet plus spectaculaire
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+              });
+              
+              // Second burst après un court délai
+              setTimeout(() => {
+                confetti({
+                  particleCount: 50,
+                  angle: 60,
+                  spread: 55,
+                  origin: { x: 0 }
+                });
+                confetti({
+                  particleCount: 50,
+                  angle: 120,
+                  spread: 55,
+                  origin: { x: 1 }
+                });
+              }, 250);
+            }
+            
             // Effacer le résultat après 5 secondes
             setTimeout(() => {
               try {
@@ -819,7 +847,7 @@ export default function App() {
     } catch (e) {
       console.error('Erreur dans useEffect lastQuestionResult:', e);
     }
-  }, [barId, screen]);
+  }, [barId, screen, user]);
 
   // Show correction/feedback on mobile when a result is published
   useEffect(() => {
@@ -3833,12 +3861,19 @@ export default function App() {
             ) : lastQuestionResult ? (
               <div className="bg-white rounded-3xl p-8 shadow-2xl">
                 <div className="text-center mb-6">
-                  {/* 🔥 FEEDBACK VISUEL pour bonne réponse */}
+                  {/* 🎆 AMÉLIORATION : Animations victoire améliorées */}
                   {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) ? (
-                    <div className="mb-6 animate-bounce">
-                      <div className="text-6xl mb-2">💚</div>
-                      <div className="text-6xl mb-3">👍</div>
-                      <div className="text-2xl text-green-500 font-bold">Bonne réponse !</div>
+                    <div className="mb-6">
+                      {/* Animation pouce avec scale et rotation */}
+                      <div className="animate-bounce mb-4">
+                        <div className="text-8xl transform transition-all duration-300 hover:scale-110" style={{
+                          animation: 'bounce 1s infinite, pulse 2s infinite',
+                          transform: 'rotate(-10deg)'
+                        }}>👍</div>
+                      </div>
+                      {/* Feux d'artifice emoji */}
+                      <div className="text-6xl mb-3 animate-pulse">🎆✨🎉</div>
+                      <div className="text-2xl text-green-500 font-bold animate-pulse">Bonne réponse !</div>
                     </div>
                   ) : (
                     <div className="text-5xl mb-4">❌</div>

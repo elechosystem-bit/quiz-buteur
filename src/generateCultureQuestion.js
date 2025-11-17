@@ -11,9 +11,16 @@ export async function generateCultureQuestion(matchContext, apiKey) {
     ? matchContext.players.slice(0, 20).join(', ')
     : 'Non disponible';
 
-  const prompt = `Tu es un expert football qui crée des questions de quiz pendant un match en direct.
+  // 🔥 AMÉLIORATION : Ajouter timestamp et nombre aléatoire pour forcer la variété
+  const timestamp = Date.now();
+  const randomSeed = Math.floor(Math.random() * 10000);
+  const questionNumber = Math.floor(Math.random() * 1000);
 
-CONTEXTE DU MATCH EN COURS :
+  const prompt = `Tu es un expert en football. Génère UNE SEULE question de culture générale sur le football, en rapport avec le match entre ${matchContext.homeTeam} et ${matchContext.awayTeam}.
+
+🔥 IMPORTANT : La question doit être DIFFÉRENTE et UNIQUE à chaque fois. Varie les sujets et évite de répéter les mêmes questions.
+
+CONTEXTE DU MATCH ACTUEL :
 - Équipe domicile : ${matchContext.homeTeam}
 - Équipe extérieure : ${matchContext.awayTeam}
 - Compétition : ${matchContext.league}
@@ -21,12 +28,19 @@ CONTEXTE DU MATCH EN COURS :
 - Minute de jeu : ${matchContext.elapsed}'
 - Joueurs sur le terrain : ${playersList}
 
-TYPES DE QUESTIONS À GÉNÉRER (choisis-en UN au hasard) :
-1. Questions sur les joueurs présents dans ce match (carrière, records, transferts)
-2. Questions sur l'histoire des deux clubs qui s'affrontent
-3. Questions sur des records ou statistiques de la compétition
-4. Questions d'actualité football récente (derniers mois)
-5. Questions sur des confrontations historiques entre ces deux équipes
+SUJETS VARIÉS À EXPLORER (choisis un sujet DIFFÉRENT à chaque fois) :
+1. Histoire des clubs (fondation, dates importantes, moments marquants)
+2. Joueurs légendaires (anciens joueurs, records, carrières exceptionnelles)
+3. Palmarès et trophées (titres remportés, années de victoire)
+4. Stades et infrastructures (capacité, histoire, événements marquants)
+5. Entraîneurs emblématiques (carrières, tactiques, succès)
+6. Records et statistiques (buts, victoires, séries, performances)
+7. Anecdotes et faits insolites (moments historiques, événements mémorables)
+8. Rivalités et derbys (historique des confrontations, moments forts)
+9. Transferts marquants (joueurs clés, montants records)
+10. Moments de gloire (finales, matchs historiques, exploits)
+
+Question #${questionNumber} - Timestamp: ${timestamp} - Seed: ${randomSeed}
 
 RÈGLES IMPORTANTES :
 - La question DOIT être en lien avec le match en cours (équipes, joueurs, ou compétition)
@@ -35,6 +49,7 @@ RÈGLES IMPORTANTES :
 - Une seule option est correcte
 - Ajoute une explication courte et intéressante (1-2 phrases max)
 - Utilise un ton dynamique et engageant
+- CRÉE UNE QUESTION NOUVELLE ET ORIGINALE - évite les questions trop génériques
 
 FORMAT DE RÉPONSE (JSON UNIQUEMENT, RIEN D'AUTRE) :
 {
