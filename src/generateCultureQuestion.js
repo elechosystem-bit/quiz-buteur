@@ -6,7 +6,7 @@
  * Génère une question de CULTURE GÉNÉRALE via Claude AI
  * Utilise la route API proxy /api/claude pour garder la clé API sécurisée
  */
-export async function generateCultureQuestion(matchContext, apiKey) {
+export async function generateCultureQuestion(matchContext, apiKey, recentQuestions = []) {
   const playersList = matchContext.players
     ? matchContext.players.slice(0, 20).join(', ')
     : 'Non disponible';
@@ -16,9 +16,15 @@ export async function generateCultureQuestion(matchContext, apiKey) {
   const randomSeed = Math.floor(Math.random() * 10000);
   const questionNumber = Math.floor(Math.random() * 1000);
 
+  // 🔥 FIX: Construire la liste des questions récentes à éviter
+  let recentQuestionsText = '';
+  if (recentQuestions && recentQuestions.length > 0) {
+    recentQuestionsText = `\n\n🚫 QUESTIONS RÉCENTES À ÉVITER (ne pas répéter) :\n${recentQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\n\n`;
+  }
+
   const prompt = `Tu es un expert en football. Génère UNE SEULE question de culture générale sur le football, en rapport avec le match entre ${matchContext.homeTeam} et ${matchContext.awayTeam}.
 
-🔥 IMPORTANT : La question doit être DIFFÉRENTE et UNIQUE à chaque fois. Varie les sujets et évite de répéter les mêmes questions.
+🔥 IMPORTANT : La question doit être DIFFÉRENTE et UNIQUE à chaque fois. Varie les sujets et évite de répéter les mêmes questions.${recentQuestionsText}
 
 CONTEXTE DU MATCH ACTUEL :
 - Équipe domicile : ${matchContext.homeTeam}
@@ -116,12 +122,18 @@ IMPORTANT : Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`;
  * 🆕 Génère une question de PRÉDICTION via Claude AI
  * Utilise la route API proxy /api/claude pour garder la clé API sécurisée
  */
-export async function generatePredictionQuestion(matchContext, apiKey) {
+export async function generatePredictionQuestion(matchContext, apiKey, recentQuestions = []) {
   const playersList = matchContext.players
     ? matchContext.players.slice(0, 20).join(', ')
     : 'Non disponible';
 
-  const prompt = `Tu es un expert football qui crée des questions de PRÉDICTION pour un match en direct.
+  // 🔥 FIX: Construire la liste des questions récentes à éviter
+  let recentQuestionsText = '';
+  if (recentQuestions && recentQuestions.length > 0) {
+    recentQuestionsText = `\n\n🚫 QUESTIONS RÉCENTES À ÉVITER (ne pas répéter) :\n${recentQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\n\n`;
+  }
+
+  const prompt = `Tu es un expert football qui crée des questions de PRÉDICTION pour un match en direct.${recentQuestionsText}
 
 CONTEXTE DU MATCH EN COURS :
 - Équipe domicile : ${matchContext.homeTeam}

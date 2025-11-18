@@ -357,6 +357,11 @@ export default function App() {
   const [lastQuestionResult, setLastQuestionResult] = useState(null);
   const [answerHistory, setAnswerHistory] = useState([]);
   const usedQuestionsRef = useRef([]);
+  // 🔥 FIX: Mémoire des questions Claude récentes pour éviter les répétitions
+  const recentClaudeQuestionsRef = useRef({
+    culture: [], // Dernières 10 questions culture
+    prediction: [] // Dernières 10 questions prédiction
+  });
   const isProcessingRef = useRef(false);
   const nextQuestionTimer = useRef(null);
   const firstQuestionTimeoutRef = useRef(null);
@@ -1380,6 +1385,11 @@ export default function App() {
       await remove(ref(db, `bars/${barId}/notifications`));
       
       usedQuestionsRef.current = [];
+      // 🔥 FIX: Réinitialiser la mémoire des questions Claude pour un nouveau match
+      recentClaudeQuestionsRef.current = {
+        culture: [],
+        prediction: []
+      };
       isProcessingRef.current = false;
       if (nextQuestionTimer.current) {
         clearInterval(nextQuestionTimer.current);
@@ -2021,7 +2031,9 @@ export default function App() {
           if (shouldUseCulture) {
             // 🧠 QUESTION CULTURE via Claude AI
             console.log('🧠 Génération question CULTURE avec Claude AI...');
-            const claudeQuestion = await generateCultureQuestion(matchContext, apiKey);
+            // 🔥 FIX: Passer les questions récentes pour éviter les répétitions
+            const recentCultureQuestions = recentClaudeQuestionsRef.current.culture.slice(-10);
+            const claudeQuestion = await generateCultureQuestion(matchContext, apiKey, recentCultureQuestions);
             questionData = {
               text: claudeQuestion.question,
               options: claudeQuestion.options,
@@ -2033,11 +2045,21 @@ export default function App() {
               type: 'culture',
               isFallback: claudeQuestion.isFallback || false
             };
+            // 🔥 FIX: Stocker la question dans la mémoire récente
+            if (!claudeQuestion.isFallback) {
+              recentClaudeQuestionsRef.current.culture.push(claudeQuestion.question);
+              // Garder seulement les 10 dernières
+              if (recentClaudeQuestionsRef.current.culture.length > 10) {
+                recentClaudeQuestionsRef.current.culture.shift();
+              }
+            }
             console.log('✅ Question culture créée:', claudeQuestion.question);
           } else {
             // 🔮 QUESTION PRÉDICTION via Claude AI
             console.log('🔮 Génération question PRÉDICTION avec Claude AI...');
-            const claudeQuestion = await generatePredictionQuestion(matchContext, apiKey);
+            // 🔥 FIX: Passer les questions récentes pour éviter les répétitions
+            const recentPredictionQuestions = recentClaudeQuestionsRef.current.prediction.slice(-10);
+            const claudeQuestion = await generatePredictionQuestion(matchContext, apiKey, recentPredictionQuestions);
             questionData = {
               text: claudeQuestion.question,
               options: claudeQuestion.options,
@@ -2047,6 +2069,14 @@ export default function App() {
               type: 'predictive',
               isFallback: claudeQuestion.isFallback || false
             };
+            // 🔥 FIX: Stocker la question dans la mémoire récente
+            if (!claudeQuestion.isFallback) {
+              recentClaudeQuestionsRef.current.prediction.push(claudeQuestion.question);
+              // Garder seulement les 10 dernières
+              if (recentClaudeQuestionsRef.current.prediction.length > 10) {
+                recentClaudeQuestionsRef.current.prediction.shift();
+              }
+            }
             console.log('✅ Question prédiction créée:', claudeQuestion.question);
           }
         } catch (claudeError) {
