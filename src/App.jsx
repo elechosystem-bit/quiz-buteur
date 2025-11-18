@@ -494,8 +494,9 @@ export default function App() {
           const matches = dataToday.response
             .filter(fixture => {
               const status = fixture.fixture.status.short;
-              // Exclure les matchs terminés (FT, AET, PEN, etc.)
-              return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
+              // 🔥 MASQUER complètement les matchs terminés
+              const finishedStatuses = ['FT', 'AET', 'PEN', 'AWD', 'WO', 'CANC', 'ABD', 'PST', 'SUSP'];
+              return !finishedStatuses.includes(status);
             })
             .slice(0, 100)
             .map(fixture => ({
@@ -529,8 +530,9 @@ export default function App() {
         const matches = data.response
           .filter(fixture => {
             const status = fixture.fixture.status.short;
-            // Exclure les matchs terminés
-            return !['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(status);
+            // 🔥 MASQUER complètement les matchs terminés
+            const finishedStatuses = ['FT', 'AET', 'PEN', 'AWD', 'WO', 'CANC', 'ABD', 'PST', 'SUSP'];
+            return !finishedStatuses.includes(status);
           })
           .slice(0, 100)
           .map(fixture => ({
@@ -4546,7 +4548,14 @@ export default function App() {
 
             {availableMatches.length > 0 && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {availableMatches.map(match => {
+                {availableMatches
+                  .filter(match => {
+                    // 🔥 Filtre supplémentaire pour masquer les matchs terminés
+                    const status = match.statusShort || match.half || 'NS';
+                    const finishedStatuses = ['FT', 'AET', 'PEN', 'AWD', 'WO', 'CANC', 'ABD', 'PST', 'SUSP'];
+                    return !finishedStatuses.includes(status);
+                  })
+                  .map(match => {
                   const now = Date.now();
                   const matchTime = match.timestamp || 0;
                   const status = match.statusShort || match.half || 'NS';
