@@ -1657,30 +1657,40 @@ export default function App() {
         return;
       }
 
+      // 🔥 FIX: Utiliser un bar temporaire unique au lieu de créer plusieurs bars
+      const SIMULATION_BAR_ID = 'BAR-SIMULATION-TEST';
+      
       let simulationBarId = barId;
 
       if (!simulationBarId) {
         if (typeof window !== 'undefined' && window.simulationBarId) {
           simulationBarId = window.simulationBarId;
         } else {
-          const newBarId = 'BAR-SIM-' + Date.now().toString(36).toUpperCase();
-
-          await set(ref(db, `bars/${newBarId}`), {
-            name: `Simulation ${matchData.homeTeam} vs ${matchData.awayTeam}`,
-            createdAt: Date.now(),
-            isSimulation: true
-          });
+          // ❌ NE PLUS CRÉER DE BAR AUTOMATIQUEMENT
+          // Utiliser toujours le même bar de simulation unique
+          simulationBarId = SIMULATION_BAR_ID;
+          
+          // Vérifier si le bar existe, sinon le créer une seule fois
+          const barSnap = await get(ref(db, `bars/${SIMULATION_BAR_ID}`));
+          if (!barSnap.exists()) {
+            await set(ref(db, `bars/${SIMULATION_BAR_ID}`), {
+              name: 'Bar de Simulation (Test)',
+              createdAt: Date.now(),
+              isSimulation: true
+            });
+            console.log('✅ Bar de simulation unique créé:', SIMULATION_BAR_ID);
+          } else {
+            console.log('✅ Bar de simulation unique réutilisé:', SIMULATION_BAR_ID);
+          }
 
           if (typeof window !== 'undefined') {
-            window.simulationBarId = newBarId;
+            window.simulationBarId = SIMULATION_BAR_ID;
           }
-          setBarId(newBarId);
-          simulationBarId = newBarId;
-          console.log('✅ Bar de simulation créé:', newBarId);
+          setBarId(SIMULATION_BAR_ID);
         }
       }
 
-      simulationBarId = simulationBarId || (typeof window !== 'undefined' ? window.simulationBarId : null) || 'BAR-SIMULATION-TEST';
+      simulationBarId = simulationBarId || (typeof window !== 'undefined' ? window.simulationBarId : null) || SIMULATION_BAR_ID;
 
       console.log('🎬 Démarrage simulation:', {
         selectedMatch: selectedSimulationMatch,
