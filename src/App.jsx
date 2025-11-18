@@ -3548,16 +3548,52 @@ export default function App() {
                       <div className="flex items-center gap-3 mb-2">
                         <div className="text-3xl">🏪</div>
                         <div>
-                          <h3 className="text-2xl font-bold text-gray-900">{bar.name}</h3>
+                          <h3 className="text-2xl font-bold text-gray-900">{bar.name || 'Sans nom'}</h3>
                           <p className="text-sm text-gray-500">
-                            Créé le {new Date(bar.createdAt).toLocaleDateString('fr-FR')}
+                            Créé le {bar.createdAt ? new Date(bar.createdAt).toLocaleDateString('fr-FR') : 'Date inconnue'}
                           </p>
                         </div>
                       </div>
                     </div>
-                    <div className="text-center bg-white px-6 py-4 rounded-xl border-2 border-yellow-600">
-                      <div className="text-sm text-gray-500 mb-1">Code d'accès</div>
-                      <div className="text-3xl font-black text-yellow-900">{bar.code || bar.id}</div>
+                    <div className="flex items-center gap-4">
+                      {/* Code d'accès */}
+                      <div className="text-center bg-white px-6 py-4 rounded-xl border-2 border-yellow-600">
+                        <div className="text-sm text-gray-500 mb-1">Code d'accès</div>
+                        <div className="text-3xl font-black text-yellow-900">{bar.code || bar.id}</div>
+                      </div>
+                      
+                      {/* 🔥 BOUTON SUPPRIMER */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          
+                          if (!window.confirm(`⚠️ Supprimer définitivement le bar "${bar.name || bar.id}" ?\n\nCette action est irréversible !`)) {
+                            return;
+                          }
+                          
+                          try {
+                            console.log(`🗑️ Suppression du bar: ${bar.id}`);
+                            
+                            // Supprimer le bar de Firebase
+                            await remove(ref(db, `bars/${bar.id}`));
+                            
+                            console.log('✅ Bar supprimé avec succès');
+                            alert('✅ Bar supprimé !');
+                            
+                            // Recharger la liste
+                            setAllBars(allBars.filter(b => b.id !== bar.id));
+                            
+                          } catch (error) {
+                            console.error('❌ Erreur suppression:', error);
+                            alert('❌ Erreur: ' + error.message);
+                          }
+                        }}
+                        className="bg-red-600 hover:bg-red-700 text-white p-4 rounded-lg transition-all flex items-center gap-2"
+                        title="Supprimer ce bar"
+                      >
+                        <span className="text-2xl">🗑️</span>
+                        <span className="font-bold">Supprimer</span>
+                      </button>
                     </div>
                   </div>
                 ))}
