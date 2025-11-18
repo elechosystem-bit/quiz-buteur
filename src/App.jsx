@@ -345,6 +345,8 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [pseudo, setPseudo] = useState('');
   const [authMode, setAuthMode] = useState('login');
+  // 🔥 PWA: État pour le popup d'installation
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [notification, setNotification] = useState(null);
   const [matchSearch, setMatchSearch] = useState('');
   const [availableMatches, setAvailableMatches] = useState([]);
@@ -1906,11 +1908,35 @@ export default function App() {
       const playerData = {
         id: playerId,
         name: trimmedName,
+        pseudo: trimmedName, // 🔥 FIX: Ajouter pseudo pour l'affichage TV
         score: 0,
         joinedAt: Date.now()
       };
 
       await set(ref(db, `bars/${effectiveBarId}/players/${playerId}`), playerData);
+      
+      // 🔥 FIX: Ajouter aussi au match si un match est actif
+      // Récupérer currentMatchId depuis matchState si nécessaire
+      let effectiveMatchId = currentMatchId;
+      if (!effectiveMatchId) {
+        try {
+          const matchStateSnap = await get(ref(db, `bars/${effectiveBarId}/matchState`));
+          if (matchStateSnap.exists()) {
+            effectiveMatchId = matchStateSnap.val()?.currentMatchId;
+          }
+        } catch (e) {
+          console.error('Erreur récupération matchState:', e);
+        }
+      }
+      
+      if (effectiveMatchId) {
+        await set(ref(db, `bars/${effectiveBarId}/matches/${effectiveMatchId}/players/${playerId}`), {
+          pseudo: trimmedName,
+          score: 0,
+          joinedAt: Date.now()
+        });
+        console.log('✅ Joueur ajouté au match:', effectiveMatchId);
+      }
       console.log('✅ Joueur enregistré:', playerData, 'Path:', `bars/${effectiveBarId}/players/${playerId}`);
 
       setMyPlayerId(playerId);
@@ -3710,21 +3736,113 @@ export default function App() {
       );
     }
 
+    // 🔥 PWA: Détecter si l'app est déjà installée
+    const checkStandalone = () => {
+      if (typeof window === 'undefined') return false;
+      if (window.matchMedia('(display-mode: standalone)').matches) return true;
+      if (window.navigator && 'standalone' in window.navigator) {
+        const nav = window.navigator;
+        return nav.standalone === true;
+      }
+      if (document.referrer.includes('android-app://')) return true;
+      return false;
+    };
+    const isInstalled = checkStandalone();
+
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-900 to-green-700 flex flex-col items-center justify-center p-8">
-        <div className="text-center mb-12">
-          <div className="text-8xl mb-6">⚽</div>
-          <h1 className="text-5xl font-black text-white mb-4">{barInfo?.name || 'Quiz Buteur Live'}</h1>
-          <p className="text-2xl text-green-200">Pronostics en temps réel</p>
-            </div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 p-8 flex flex-col items-center">
+        <h1 className="text-4xl font-black text-white text-center mb-6">
+          Quiz Buteur
+        </h1>
         
-            <button
+        {/* 🔥 BOUTON DISCRET - Seulement si pas installé */}
+        {!isInstalled && (
+          <button
+            onClick={() => setShowInstallGuide(true)}
+            className="mx-auto block bg-blue-600/80 hover:bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-semibold mb-6 transition-all"
+          >
+            📱 Installer l'app
+          </button>
+        )}
+        
+        <button
           onClick={() => setScreen('auth')}
           className="bg-white text-green-900 px-16 py-10 rounded-3xl text-4xl font-black hover:bg-green-100 transition-all shadow-2xl"
         >
           📱 JOUER
-            </button>
+        </button>
+        
+        {/* 🔥 POPUP D'INSTRUCTIONS */}
+        {showInstallGuide && (
+          <div 
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowInstallGuide(false)}
+          >
+            <div 
+              className="bg-white rounded-2xl p-6 max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-3">📱</div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  Installer Quiz Buteur
+                </h2>
+                <p className="text-gray-600 text-sm">
+                  Accède rapidement à l'app depuis ton écran d'accueil
+                </p>
+              </div>
+              
+              <div className="space-y-3 mb-6">
+                <div className="flex gap-3 items-start bg-blue-50 p-3 rounded-lg">
+                  <div className="text-2xl font-black text-blue-600">1</div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm mb-1">
+                      Clique sur Partager
+                    </p>
+                    <div className="text-3xl my-1">⬆️</div>
+                    <p className="text-xs text-gray-600">
+                      En bas de Safari
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 items-start bg-green-50 p-3 rounded-lg">
+                  <div className="text-2xl font-black text-green-600">2</div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm mb-1">
+                      "Sur l'écran d'accueil"
+                    </p>
+                    <div className="text-2xl my-1">➕ 🏠</div>
+                    <p className="text-xs text-gray-600">
+                      Dans le menu
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 items-start bg-purple-50 p-3 rounded-lg">
+                  <div className="text-2xl font-black text-purple-600">3</div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm mb-1">
+                      Clique sur "Ajouter"
+                    </p>
+                    <div className="text-2xl my-1">✅</div>
+                    <p className="text-xs text-gray-600">
+                      C'est fait !
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <button
+                onClick={() => setShowInstallGuide(false)}
+                className="w-full bg-gray-900 text-white py-3 rounded-lg font-semibold"
+              >
+                Compris !
+              </button>
+            </div>
           </div>
+        )}
+      </div>
     );
   }
 
@@ -4374,8 +4492,10 @@ export default function App() {
                   }`}
                 >
                   <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
-                  <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
-                  <div className="col-span-4 text-right font-black">{p.score} pts</div>
+                  <div className="col-span-7 font-bold truncate">
+                    {p.pseudo || p.name || (p.email ? p.email.split('@')[0] : null) || 'Joueur'}
+                  </div>
+                  <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
                 </div>
               ))
             )}
@@ -4568,8 +4688,10 @@ export default function App() {
                       }`}
                     >
                       <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
-                      <div className="col-span-7 font-bold truncate">{p.pseudo}</div>
-                      <div className="col-span-4 text-right font-black">{p.score} pts</div>
+                      <div className="col-span-7 font-bold truncate">
+                        {p.pseudo || p.name || (p.email ? p.email.split('@')[0] : null) || 'Joueur'}
+                      </div>
+                      <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
                     </div>
                   ))
                 )}
@@ -4806,8 +4928,8 @@ export default function App() {
               ) : (
                 players.map(p => (
                   <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
-                    <span>{p.pseudo}</span>
-                    <span className="text-green-400">{p.score} pts</span>
+                    <span>{p.pseudo || p.name || (p.email ? p.email.split('@')[0] : null) || 'Joueur'}</span>
+                    <span className="text-green-400">{p.score || 0} pts</span>
                   </div>
                 ))
               )}
