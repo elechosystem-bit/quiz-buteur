@@ -2292,6 +2292,26 @@ export default function App() {
         validatedAt: Date.now()
       });
       
+      // 🔥 FIX: Mettre à jour playerHistory avec isCorrect et correctAnswer pour chaque joueur
+      console.log('📝 [PREDICTIVE] Mise à jour de l\'historique des joueurs...');
+      for (const [pid, playerAnswer] of Object.entries(byPlayer)) {
+        try {
+          const historyPath = `bars/${barId}/playerHistory/${pid}/${qid}`;
+          const historySnap = await get(ref(db, historyPath));
+          if (historySnap.exists()) {
+            const isCorrect = playerAnswer === correctAnswer;
+            await update(ref(db, historyPath), {
+              isCorrect: isCorrect,
+              correctAnswer: correctAnswer,
+              questionText: questionData.text
+            });
+            console.log(`📝 [PREDICTIVE] Historique mis à jour pour ${pid}: ${isCorrect ? '✅' : '❌'}`);
+          }
+        } catch (historyError) {
+          console.error(`❌ [PREDICTIVE] Erreur mise à jour historique pour ${pid}:`, historyError);
+        }
+      }
+      
       // Supprimer la question en cours et les réponses
       await remove(ref(db, `bars/${barId}/currentQuestion`));
       await remove(ref(db, answersPath));
@@ -2426,6 +2446,26 @@ export default function App() {
       });
       console.log('💾 [CULTURE] Résultats écrits dans Firebase');
       console.log('✅ [CULTURE] Résultat publié pour les joueurs');
+      
+      // 🔥 FIX: Mettre à jour playerHistory avec isCorrect et correctAnswer pour chaque joueur
+      console.log('📝 [CULTURE] Mise à jour de l\'historique des joueurs...');
+      for (const [pid, playerAnswer] of Object.entries(byPlayer)) {
+        try {
+          const historyPath = `bars/${capturedBarId}/playerHistory/${pid}/${qid}`;
+          const historySnap = await get(ref(db, historyPath));
+          if (historySnap.exists()) {
+            const isCorrect = playerAnswer === correctAnswer;
+            await update(ref(db, historyPath), {
+              isCorrect: isCorrect,
+              correctAnswer: correctAnswer,
+              questionText: questionData.text
+            });
+            console.log(`📝 [CULTURE] Historique mis à jour pour ${pid}: ${isCorrect ? '✅' : '❌'}`);
+          }
+        } catch (historyError) {
+          console.error(`❌ [CULTURE] Erreur mise à jour historique pour ${pid}:`, historyError);
+        }
+      }
       
       // Supprimer la question en cours et les réponses
       console.log('🗑️ [CULTURE] Suppression de la question et des réponses...');
@@ -3848,7 +3888,9 @@ export default function App() {
                             // Sauvegarder dans l'historique personnel
                             await set(ref(db, `bars/${barId}/playerHistory/${user.uid}/${currentQuestion.id}`), {
                               question: currentQuestion.text,
+                              questionText: currentQuestion.text, // 🔥 FIX: Ajouter questionText pour l'affichage
                               myAnswer: opt,
+                              answer: opt, // 🔥 FIX: Alias pour compatibilité
                               allOptions: currentQuestion.options,
                               timestamp: timestamp,
                               correctAnswer: null,
@@ -3984,58 +4026,45 @@ export default function App() {
                       {answerHistory.slice(0, 10).map((item) => (
                         <div 
                           key={item.id} 
-                          className={`p-4 rounded-xl border-2 ${
+                          className={`p-4 rounded-xl mb-3 border-2 ${
                             item.isCorrect === true 
-                              ? 'bg-green-50 border-green-400' 
+                              ? 'bg-green-50 border-green-500'   // ✅ Bonne réponse
                               : item.isCorrect === false 
-                              ? 'bg-red-50 border-red-400'
-                              : 'bg-blue-50 border-blue-300'
+                                ? 'bg-red-50 border-red-500'     // ❌ Mauvaise réponse
+                                : 'bg-blue-50 border-blue-300'   // ⏳ En attente
                           }`}
                         >
-                          {/* Question */}
-                          <div className="text-sm font-bold text-gray-900 mb-3">
-                            {item.question}
-                          </div>
+                          <p className="font-semibold text-gray-800 mb-2">
+                            {item.questionText || item.question || 'Question'}
+                          </p>
                           
-                          {/* Ma réponse */}
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-600">Ma réponse:</span>
-                              <span className={`font-bold text-base ${
-                                item.isCorrect === true 
-                                  ? 'text-green-600' 
-                                  : item.isCorrect === false 
-                                  ? 'text-red-600'
-                                  : 'text-blue-600'
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-sm text-gray-600">Ma réponse : </span>
+                              <span className={`font-bold ${
+                                item.isCorrect === true ? 'text-green-700' : 
+                                item.isCorrect === false ? 'text-red-700' : 
+                                'text-blue-700'
                               }`}>
-                                {item.myAnswer}
+                                {item.answer || item.myAnswer}
                               </span>
                             </div>
+                            
+                            {/* Afficher la bonne réponse si mauvaise réponse */}
+                            {item.isCorrect === false && item.correctAnswer && (
+                              <div className="text-sm">
+                                <span className="text-gray-600">Bonne réponse : </span>
+                                <span className="font-bold text-green-700">{item.correctAnswer}</span>
+                              </div>
+                            )}
+                            
+                            {/* Emoji selon le résultat */}
                             <div className="text-2xl">
-                              {item.isCorrect === true && '✅'}
-                              {item.isCorrect === false && '❌'}
-                              {item.isCorrect === null && '⏳'}
+                              {item.isCorrect === true ? '✅' : 
+                               item.isCorrect === false ? '❌' : 
+                               '⏳'}
                             </div>
                           </div>
-                          
-                          {/* 🔥 NOUVEAU : Afficher si en attente de validation */}
-                          {item.isCorrect === null && item.validationDelay > 0 && (
-                            <div className="bg-blue-100 border border-blue-300 rounded-lg p-2 mt-2">
-                              <span className="text-xs text-blue-700">
-                                ⏰ En attente de validation ({Math.floor(item.validationDelay / 60000)} minutes)
-                              </span>
-          </div>
-          )}
-                          
-                          {/* Bonne réponse si incorrecte */}
-                          {item.isCorrect === false && item.correctAnswer && (
-                            <div className="bg-green-100 border border-green-300 rounded-lg p-2 mt-2">
-                              <span className="text-xs text-green-700">Bonne réponse:</span>
-                              <span className="text-sm font-bold text-green-800 ml-2">
-                                {item.correctAnswer}
-                              </span>
-                            </div>
-                          )}
                           
                           {/* Timestamp */}
                           <div className="text-xs text-gray-400 mt-2">
