@@ -783,7 +783,12 @@ export default function App() {
   }, [barId]);
 
   useEffect(() => {
-    if (!barId || screen !== 'mobile') return;
+    if (!barId || screen !== 'mobile') {
+      console.log('📱 [MOBILE] useEffect lastQuestionResult - conditions non remplies:', { barId, screen });
+      return;
+    }
+    
+    console.log('📱 [MOBILE] Démarrage écoute lastQuestionResult pour barId:', barId);
     
     try {
       const lastResultRef = ref(db, `bars/${barId}/lastQuestionResult`);
@@ -792,7 +797,10 @@ export default function App() {
         try {
           if (snap.exists()) {
             const result = snap.val();
-            console.log('Mobile: résultat reçu', result);
+            console.log('📱 [MOBILE] Résultat reçu:', result);
+            console.log('📱 [MOBILE] Question:', result.questionText);
+            console.log('📱 [MOBILE] Bonne réponse:', result.correctAnswer);
+            console.log('📱 [MOBILE] Gagnants:', result.winners);
             setLastQuestionResult(result);
             setPlayerAnswer(null); // Réinitialiser la réponse du joueur
             
@@ -831,26 +839,31 @@ export default function App() {
             // Effacer le résultat après 5 secondes
             setTimeout(() => {
               try {
+                console.log('📱 [MOBILE] Effacement du résultat après 5 secondes');
                 setLastQuestionResult(null);
               } catch (e) {
                 console.error('Erreur lors de l\'effacement du résultat:', e);
               }
             }, 5000);
+          } else {
+            console.log('📱 [MOBILE] Aucun résultat disponible (snap n\'existe pas)');
+            setLastQuestionResult(null);
           }
         } catch (e) {
-          console.error('Erreur dans onValue lastResultRef:', e);
+          console.error('📱 [MOBILE] Erreur dans onValue lastResultRef:', e);
         }
       });
       
       return () => {
         try {
+          console.log('📱 [MOBILE] Nettoyage écoute lastQuestionResult');
           unsub();
         } catch (e) {
           console.error('Erreur lors du cleanup lastResultRef:', e);
         }
       };
     } catch (e) {
-      console.error('Erreur dans useEffect lastQuestionResult:', e);
+      console.error('📱 [MOBILE] Erreur dans useEffect lastQuestionResult:', e);
     }
   }, [barId, screen, user]);
 
@@ -882,7 +895,7 @@ export default function App() {
 
   // 🔥 ÉCOUTER L'HISTORIQUE DES RÉPONSES
   useEffect(() => {
-    if (!barId || !user || screen !== 'mobile') return;
+    if (!barId || !user || screen !== 'mobile' || !currentMatchId) return;
     
     try {
       const historyRef = ref(db, `bars/${barId}/playerHistory/${user.uid}`);
@@ -892,16 +905,17 @@ export default function App() {
           if (snap.exists()) {
             const historyData = snap.val();
             if (historyData && typeof historyData === 'object') {
-              // Convertir l'objet en tableau trié par timestamp (plus récent en premier)
+              // 🔥 FIX: Filtrer uniquement les réponses du match EN COURS
               const historyArray = Object.entries(historyData)
                 .map(([id, item]) => ({
                   id,
                   ...item
                 }))
+                .filter(item => item.matchId === currentMatchId) // Filtrer par match actuel
                 .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
               
               setAnswerHistory(historyArray);
-              console.log('📝 Historique chargé:', historyArray.length, 'réponses');
+              console.log('📝 Historique chargé:', historyArray.length, 'réponses pour le match', currentMatchId);
             } else {
               setAnswerHistory([]);
             }
@@ -923,7 +937,7 @@ export default function App() {
     } catch (e) {
       console.error('Erreur dans useEffect answerHistory:', e);
     }
-  }, [barId, user, screen]);
+  }, [barId, user, screen, currentMatchId]); // 🔥 FIX: Ajouter currentMatchId en dépendance
 
   useEffect(() => {
     if (!barId || !currentMatchId) {
@@ -3837,7 +3851,8 @@ export default function App() {
                               timestamp: timestamp,
                               correctAnswer: null,
                               isCorrect: null,
-                              validationDelay: currentQuestion.validationDelay || 0
+                              validationDelay: currentQuestion.validationDelay || 0,
+                              matchId: currentMatchId // 🔥 FIX: Inclure matchId pour filtrer par match
                             });
                             
                             // 🔥 NOUVEAU : Supprimer la question du state local immédiatement
@@ -3864,31 +3879,47 @@ export default function App() {
               {playerAnswer && <p className="mt-6 text-center text-blue-600 font-semibold">Réponse enregistrée ⏳</p>}
               </div>
             ) : lastQuestionResult ? (
-              <div className="bg-white rounded-3xl p-8 shadow-2xl">
+              <div className={`rounded-3xl p-8 shadow-2xl ${
+                lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid)
+                  ? 'bg-green-100 border-4 border-green-500'  // ← VERT si bonne réponse
+                  : 'bg-red-100 border-4 border-red-500'      // ← ROUGE si mauvaise réponse
+              }`}>
                 <div className="text-center mb-6">
-                  {/* 🎆 AMÉLIORATION : Animations victoire améliorées */}
+                  {/* 🔥 BONNE RÉPONSE - Animation + Vert */}
                   {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) ? (
-                    <div className="mb-6">
-                      {/* Animation pouce avec scale et rotation */}
-                      <div className="animate-bounce mb-4">
-                        <div className="text-8xl transform transition-all duration-300 hover:scale-110" style={{
-                          animation: 'bounce 1s infinite, pulse 2s infinite',
-                          transform: 'rotate(-10deg)'
-                        }}>👍</div>
-                      </div>
-                      {/* Feux d'artifice emoji */}
-                      <div className="text-6xl mb-3 animate-pulse">🎆✨🎉</div>
-                      <div className="text-2xl text-green-500 font-bold animate-pulse">Bonne réponse !</div>
+                    <div className="mb-6 animate-bounce">
+                      <div className="text-8xl transform -rotate-12 animate-pulse">👍</div>
+                      <div className="text-6xl mt-2">🎆✨🎉</div>
+                      <div className="text-3xl text-green-700 font-black mt-4">BRAVO !</div>
                     </div>
                   ) : (
-                    <div className="text-5xl mb-4">❌</div>
+                    /* 🔥 MAUVAISE RÉPONSE - Croix + Rouge */
+                    <div className="mb-6">
+                      <div className="text-8xl">❌</div>
+                      <div className="text-3xl text-red-700 font-black mt-4">DOMMAGE !</div>
+                    </div>
                   )}
-                  <h3 className="text-2xl font-bold text-gray-800 mb-4">{lastQuestionResult.questionText || ''}</h3>
-                  <div className="bg-green-100 rounded-xl p-4 mb-4">
-                    <p className="text-lg font-semibold text-green-800">
+                  
+                  <h3 className="text-2xl font-bold text-gray-800 mb-4">
+                    {lastQuestionResult.questionText || ''}
+                  </h3>
+                  
+                  {/* Affichage de la bonne réponse */}
+                  <div className={`rounded-xl p-4 mb-4 ${
+                    lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid)
+                      ? 'bg-green-200'
+                      : 'bg-red-200'
+                  }`}>
+                    <p className={`text-lg font-semibold ${
+                      lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid)
+                        ? 'text-green-800'
+                        : 'text-red-800'
+                    }`}>
                       ✅ Bonne réponse : <span className="font-black">{lastQuestionResult.correctAnswer || ''}</span>
                     </p>
                   </div>
+                  
+                  {/* Liste des gagnants */}
                   {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.length > 0 ? (
                     <div className="bg-blue-50 rounded-xl p-4 mb-4">
                       <p className="text-sm font-semibold text-blue-800 mb-2">🏆 Gagnants :</p>
@@ -3906,12 +3937,14 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-              </div>
-            ) : (
+                    </div>
+                  ) : (
                     <div className="bg-gray-100 rounded-xl p-4 mb-4">
                       <p className="text-gray-600">Personne n'a trouvé la bonne réponse</p>
                     </div>
                   )}
+                  
+                  {/* Message personnalisé si le joueur a gagné */}
                   {lastQuestionResult.winners && Array.isArray(lastQuestionResult.winners) && lastQuestionResult.winners.some(w => w.userId === user?.uid) && (
                     <div className="bg-yellow-100 rounded-xl p-4">
                       <p className="text-lg font-bold text-yellow-900">
