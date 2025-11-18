@@ -368,6 +368,7 @@ export default function App() {
   const nextQuestionTimer = useRef(null);
   const firstQuestionTimeoutRef = useRef(null);
   const cultureValidationTimeoutRef = useRef(null); // 🔥 Référence pour validation culture
+  const predictiveValidationTimeoutRef = useRef(null); // 🔥 Référence pour validation prédictive différée
   const wakeLockRef = useRef(null);
   const matchCheckInterval = useRef(null);
   const questionIntervalRef = useRef(null);
@@ -1553,6 +1554,11 @@ export default function App() {
         cultureValidationTimeoutRef.current = null;
         console.log('🧹 Timeout validation culture annulé');
       }
+      if (predictiveValidationTimeoutRef.current) {
+        clearTimeout(predictiveValidationTimeoutRef.current);
+        predictiveValidationTimeoutRef.current = null;
+        console.log('🧹 Timeout validation prédictive annulé');
+      }
       
       usedQuestionsRef.current = [];
       isProcessingRef.current = false;
@@ -2267,6 +2273,70 @@ export default function App() {
         console.log('⏰ [CULTURE] Timeout créé');
         console.log('✅ [CULTURE] Timeout créé et stocké dans cultureValidationTimeoutRef:', !!cultureValidationTimeoutRef.current);
       }
+      
+      // 🔥 VALIDATION DIFFÉRÉE pour les questions PRÉDICTIVES (après X minutes sans événement)
+      if (questionData.type === 'predictive') {
+        const questionText = questionData.text.toLowerCase();
+        
+        // Extraire la durée (3, 4, 5, 7, 10 minutes)
+        let windowMinutes = parsePredictionWindowMinutes(questionText);
+        
+        console.log(`⏰ [PREDICTIVE] Question prédiction créée, validation automatique dans ${windowMinutes} minutes`);
+        
+        // Enregistrer l'heure de validation dans Firebase
+        const validationTime = Date.now() + (windowMinutes * 60 * 1000);
+        await set(ref(db, `bars/${effectiveBarId}/currentQuestion/validationTime`), validationTime);
+        
+        // Nettoyer le timeout précédent s'il existe
+        if (predictiveValidationTimeoutRef.current) {
+          clearTimeout(predictiveValidationTimeoutRef.current);
+          console.log('🧹 [PREDICTIVE] Ancien timeout annulé');
+        }
+        
+        // Capturer les valeurs actuelles pour éviter les problèmes de closure
+        const capturedBarId = effectiveBarId;
+        const capturedMatchId = effectiveMatchId;
+        const capturedQuestionData = { ...questionData };
+        
+        console.log('📦 [PREDICTIVE] Valeurs capturées - barId:', capturedBarId, 'matchId:', capturedMatchId);
+        console.log('📦 [PREDICTIVE] Question capturée:', capturedQuestionData.text);
+        console.log('📦 [PREDICTIVE] Fenêtre de validation:', windowMinutes, 'minutes');
+        
+        // Programmer la validation différée
+        console.log(`⏰ [PREDICTIVE] Création du timeout de validation (${windowMinutes} minutes)...`);
+        predictiveValidationTimeoutRef.current = setTimeout(async () => {
+          console.log(`⏰ [PREDICTIVE] TEMPS ÉCOULÉ - Validation différée de la prédiction après ${windowMinutes} minutes`);
+          
+          try {
+            // Vérifier que c'est toujours la même question et qu'elle n'a pas été validée
+            const qSnap = await get(ref(db, `bars/${capturedBarId}/currentQuestion`));
+            if (!qSnap.exists()) {
+              console.log('⚠️ [PREDICTIVE] Question n\'existe plus, validation annulée');
+              predictiveValidationTimeoutRef.current = null;
+              return;
+            }
+            
+            const currentQ = qSnap.val();
+            
+            // Si c'est toujours la même question et qu'elle n'a pas été validée
+            if (currentQ.id === capturedQuestionData.id && currentQ.type === 'predictive') {
+              console.log('❌ [PREDICTIVE] Pas d\'événement détecté → Validation avec "Non"');
+              
+              // Valider avec "Non" (pas d'événement)
+              await autoValidatePredictiveQuestion(capturedQuestionData, 'Non', capturedBarId, capturedMatchId);
+              console.log('✅ [PREDICTIVE] Validation différée terminée');
+            } else {
+              console.log('⚠️ [PREDICTIVE] Question différente ou déjà validée, validation annulée');
+            }
+          } catch (error) {
+            console.error('❌ [PREDICTIVE] Erreur lors de la validation différée:', error);
+          }
+          
+          predictiveValidationTimeoutRef.current = null;
+        }, windowMinutes * 60 * 1000);
+        
+        console.log('✅ [PREDICTIVE] Timeout créé et stocké dans predictiveValidationTimeoutRef:', !!predictiveValidationTimeoutRef.current);
+      }
     } catch (e) {
       console.error('❌ Erreur création question:', e);
       alert('❌ Erreur: ' + e.message);
@@ -2274,9 +2344,13 @@ export default function App() {
   };
 
   // 🔥 VALIDATION IMMÉDIATE pour les questions PRÉDICTIVES (quand l'événement arrive)
-  const autoValidatePredictiveQuestion = async (questionData, correctAnswer) => {
-    if (!questionData || !barId || !currentMatchId || !correctAnswer) {
+  const autoValidatePredictiveQuestion = async (questionData, correctAnswer, providedBarId = null, providedMatchId = null) => {
+    const effectiveBarId = providedBarId || barId;
+    const effectiveMatchId = providedMatchId || currentMatchId;
+    
+    if (!questionData || !effectiveBarId || !effectiveMatchId || !correctAnswer) {
       console.warn('⚠️ [PREDICTIVE] Données manquantes pour validation prédictive');
+      console.warn('⚠️ [PREDICTIVE] questionData:', !!questionData, 'barId:', !!effectiveBarId, 'matchId:', !!effectiveMatchId, 'correctAnswer:', correctAnswer);
       return;
     }
     
@@ -2289,8 +2363,8 @@ export default function App() {
     
     try {
       const qid = String(questionData.id);
-      const answersPath = `bars/${barId}/answers/${qid}`;
-      const playersPath = `bars/${barId}/matches/${currentMatchId}/players`;
+      const answersPath = `bars/${effectiveBarId}/answers/${qid}`;
+      const playersPath = `bars/${effectiveBarId}/matches/${effectiveMatchId}/players`;
       
       console.log('🔮 [PREDICTIVE] Validation immédiate question:', questionData.text);
       console.log('✅ [PREDICTIVE] Bonne réponse:', correctAnswer);
@@ -2315,9 +2389,23 @@ export default function App() {
         const updates = {};
         const winners = [];
         
+        // Helper pour normaliser les réponses (Oui/Yes, Non/No)
+        const normalizeAnswer = (answer) => {
+          if (!answer) return null;
+          const normalized = String(answer).toLowerCase().trim();
+          if (normalized === 'oui' || normalized === 'yes' || normalized === 'o') return 'Oui';
+          if (normalized === 'non' || normalized === 'no' || normalized === 'n') return 'Non';
+          return answer; // Garder la réponse originale si non reconnue
+        };
+        
+        const normalizedCorrectAnswer = normalizeAnswer(correctAnswer);
+        
         for (const [pid, p] of Object.entries(playersData)) {
           const ans = byPlayer[pid];
-          if (ans != null && ans === correctAnswer) {
+          const normalizedAns = normalizeAnswer(ans);
+          
+          // Comparer les réponses normalisées
+          if (ans != null && normalizedAns === normalizedCorrectAnswer) {
             const newScore = (p.score || 0) + 10;
             updates[`${pid}/score`] = newScore;
             winners.push({
@@ -2326,7 +2414,7 @@ export default function App() {
               points: 10,
               newScore: newScore
             });
-            console.log(`✅ [PREDICTIVE] ${p.pseudo || pid} a gagné 10 points (réponse: ${ans})`);
+            console.log(`✅ [PREDICTIVE] ${p.pseudo || pid} a gagné 10 points (réponse: ${ans}, normalisée: ${normalizedAns})`);
           }
         }
         
@@ -2348,10 +2436,10 @@ export default function App() {
         winners: winners
       };
       
-      await set(ref(db, `bars/${barId}/results/${qid}`), resultData);
+      await set(ref(db, `bars/${effectiveBarId}/results/${qid}`), resultData);
       
       // Publier le résultat pour les joueurs (lastQuestionResult)
-      await set(ref(db, `bars/${barId}/lastQuestionResult`), {
+      await set(ref(db, `bars/${effectiveBarId}/lastQuestionResult`), {
         questionText: questionData.text,
         correctAnswer: correctAnswer,
         winners: winners,
@@ -2360,12 +2448,24 @@ export default function App() {
       
       // 🔥 FIX: Mettre à jour playerHistory avec isCorrect et correctAnswer pour chaque joueur
       console.log('📝 [PREDICTIVE] Mise à jour de l\'historique des joueurs...');
+      
+      // Réutiliser la fonction de normalisation
+      const normalizeAnswer = (answer) => {
+        if (!answer) return null;
+        const normalized = String(answer).toLowerCase().trim();
+        if (normalized === 'oui' || normalized === 'yes' || normalized === 'o') return 'Oui';
+        if (normalized === 'non' || normalized === 'no' || normalized === 'n') return 'Non';
+        return answer;
+      };
+      const normalizedCorrectAnswer = normalizeAnswer(correctAnswer);
+      
       for (const [pid, playerAnswer] of Object.entries(byPlayer)) {
         try {
-          const historyPath = `bars/${barId}/playerHistory/${pid}/${qid}`;
+          const historyPath = `bars/${effectiveBarId}/playerHistory/${pid}/${qid}`;
           const historySnap = await get(ref(db, historyPath));
           if (historySnap.exists()) {
-            const isCorrect = playerAnswer === correctAnswer;
+            const normalizedPlayerAnswer = normalizeAnswer(playerAnswer);
+            const isCorrect = normalizedPlayerAnswer === normalizedCorrectAnswer;
             await update(ref(db, historyPath), {
               isCorrect: isCorrect,
               correctAnswer: correctAnswer,
@@ -2379,7 +2479,7 @@ export default function App() {
       }
       
       // Supprimer la question en cours et les réponses
-      await remove(ref(db, `bars/${barId}/currentQuestion`));
+      await remove(ref(db, `bars/${effectiveBarId}/currentQuestion`));
       await remove(ref(db, answersPath));
       
       console.log('✅ [PREDICTIVE] Question prédictive validée et résultats publiés');
@@ -3159,6 +3259,14 @@ export default function App() {
                   
                   if (eventFound && correctAnswer) {
                     console.log('🚀 [PREDICTIVE] LANCEMENT VALIDATION IMMÉDIATE...');
+                    
+                    // Annuler le timeout de validation différée puisqu'un événement a été détecté
+                    if (predictiveValidationTimeoutRef.current) {
+                      clearTimeout(predictiveValidationTimeoutRef.current);
+                      predictiveValidationTimeoutRef.current = null;
+                      console.log('🧹 [PREDICTIVE] Timeout différé annulé (événement détecté)');
+                    }
+                    
                     // Valider immédiatement la question prédictive
                     await autoValidatePredictiveQuestion(currentQuestionData, correctAnswer);
                   } else if (!eventFound && qType !== 'unknown') {
@@ -4493,7 +4601,7 @@ export default function App() {
                 >
                   <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
                   <div className="col-span-7 font-bold truncate">
-                    {p.pseudo || p.name || (p.email ? p.email.split('@')[0] : null) || 'Joueur'}
+                    {p.pseudo || p.email?.split('@')[0] || 'Joueur'}
                   </div>
                   <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
                 </div>
@@ -4689,7 +4797,7 @@ export default function App() {
                     >
                       <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
                       <div className="col-span-7 font-bold truncate">
-                        {p.pseudo || p.name || (p.email ? p.email.split('@')[0] : null) || 'Joueur'}
+                        {p.pseudo || p.email?.split('@')[0] || 'Joueur'}
                       </div>
                       <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
                     </div>
@@ -4928,7 +5036,7 @@ export default function App() {
               ) : (
                 players.map(p => (
                   <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
-                    <span>{p.pseudo || p.name || (p.email ? p.email.split('@')[0] : null) || 'Joueur'}</span>
+                    <span>{p.pseudo || p.email?.split('@')[0] || 'Joueur'}</span>
                     <span className="text-green-400">{p.score || 0} pts</span>
                   </div>
                 ))
