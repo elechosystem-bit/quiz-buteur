@@ -2047,7 +2047,16 @@ export default function App() {
       const now = Date.now();
       
       // 🔥 ALTERNANCE : pair = culture, impair = prédiction
-      const shouldUseCulture = questionCount % 2 === 0;
+      // Force CULTURE pendant la mi-temps (HT ou BT)
+      const matchStatus = effectiveMatchState?.matchClock?.half || selectedMatch?.half || 'NS';
+      const isHalfTime = matchStatus === 'HT' || matchStatus === 'BT';
+      
+      let shouldUseCulture;
+      if (isHalfTime) {
+        shouldUseCulture = true; // ← Force CULTURE pendant mi-temps
+      } else {
+        shouldUseCulture = questionCount % 2 === 0; // ← Alternance normale
+      }
       let questionData;
       
       // Vérifier le quota Claude
