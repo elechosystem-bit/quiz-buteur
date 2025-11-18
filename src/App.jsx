@@ -2384,10 +2384,10 @@ export default function App() {
       
       // Attribuer les points aux joueurs qui ont bien répondu
       const playersSnap = await get(ref(db, playersPath));
+      const winners = []; // Initialiser AVANT le if pour éviter undefined
       if (playersSnap.exists()) {
         const playersData = playersSnap.val();
         const updates = {};
-        const winners = [];
         
         // Helper pour normaliser les réponses (Oui/Yes, Non/No)
         const normalizeAnswer = (answer) => {
