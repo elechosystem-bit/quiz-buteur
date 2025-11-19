@@ -4610,7 +4610,7 @@ export default function App() {
                 >
                   <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
                   <div className="col-span-7 font-bold truncate">
-                    {p.pseudo || p.email?.split('@')[0] || 'Joueur'}
+                    {p.pseudo || 'Joueur'}
                   </div>
                   <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
                 </div>
@@ -4806,7 +4806,7 @@ export default function App() {
                     >
                       <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
                       <div className="col-span-7 font-bold truncate">
-                        {p.pseudo || p.email?.split('@')[0] || 'Joueur'}
+                        {p.pseudo || 'Joueur'}
                       </div>
                       <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
                     </div>
@@ -5045,7 +5045,7 @@ export default function App() {
               ) : (
                 players.map(p => (
                   <div key={p.id} className="flex justify-between bg-gray-700 p-3 rounded">
-                    <span>{p.pseudo || p.email?.split('@')[0] || 'Joueur'}</span>
+                    <span>{p.pseudo || 'Joueur'}</span>
                     <span className="text-green-400">{p.score || 0} pts</span>
                   </div>
                 ))
