@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ref, onValue, set, update, remove, get, push, serverTimestamp, runTransaction } from 'firebase/database';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, generatePredictionQuestion, checkClaudeQuota } from './generateCultureQuestion';
@@ -1231,6 +1231,22 @@ export default function App() {
       const nextTime = matchState.nextQuestionTime || 0;
       const questionCount = matchState?.questionCount || 0;
       
+      // Vérifier le statut du match pour autoriser les questions pendant HT/BT
+      const matchStatus = matchState?.matchClock?.half || selectedMatch?.half || 'NS';
+      const isHalfTime = matchStatus === 'HT' || matchStatus === 'BT';
+      const isLive = ['1H', '2H'].includes(matchStatus);
+      
+      // Autoriser les questions pendant 1H, 2H ET HT (mi-temps)
+      if (!isLive && !isHalfTime && !['ET', 'LIVE'].includes(matchStatus)) {
+        console.log('⏸️ [QUESTIONS AUTO] Match pas commencé ou terminé, pas de questions');
+        return;
+      }
+      
+      // Pendant HT, forcer les questions CULTURE uniquement
+      if (isHalfTime) {
+        console.log('⏸️ [QUESTIONS AUTO] MI-TEMPS - Questions CULTURE uniquement');
+      }
+      
       console.log('⏰ [QUESTIONS AUTO] Vérification timer questions');
       console.log('⏰ [QUESTIONS AUTO] Maintenant:', now);
       console.log('⏰ [QUESTIONS AUTO] nextQuestionTime:', nextTime);
@@ -1263,12 +1279,18 @@ export default function App() {
         return;
       }
 
-      if (now >= nextTime) {
+      // Pendant HT/BT, créer une question si nextQuestionTime est null ou si le temps est écoulé
+      if (isHalfTime && (!nextTime || now >= nextTime)) {
+        console.log('✅ [QUESTIONS AUTO] MI-TEMPS - Création question CULTURE maintenant !');
+        const currentBarId = barId;
+        const currentMatchIdValue = currentMatchId || matchState?.currentMatchId;
+        await createRandomQuestion(currentBarId, currentMatchIdValue);
+      } else if (now >= nextTime && nextTime > 0) {
         console.log('✅ [QUESTIONS AUTO] TEMPS ÉCOULÉ - Création de question maintenant !');
         // Utiliser les valeurs depuis matchState si disponibles
         const currentBarId = barId;
-        const currentMatchId = currentMatchId || matchState?.currentMatchId;
-        await createRandomQuestion(currentBarId, currentMatchId);
+        const currentMatchIdValue = currentMatchId || matchState?.currentMatchId;
+        await createRandomQuestion(currentBarId, currentMatchIdValue);
       } else {
         console.log('⏳ [QUESTIONS AUTO] Pas encore le moment, on attend...');
       }
@@ -1302,21 +1324,68 @@ export default function App() {
 
   const handleSignup = async () => {
     if (!email || !password || !pseudo) {
-      alert('Remplissez tous les champs');
+      alert('Tous les champs sont requis');
       return;
     }
+    
+    if (password.length < 6) {
+      alert('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+    
+    // Vérifier que le pseudo n'est pas déjà pris
+    const pseudoCheck = await get(ref(db, 'pseudos/' + pseudo.toLowerCase()));
+    if (pseudoCheck.exists()) {
+      alert('❌ Ce pseudo est déjà pris. Choisis-en un autre.');
+      return;
+    }
+    
     try {
+      // Créer le compte
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await set(ref(db, `users/${userCredential.user.uid}`), {
-        email,
-        pseudo,
+      const user = userCredential.user;
+      
+      // 🔥 ENVOYER L'EMAIL DE VÉRIFICATION
+      await sendEmailVerification(user);
+      
+      // Enregistrer le profil utilisateur
+      await set(ref(db, `users/${user.uid}`), {
+        pseudo: pseudo,
+        email: email,
+        emailVerified: false,
         totalPoints: 0,
         matchesPlayed: 0,
         createdAt: Date.now()
       });
-      setScreen('mobile');
-    } catch (e) {
-      alert('Erreur: ' + e.message);
+      
+      // Réserver le pseudo
+      await set(ref(db, `pseudos/${pseudo.toLowerCase()}`), user.uid);
+      
+      // 🔥 AFFICHER UN MESSAGE DE CONFIRMATION
+      alert(`✅ Compte créé avec succès !
+
+📧 Un email de vérification a été envoyé à ${email}
+
+⚠️ Tu dois confirmer ton email avant de pouvoir jouer !
+
+Vérifie ta boîte mail (et tes spams) puis reconnecte-toi.`);
+      
+      // Déconnecter l'utilisateur (il doit valider son email d'abord)
+      await signOut(auth);
+      
+      // Retourner à l'écran de connexion
+      setAuthMode('login');
+      setEmail('');
+      setPassword('');
+      setPseudo('');
+      
+    } catch (err) {
+      console.error('Erreur inscription:', err);
+      if (err.code === 'auth/email-already-in-use') {
+        alert('❌ Cet email est déjà utilisé');
+      } else {
+        alert('❌ Erreur: ' + err.message);
+      }
     }
   };
 
@@ -1325,16 +1394,53 @@ export default function App() {
       alert('Email et mot de passe requis');
       return;
     }
+    
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
       
-      const userRef = ref(db, `users/${userCredential.user.uid}`);
+      // 🔥 VÉRIFIER SI L'EMAIL EST VALIDÉ
+      if (!user.emailVerified) {
+        alert(`❌ Email non vérifié !
+
+Tu dois confirmer ton email avant de pouvoir jouer.
+
+📧 Vérifie ta boîte mail (et tes spams).
+
+Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`);
+        
+        // Proposer de renvoyer l'email
+        const resend = confirm('Veux-tu qu\'on te renvoie l\'email de vérification ?');
+        if (resend) {
+          await sendEmailVerification(user);
+          alert('✅ Email renvoyé ! Vérifie ta boîte mail.');
+        }
+        
+        // Déconnecter
+        await signOut(auth);
+        return;
+      }
+      
+      // Charger le profil
+      const userRef = ref(db, `users/${user.uid}`);
       const snap = await get(userRef);
       
-      if (!snap.exists()) {
+      if (snap.exists()) {
+        const userData = snap.val();
+        setUserProfile(userData);
+        
+        // Mettre à jour emailVerified dans Firebase
+        if (!userData.emailVerified) {
+          await update(ref(db, `users/${user.uid}`), {
+            emailVerified: true
+          });
+        }
+      } else {
+        // Créer le profil si il n'existe pas
         await set(userRef, {
-          email: userCredential.user.email,
+          email: user.email,
           pseudo: email.split('@')[0],
+          emailVerified: true,
           totalPoints: 0,
           matchesPlayed: 0,
           createdAt: Date.now()
@@ -1353,8 +1459,9 @@ export default function App() {
       }
       
       setScreen('mobile');
-    } catch (e) {
-      alert('Erreur: ' + e.message);
+    } catch (err) {
+      console.error('Erreur connexion:', err);
+      alert('❌ Email ou mot de passe incorrect');
     }
   };
 
@@ -4643,7 +4750,7 @@ export default function App() {
                   }`}
                 >
                   <div className="col-span-1 font-bold">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</div>
-                  <div className="col-span-7 font-bold truncate">
+                  <div className="col-span-7 font-bold text-2xl truncate">
                     {p.pseudo || 'Joueur'}
                   </div>
                   <div className="col-span-4 text-right font-black">{p.score || 0} pts</div>
