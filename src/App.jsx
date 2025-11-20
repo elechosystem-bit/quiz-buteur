@@ -956,18 +956,32 @@ export default function App() {
     }
     
     try {
-    const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
-    
-    const unsub = onValue(playersRef, (snap) => {
+      const playersRef = ref(db, `bars/${barId}/matches/${currentMatchId}/players`);
+      
+      const unsub = onValue(playersRef, async (snapshot) => {
         try {
-      if (snap.exists()) {
-        const data = snap.val();
-            if (data && typeof data === 'object') {
-        const list = Object.entries(data).map(([id, p]) => ({ id, ...p }));
-              setPlayers(list.sort((a, b) => (b.score || 0) - (a.score || 0)));
-      } else {
-        setPlayers([]);
-            }
+          if (snapshot.exists()) {
+            const playersData = snapshot.val();
+            
+            // 🔥 Pour chaque joueur, charger son pseudo depuis users
+            const playersArray = await Promise.all(
+              Object.entries(playersData).map(async ([id, data]) => {
+                // Charger le profil utilisateur pour récupérer le pseudo
+                const userSnap = await get(ref(db, `users/${id}`));
+                const userData = userSnap.exists() ? userSnap.val() : {};
+                
+                return {
+                  id,
+                  pseudo: userData.pseudo || data.pseudo || 'Joueur',
+                  email: data.email,
+                  score: data.score || 0,
+                  ...data
+                };
+              })
+            );
+            
+            playersArray.sort((a, b) => (b.score || 0) - (a.score || 0));
+            setPlayers(playersArray);
           } else {
             setPlayers([]);
           }
