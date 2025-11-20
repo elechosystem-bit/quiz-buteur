@@ -970,12 +970,19 @@ export default function App() {
                 const userSnap = await get(ref(db, `users/${id}`));
                 const userData = userSnap.exists() ? userSnap.val() : {};
                 
+                // S'assurer que le pseudo ne contient jamais l'email
+                const finalPseudo = userData.pseudo || data.pseudo || 'Joueur';
+                // Si le pseudo est un email, utiliser 'Joueur' à la place
+                const safePseudo = finalPseudo.includes('@') ? 'Joueur' : finalPseudo;
+                
                 return {
                   id,
-                  pseudo: userData.pseudo || data.pseudo || 'Joueur',
-                  email: data.email,
+                  pseudo: safePseudo,
                   score: data.score || 0,
-                  ...data
+                  // Ne pas inclure l'email dans les données pour éviter l'affichage
+                  ...Object.fromEntries(
+                    Object.entries(data).filter(([key]) => key !== 'email' && key !== 'pseudo')
+                  )
                 };
               })
             );
@@ -3326,12 +3333,25 @@ export default function App() {
                 // (safe if nothing there)
                 // NOTE: we don't know the last question id here; we just keep as-is.
               }
-              // 2) If paused (e.g., HT) -> freeze scheduler
+              // 2) If paused (e.g., HT) -> allow CULTURE questions only
               else if (PAUSE_STATUSES.has(statusShort)) {
-                await update(ref(db, `bars/${barId}/matchState`), { nextQuestionTime: null });
+                // Autoriser les questions CULTURE pendant la mi-temps (HT/BT)
+                if (statusShort === 'HT' || statusShort === 'BT') {
+                  console.log('⏸️ MI-TEMPS - Questions CULTURE uniquement');
+                  const cqSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
+                  const nxtSnap = await get(ref(db, `bars/${barId}/matchState/nextQuestionTime`));
+                  const hasQuestion = cqSnap.exists();
+                  const hasNext = nxtSnap.exists() && !!nxtSnap.val();
+                  if (!hasQuestion && !hasNext) {
+                    await set(ref(db, `bars/${barId}/matchState/nextQuestionTime`), serverNow() + 30000);
+                  }
+                } else {
+                  // Autres pauses -> freeze scheduler
+                  await update(ref(db, `bars/${barId}/matchState`), { nextQuestionTime: null });
+                }
               }
               // 3) If live -> ensure a next question is scheduled (unless one is already running)
-              else if (LIVE_STATUSES.has(statusShort)) {
+              else if (LIVE_STATUSES.has(statusShort) || statusShort === 'HT' || statusShort === 'BT') {
                 const cqSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
                 const nxtSnap = await get(ref(db, `bars/${barId}/matchState/nextQuestionTime`));
                 const hasQuestion = cqSnap.exists();
