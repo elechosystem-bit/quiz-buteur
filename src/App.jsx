@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ref, onValue, set, update, remove, get, push, serverTimestamp, runTransaction } from 'firebase/database';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from './firebase';
 import { QRCodeSVG } from 'qrcode.react';
 import { generateCultureQuestion, generatePredictionQuestion, checkClaudeQuota } from './generateCultureQuestion';
@@ -1095,42 +1095,44 @@ export default function App() {
     return () => unsub();
   }, [barId, screen]);
 
-  useEffect(() => {
-    const addPlayerToMatch = async () => {
-      if (!user || !barId || !currentMatchId || !userProfile) return;
-      try {
-        const playerPath = `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`;
-        const playerRef = ref(db, playerPath);
-        const playerSnap = await get(playerRef);
-        if (!playerSnap.exists()) {
-          await set(playerRef, {
-            pseudo: userProfile.pseudo,
-            score: 0,
-            joinedAt: Date.now()
-          });
-          const notifRef = push(ref(db, `bars/${barId}/notifications`));
-          await set(notifRef, {
-            type: 'playerJoined',
-            pseudo: userProfile.pseudo,
-            timestamp: Date.now()
-          });
-        }
+  // 🔥 DÉSACTIVÉ : Le joueur ne rejoint plus automatiquement
+  // Il doit maintenant passer par askPseudoAndJoin() après avoir entré son pseudo
+  // useEffect(() => {
+  //   const addPlayerToMatch = async () => {
+  //     if (!user || !barId || !currentMatchId || !userProfile) return;
+  //     try {
+  //       const playerPath = `bars/${barId}/matches/${currentMatchId}/players/${user.uid}`;
+  //       const playerRef = ref(db, playerPath);
+  //       const playerSnap = await get(playerRef);
+  //       if (!playerSnap.exists()) {
+  //         await set(playerRef, {
+  //           pseudo: userProfile.pseudo,
+  //           score: 0,
+  //           joinedAt: Date.now()
+  //         });
+  //         const notifRef = push(ref(db, `bars/${barId}/notifications`));
+  //         await set(notifRef, {
+  //           type: 'playerJoined',
+  //           pseudo: userProfile.pseudo,
+  //           timestamp: Date.now()
+  //         });
+  //       }
 
-        const barPlayersRef = ref(db, `bars/${barId}/players/${user.uid}`);
-        await set(barPlayersRef, {
-          id: user.uid,
-          name: userProfile.pseudo,
-          pseudo: userProfile.pseudo,
-          score: playerSnap.exists() ? (playerSnap.val()?.score || 0) : 0,
-          joinedAt: Date.now()
-        });
-        console.log('✅ Joueur enregistré globalement:', userProfile.pseudo, `bars/${barId}/players/${user.uid}`);
-      } catch (e) {
-        console.error('Erreur ajout joueur:', e);
-      }
-    };
-    addPlayerToMatch();
-  }, [user, barId, currentMatchId, userProfile]);
+  //       const barPlayersRef = ref(db, `bars/${barId}/players/${user.uid}`);
+  //       await set(barPlayersRef, {
+  //         id: user.uid,
+  //         name: userProfile.pseudo,
+  //         pseudo: userProfile.pseudo,
+  //         score: playerSnap.exists() ? (playerSnap.val()?.score || 0) : 0,
+  //         joinedAt: Date.now()
+  //       });
+  //       console.log('✅ Joueur enregistré globalement:', userProfile.pseudo, `bars/${barId}/players/${user.uid}`);
+  //     } catch (e) {
+  //       console.error('Erreur ajout joueur:', e);
+  //     }
+  //   };
+  //   addPlayerToMatch();
+  // }, [user, barId, currentMatchId, userProfile]);
 
   useEffect(() => {
     if (!currentQuestion?.createdAt) return;
@@ -1361,6 +1363,16 @@ export default function App() {
       // Réserver le pseudo
       await set(ref(db, `pseudos/${pseudo.toLowerCase()}`), user.uid);
       
+      // 🔥 Si un code bar a été scanné, stocker le barId et le pseudo pour après validation
+      if (barId) {
+        // Stocker le barId et le pseudo dans le profil pour les récupérer après validation
+        await update(ref(db, `users/${user.uid}`), {
+          pendingBarId: barId,
+          pendingPseudo: pseudo
+        });
+        console.log('✅ Code bar détecté, stocké pour après validation email');
+      }
+      
       // 🔥 AFFICHER UN MESSAGE DE CONFIRMATION
       alert(`✅ Compte créé avec succès !
 
@@ -1421,12 +1433,15 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
         return;
       }
       
+      console.log('✅ Connexion réussie');
+      
       // Charger le profil
       const userRef = ref(db, `users/${user.uid}`);
       const snap = await get(userRef);
       
+      let userData = {};
       if (snap.exists()) {
-        const userData = snap.val();
+        userData = snap.val();
         setUserProfile(userData);
         
         // Mettre à jour emailVerified dans Firebase
@@ -1437,31 +1452,171 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
         }
       } else {
         // Créer le profil si il n'existe pas
-        await set(userRef, {
+        userData = {
           email: user.email,
           pseudo: email.split('@')[0],
           emailVerified: true,
           totalPoints: 0,
           matchesPlayed: 0,
           createdAt: Date.now()
-        });
+        };
+        await set(userRef, userData);
+        setUserProfile(userData);
         alert('✅ Profil créé !');
       }
       
-      if ('Notification' in window && Notification.permission === 'default') {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          new Notification('🎉 Notifications activées !', {
-            body: 'Vous serez alerté à chaque nouvelle question',
-            icon: '/icon-192.png'
-          });
+      // 🔥 Si un code bar a été scanné, demander pseudo et rejoindre
+      if (barId) {
+        console.log('✅ Code bar détecté, demander pseudo');
+        await askPseudoAndJoin(barId, userData.pseudo);
+      } else if (userData.pendingBarId && userData.pendingPseudo) {
+        // Si un barId était en attente (après inscription), le récupérer
+        console.log('✅ Code bar en attente détecté, demander pseudo');
+        const pendingBarId = userData.pendingBarId;
+        const pendingPseudo = userData.pendingPseudo;
+        // Nettoyer les valeurs en attente
+        await update(ref(db, `users/${user.uid}`), {
+          pendingBarId: null,
+          pendingPseudo: null
+        });
+        setBarId(pendingBarId);
+        await askPseudoAndJoin(pendingBarId, pendingPseudo);
+      } else {
+        // Sinon aller à l'écran de scan
+        if ('Notification' in window && Notification.permission === 'default') {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            new Notification('🎉 Notifications activées !', {
+              body: 'Vous serez alerté à chaque nouvelle question',
+              icon: '/icon-192.png'
+            });
+          }
         }
+        setScreen('playJoin');
       }
-      
-      setScreen('mobile');
     } catch (err) {
       console.error('Erreur connexion:', err);
       alert('❌ Email ou mot de passe incorrect');
+    }
+  };
+
+  const askPseudoAndJoin = async (barCode, suggestedPseudo = '') => {
+    if (!user) {
+      alert('❌ Tu dois être connecté');
+      return;
+    }
+    
+    try {
+      // 1️⃣ Demander le pseudo
+      const pseudo = prompt(
+        suggestedPseudo 
+          ? `🎮 Ton pseudo pour cette partie :\n(Dernier : ${suggestedPseudo})`
+          : '🎮 Choisis ton pseudo :',
+        suggestedPseudo
+      );
+      
+      if (!pseudo || pseudo.trim() === '') {
+        alert('❌ Un pseudo est requis pour jouer');
+        setScreen('playJoin');
+        return;
+      }
+      
+      const finalPseudo = pseudo.trim();
+      console.log('✅ Pseudo choisi:', finalPseudo);
+      
+      // 2️⃣ Sauvegarder le pseudo dans le profil (pour suggestion future)
+      await update(ref(db, `users/${user.uid}`), {
+        pseudo: finalPseudo
+      });
+      
+      setUserProfile({
+        ...userProfile,
+        pseudo: finalPseudo
+      });
+      
+      // 3️⃣ Récupérer le match actif
+      const matchStateSnap = await get(ref(db, `bars/${barCode}/matchState`));
+      
+      if (!matchStateSnap.exists() || !matchStateSnap.val().active) {
+        alert('❌ Aucun match actif dans ce bar');
+        setScreen('playJoin');
+        return;
+      }
+      
+      const matchId = matchStateSnap.val().currentMatchId;
+      
+      // 4️⃣ Vérifier si déjà dans le match
+      const playerSnap = await get(ref(db, `bars/${barCode}/matches/${matchId}/players/${user.uid}`));
+      
+      if (playerSnap.exists()) {
+        console.log('✅ Déjà dans le match');
+        alert(`✅ ${finalPseudo} est déjà dans la partie !`);
+        setScreen('mobile');
+        return;
+      }
+      
+      // 5️⃣ MAINTENANT, ajouter le joueur au match
+      console.log('🎮 Ajout du joueur au match');
+      await set(ref(db, `bars/${barCode}/matches/${matchId}/players/${user.uid}`), {
+        pseudo: finalPseudo,
+        email: user.email,
+        score: 0,
+        joinedAt: Date.now()
+      });
+      
+      // Enregistrer aussi dans la liste globale des joueurs du bar
+      const barPlayersRef = ref(db, `bars/${barCode}/players/${user.uid}`);
+      await set(barPlayersRef, {
+        id: user.uid,
+        name: finalPseudo,
+        pseudo: finalPseudo,
+        score: 0,
+        joinedAt: Date.now()
+      });
+      
+      // Notification
+      const notifRef = push(ref(db, `bars/${barCode}/notifications`));
+      await set(notifRef, {
+        type: 'playerJoined',
+        pseudo: finalPseudo,
+        timestamp: Date.now()
+      });
+      
+      // 6️⃣ Message de confirmation
+      console.log(`✅ ${finalPseudo} a rejoint la partie !`);
+      alert(`🎉 ${finalPseudo} a rejoint la partie !`);
+      
+      setScreen('mobile');
+      
+    } catch (err) {
+      console.error('❌ Erreur:', err);
+      alert('❌ Erreur: ' + err.message);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!email) {
+      alert('⚠️ Entre ton adresse email dans le champ ci-dessus');
+      return;
+    }
+    
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert(`✅ Email envoyé !
+
+Un lien de réinitialisation a été envoyé à ${email}
+
+📧 Vérifie ta boîte mail (et tes spams) puis clique sur le lien pour créer un nouveau mot de passe.`);
+    } catch (err) {
+      console.error('Erreur reset password:', err);
+      
+      if (err.code === 'auth/user-not-found') {
+        alert('❌ Aucun compte associé à cet email');
+      } else if (err.code === 'auth/invalid-email') {
+        alert('❌ Adresse email invalide');
+      } else {
+        alert('❌ Erreur: ' + err.message);
+      }
     }
   };
 
@@ -4175,6 +4330,16 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
               >
             {authMode === 'login' ? 'SE CONNECTER' : "S'INSCRIRE"} ⚽
               </button>
+          
+          {/* 🔥 LIEN MOT DE PASSE OUBLIÉ */}
+          {authMode === 'login' && (
+            <button
+              onClick={handlePasswordReset}
+              className="text-green-600 hover:text-green-700 font-semibold underline mt-3 text-center w-full"
+            >
+              🔑 Mot de passe oublié ?
+            </button>
+          )}
           
           <button
             onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
