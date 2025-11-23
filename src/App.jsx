@@ -1433,7 +1433,7 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
         return;
       }
       
-      console.log('✅ Connexion réussie');
+      console.log('✅ Connexion réussie, user:', user.uid);
       
       // Charger le profil
       const userRef = ref(db, `users/${user.uid}`);
@@ -1443,6 +1443,7 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
       if (snap.exists()) {
         userData = snap.val();
         setUserProfile(userData);
+        console.log('✅ Profil chargé, pseudo:', userData.pseudo);
         
         // Mettre à jour emailVerified dans Firebase
         if (!userData.emailVerified) {
@@ -1465,13 +1466,66 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
         alert('✅ Profil créé !');
       }
       
-      // 🔥 Si un code bar a été scanné, demander pseudo et rejoindre
+      // 🔥 SI un code bar a été scanné (barId existe), rejoindre le match
       if (barId) {
-        console.log('✅ Code bar détecté, demander pseudo');
-        await askPseudoAndJoin(barId, userData.pseudo);
+        console.log('✅ Code bar détecté:', barId);
+        
+        // Demander le pseudo si pas encore défini
+        let pseudo = userData.pseudo;
+        
+        if (!pseudo) {
+          // Utiliser playerName si rempli, sinon demander
+          pseudo = playerName;
+          
+          if (!pseudo || pseudo.trim() === '') {
+            alert('⚠️ Entre ton pseudo pour jouer');
+            setScreen('playJoin');
+            return;
+          }
+          
+          // Sauvegarder le pseudo
+          await update(ref(db, `users/${user.uid}`), {
+            pseudo: pseudo.trim()
+          });
+        }
+        
+        console.log('🎮 Rejoindre le match avec pseudo:', pseudo);
+        
+        // Récupérer le match actif
+        const matchStateSnap = await get(ref(db, `bars/${barId}/matchState`));
+        
+        if (!matchStateSnap.exists() || !matchStateSnap.val().active) {
+          alert('❌ Aucun match actif dans ce bar');
+          setScreen('playJoin');
+          return;
+        }
+        
+        const matchId = matchStateSnap.val().currentMatchId;
+        
+        // Vérifier si déjà dans le match
+        const playerSnap = await get(ref(db, `bars/${barId}/matches/${matchId}/players/${user.uid}`));
+        
+        if (!playerSnap.exists()) {
+          // Ajouter le joueur au match
+          await set(ref(db, `bars/${barId}/matches/${matchId}/players/${user.uid}`), {
+            pseudo: pseudo,
+            email: user.email,
+            score: 0,
+            joinedAt: Date.now()
+          });
+          
+          console.log('✅ Joueur ajouté au match');
+          alert(`🎉 ${pseudo} a rejoint la partie !`);
+        } else {
+          console.log('✅ Déjà dans le match');
+        }
+        
+        // Afficher l'écran de jeu
+        setScreen('mobile');
+        
       } else if (userData.pendingBarId && userData.pendingPseudo) {
         // Si un barId était en attente (après inscription), le récupérer
-        console.log('✅ Code bar en attente détecté, demander pseudo');
+        console.log('✅ Code bar en attente détecté');
         const pendingBarId = userData.pendingBarId;
         const pendingPseudo = userData.pendingPseudo;
         // Nettoyer les valeurs en attente
@@ -1480,9 +1534,30 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
           pendingPseudo: null
         });
         setBarId(pendingBarId);
-        await askPseudoAndJoin(pendingBarId, pendingPseudo);
+        
+        // Rejoindre le match avec le pseudo en attente
+        const matchStateSnap = await get(ref(db, `bars/${pendingBarId}/matchState`));
+        
+        if (matchStateSnap.exists() && matchStateSnap.val().active) {
+          const matchId = matchStateSnap.val().currentMatchId;
+          
+          // Ajouter le joueur au match
+          await set(ref(db, `bars/${pendingBarId}/matches/${matchId}/players/${user.uid}`), {
+            pseudo: pendingPseudo,
+            email: user.email,
+            score: 0,
+            joinedAt: Date.now()
+          });
+          
+          console.log('✅ Joueur ajouté au match');
+          alert(`🎉 ${pendingPseudo} a rejoint la partie !`);
+          setScreen('mobile');
+        } else {
+          setScreen('playJoin');
+        }
       } else {
-        // Sinon aller à l'écran de scan
+        // Pas de code bar scanné, aller à l'écran de scan
+        console.log('⚠️ Pas de code bar, redirection vers playJoin');
         if ('Notification' in window && Notification.permission === 'default') {
           const permission = await Notification.requestPermission();
           if (permission === 'granted') {
@@ -1495,7 +1570,7 @@ Pas reçu l'email ? Clique sur "Renvoyer l'email de vérification" ci-dessous.`)
         setScreen('playJoin');
       }
     } catch (err) {
-      console.error('Erreur connexion:', err);
+      console.error('❌ Erreur connexion:', err);
       alert('❌ Email ou mot de passe incorrect');
     }
   };
