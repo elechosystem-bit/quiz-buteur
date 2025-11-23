@@ -5303,8 +5303,7 @@ Un lien de réinitialisation a été envoyé à ${email}
                   const now = Date.now();
                   const matchTime = match.timestamp || 0;
                   const status = match.statusShort || match.half || 'NS';
-                  
-                  const isFinished = ['FT', 'AET', 'PEN'].includes(status) || (matchTime < now - 7200000);
+                                    const isFinished = ['FT', 'AET', 'PEN'].includes(status) || (matchTime < now - 7200000);
                   const isLive = ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(status);
                   const isUpcoming = status === 'NS' && matchTime > now;
                   
