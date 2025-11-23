@@ -2051,21 +2051,49 @@ Un lien de réinitialisation a été envoyé à ${email}
           setSimulationLog(prev => [...prev, `⏸️ 45' - Mi-temps`]);
           isPaused = true;
           
+          console.log('🎬 SIMULATION : Passage à la mi-temps');
+          
+          // Mettre à jour le matchClock dans matchState
+          await update(ref(db, `bars/${simulationBarId}/matchState`), {
+            matchClock: {
+              status: 'HT',
+              statusLong: 'Halftime',
+              apiElapsed: 45,
+              half: 'HT',
+              isPaused: true,
+              lastSyncAt: serverNow()
+            }
+          });
+          
           await update(ref(db, `bars/${simulationBarId}/simulation`), {
             half: 'HT',
             elapsed: 45
           });
           await updateSimulationQuestionTimer(elapsed, half, false);
           
-        setTimeout(() => {
+        setTimeout(async () => {
           half = '2H';
           elapsed = 46;
           isPaused = false;
           setSimulationHalf('2H');
           setSimulationElapsed(46);
           setSimulationLog(prev => [...prev, `🟢 46' - Reprise 2ème mi-temps`]);
-          updateSimulationQuestionTimer(46, half, true);
+          
           console.log('🟢 Reprise 2ème mi-temps');
+          
+          // Mettre à jour le matchClock dans matchState
+          await update(ref(db, `bars/${simulationBarId}/matchState`), {
+            matchClock: {
+              status: '2H',
+              statusLong: 'Second Half',
+              apiElapsed: 46,
+              half: '2H',
+              isPaused: false,
+              lastSyncAt: serverNow()
+            }
+          });
+          
+          updateSimulationQuestionTimer(46, half, true);
         }, 5000);
           
           return;
@@ -3414,6 +3442,11 @@ Un lien de réinitialisation a été envoyé à ${email}
           rawFixture: fixture
         };
         
+        // 🔥 LOGS DÉTAILLÉS pour déboguer le timer
+        console.log('🌐 API Response status:', fixture.fixture.status);
+        console.log('🌐 Status short:', fixture.fixture.status.short);
+        console.log('🌐 Status long:', fixture.fixture.status.long);
+        console.log('🌐 Elapsed:', fixture.fixture.status.elapsed);
         console.log('📡 Données récupérées:', matchData);
         return matchData;
       }
@@ -3497,11 +3530,26 @@ Un lien de réinitialisation a été envoyé à ${email}
           return;
         }
         
-        const fixture = matchData.rawFixture;
-        if (fixture) {
-          const statusShort = fixture.fixture.status.short;
-          const apiElapsed = fixture.fixture.status.elapsed || 0;
-          const isPaused = PAUSE_STATUSES.has(statusShort);
+          const fixture = matchData.rawFixture;
+          if (fixture) {
+            let statusShort = fixture.fixture.status.short;
+            let apiElapsed = fixture.fixture.status.elapsed || 0;
+            
+            // 🔥 DÉTECTION AUTOMATIQUE DE LA MI-TEMPS
+            // Si l'API retourne "1H" avec elapsed > 45, forcer le passage à "HT"
+            if (statusShort === '1H' && apiElapsed > 45) {
+              console.log('⏸️ MI-TEMPS DÉTECTÉE (elapsed > 45 en 1H)');
+              statusShort = 'HT';
+              apiElapsed = 45; // Fixer à 45 pour la mi-temps
+            }
+            
+            // Si l'API retourne déjà "HT", s'assurer que elapsed est fixé à 45
+            if (statusShort === 'HT') {
+              console.log('⏸️ MI-TEMPS DÉTECTÉE (status = HT)');
+              apiElapsed = 45; // Fixer à 45 pour la mi-temps
+            }
+            
+            const isPaused = PAUSE_STATUSES.has(statusShort);
           
           // 🔥 VALIDATION IMMÉDIATE des questions PRÉDICTIVES si l'événement arrive
           try {
@@ -3824,16 +3872,24 @@ Un lien de réinitialisation a été envoyé à ${email}
         if (FINISHED_STATUSES.has(currentHalf)) {
           displayTime = '90:00';
           displayPhase = '🏁 TERMINÉ';
-        } else if (currentHalf === 'HT') {
+        } else if (currentHalf === 'HT' || currentHalf === 'BT') {
+          // 🔥 MI-TEMPS : Ne pas incrémenter, afficher "MI-TEMPS"
           displayTime = '45:00';
           displayPhase = '⏸️ MI-TEMPS';
         } else if (currentHalf === '1H') {
-          if (mins < 45) {
+          // 🔥 NE PAS afficher "45+X" si on est en mi-temps (elapsed > 45 mais status devrait être HT)
+          if (mins >= 45 && !isPaused) {
+            // Si on dépasse 45 minutes, on devrait être en mi-temps
+            // Mais si le status est encore "1H", on affiche quand même le temps additionnel
+            displayTime = `45+${mins - 45}`;
+            displayPhase = '1ère MT';
+          } else if (mins < 45) {
             displayTime = `${mins}:${secs.toString().padStart(2, '0')}`;
             displayPhase = '1ère MT';
           } else {
-            displayTime = `45+${mins - 45}`;
-            displayPhase = '1ère MT';
+            // Si paused et >= 45, c'est probablement la mi-temps
+            displayTime = '45:00';
+            displayPhase = '⏸️ MI-TEMPS';
           }
         } else if (currentHalf === '2H') {
           if (mins < 90) {
@@ -4826,7 +4882,8 @@ Un lien de réinitialisation a été envoyé à ${email}
                       const shortStatus = clockData?.half ?? selectedMatch?.half ?? 'NS';
                       let elapsedMinutes = clockData?.apiElapsed ?? selectedMatch?.elapsed ?? 0;
 
-                      if (clockData?.lastSyncAt && LIVE_STATUSES.has(shortStatus) && !clockData?.isPaused) {
+                      // 🔥 NE PAS incrémenter le temps pendant la mi-temps (HT/BT)
+                      if (clockData?.lastSyncAt && LIVE_STATUSES.has(shortStatus) && !clockData?.isPaused && shortStatus !== 'HT' && shortStatus !== 'BT') {
                         const drift = Math.floor((Date.now() - clockData.lastSyncAt) / 60000);
                         if (drift > 0) elapsedMinutes += drift;
                       }
@@ -4836,7 +4893,11 @@ Un lien de réinitialisation a été envoyé à ${email}
 
                       return (
                         <div className="text-2xl font-bold mt-2">
-                          {clockText} {phaseText && `- ${phaseText}`}
+                          {shortStatus === 'HT' || shortStatus === 'BT' ? (
+                            <span className="text-yellow-400">⏸️ MI-TEMPS</span>
+                          ) : (
+                            <span>{clockText} {phaseText && `- ${phaseText}`}</span>
+                          )}
                         </div>
                       );
                     })()}
