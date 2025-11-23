@@ -2646,7 +2646,18 @@ Un lien de réinitialisation a été envoyé à ${email}
         
         // Programmer la validation différée
         console.log(`⏰ [PREDICTIVE] Création du timeout de validation (${windowMinutes} minutes)...`);
+        
+        // 🔥 DEBUG - Logs avant la création du setTimeout
+        console.log('🔥 [DEBUG] CRÉATION DU setTimeout MAINTENANT !');
+        console.log('🔥 [DEBUG] windowMinutes:', windowMinutes);
+        console.log('🔥 [DEBUG] Délai en ms:', windowMinutes * 60 * 1000);
+        console.log('🔥 [DEBUG] Délai en secondes:', windowMinutes * 60);
+        console.log('🔥 [DEBUG] Temps actuel:', new Date().toLocaleTimeString());
+        console.log('🔥 [DEBUG] Validation prévue à:', new Date(Date.now() + windowMinutes * 60 * 1000).toLocaleTimeString());
+        
         predictiveValidationTimeoutRef.current = setTimeout(async () => {
+          console.log('🔥🔥🔥 [DEBUG] LE setTimeout S\'EST DÉCLENCHÉ !!! 🔥🔥🔥');
+          console.log('🔥 [DEBUG] Temps actuel:', new Date().toLocaleTimeString());
           console.log(`⏰ [PREDICTIVE] TEMPS ÉCOULÉ - Validation différée de la prédiction après ${windowMinutes} minutes`);
           
           try {
