@@ -3492,6 +3492,26 @@ Un lien de réinitialisation a été envoyé à ${email}
         
         if (data.response && data.response.length > 0) {
           const fixture = data.response[0];
+          
+          // 🔥 RÉCUPÉRER LES ÉVÉNEMENTS SÉPARÉMENT si pas présents
+          let events = [];
+          if (fixture.events && Array.isArray(fixture.events)) {
+            events = fixture.events;
+          } else {
+            // Essayer de récupérer les événements via un appel séparé
+            try {
+              console.log('🔥 [DEBUG] Événements absents, tentative récupération séparée...');
+              const eventsData = await fetchFootballAPI('fixtures/events', { fixture: fixtureId });
+              if (eventsData.response && Array.isArray(eventsData.response)) {
+                events = eventsData.response;
+                fixture.events = events; // Ajouter aux données du fixture
+                console.log('✅ [DEBUG] Événements récupérés séparément:', events.length);
+              }
+            } catch (eventsError) {
+              console.warn('⚠️ [DEBUG] Impossible de récupérer les événements:', eventsError);
+            }
+          }
+          
         const matchData = {
           status: fixture.fixture.status.short,
           statusLong: fixture.fixture.status.long,
@@ -3500,7 +3520,8 @@ Un lien de réinitialisation a été envoyé à ${email}
           homeGoals: fixture.goals.home || 0,
           awayGoals: fixture.goals.away || 0,
           statusFull: fixture.fixture.status,
-          rawFixture: fixture
+          rawFixture: fixture,
+          events: events // Ajouter les événements explicitement
         };
         
         // 🔥 LOGS DÉTAILLÉS pour déboguer le timer
@@ -3530,21 +3551,27 @@ Un lien de réinitialisation a été envoyé à ${email}
     const performSync = async () => {
       try {
         console.log('⏰ CHECK à', new Date().toLocaleTimeString());
+        console.log('🔥 [DEBUG] performSync appelé pour fixture:', fixtureId);
         
         const matchData = await syncMatchData(fixtureId);
         
         if (!matchData) {
           console.warn('⚠️ Pas de données reçues');
+          console.warn('🔥 [DEBUG] matchData est null ou undefined');
           return;
         }
         
         console.log('📡 Status API:', matchData.status);
+        console.log('🔥 [DEBUG] matchData.status:', matchData.status);
+        console.log('🔥 [DEBUG] matchData.rawFixture existe:', !!matchData.rawFixture);
         
         // 🔥 DÉTECTER LA FIN DU MATCH
         const matchFinished = ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO'].includes(matchData.status);
+        console.log('🔥 [DEBUG] matchFinished:', matchFinished);
         
         if (matchFinished) {
           console.log('🏁 MATCH TERMINÉ ! Arrêt du quiz...');
+          console.log('🔥 [DEBUG] Arrêt du match détecté, status:', matchData.status);
           
           const finalScore = matchData.score;
           
@@ -3593,6 +3620,13 @@ Un lien de réinitialisation a été envoyé à ${email}
         
           const fixture = matchData.rawFixture;
           if (fixture) {
+            console.log('🔥 [DEBUG] fixture existe, vérification événements...');
+            console.log('🔥 [DEBUG] fixture.events existe:', !!fixture.events);
+            console.log('🔥 [DEBUG] fixture.events type:', Array.isArray(fixture.events) ? 'array' : typeof fixture.events);
+            if (fixture.events) {
+              console.log('🔥 [DEBUG] Nombre d\'événements:', Array.isArray(fixture.events) ? fixture.events.length : 'N/A');
+            }
+            
             let statusShort = fixture.fixture.status.short;
             let apiElapsed = fixture.fixture.status.elapsed || 0;
             
@@ -3622,10 +3656,28 @@ Un lien de réinitialisation a été envoyé à ${email}
                 const currentQuestionData = currentQuestionSnap.val();
                 
                 if (currentQuestionData && currentQuestionData.type === 'predictive') {
-                  const events = Array.isArray(fixture.events) ? fixture.events : [];
+                  // 🔥 UTILISER LES ÉVÉNEMENTS DE matchData (récupérés séparément si nécessaire)
+                  let events = [];
+                  if (matchData.events && Array.isArray(matchData.events)) {
+                    events = matchData.events;
+                  } else if (fixture.events) {
+                    // Fallback sur fixture.events si matchData.events n'existe pas
+                    console.log('🔥 [DEBUG] Utilisation fixture.events en fallback');
+                    if (Array.isArray(fixture.events)) {
+                      events = fixture.events;
+                    } else if (typeof fixture.events === 'object') {
+                      events = Object.values(fixture.events);
+                    }
+                  }
+                  
+                  console.log('🔥 [DEBUG] Événements utilisés:', events.length);
+                  console.log('🔥 [DEBUG] matchData.events existe:', !!matchData.events);
+                  console.log('🔥 [DEBUG] fixture.events existe:', !!fixture.events);
+                  
                   console.log('🎯 [PREDICTIVE] Vérification événements pour validation immédiate');
                   console.log('❓ [PREDICTIVE] Question en cours:', currentQuestionData.text);
                   console.log('📊 [PREDICTIVE] Nombre d\'événements:', events.length);
+                  console.log('🔥 [DEBUG] Événements:', events);
                   
                   // Détecter si un événement correspond à la question prédictive
                   const questionText = (currentQuestionData.text || '').toLowerCase();
@@ -3762,7 +3814,13 @@ Un lien de réinitialisation a été envoyé à ${email}
                 if (pendSnap.exists()) {
                   const pend = pendSnap.val();
                   const pendIds = Object.keys(pend);
-                  const events = Array.isArray(fixture.events) ? fixture.events : [];
+                  // Utiliser matchData.events si disponible, sinon fixture.events
+                  let events = [];
+                  if (matchData.events && Array.isArray(matchData.events)) {
+                    events = matchData.events;
+                  } else if (fixture.events) {
+                    events = Array.isArray(fixture.events) ? fixture.events : [];
+                  }
 
                   for (const qid of pendIds) {
                     const pq = pend[qid];
@@ -3890,12 +3948,19 @@ Un lien de réinitialisation a été envoyé à ${email}
     matchCheckInterval.current = setInterval(performSync, 10000); // Toutes les 10s
     
     console.log('✅ Interval créé:', matchCheckInterval.current);
+    console.log('🔥 [DEBUG] startMatchMonitoring - fixtureId:', fixtureId);
+    console.log('🔥 [DEBUG] Interval actif:', !!matchCheckInterval.current);
   };
 
   const stopMatchMonitoring = () => {
+    console.log('🛑 [DEBUG] stopMatchMonitoring appelé');
     if (matchCheckInterval.current) {
+      console.log('🛑 [DEBUG] Interval nettoyé:', matchCheckInterval.current);
       clearInterval(matchCheckInterval.current);
       matchCheckInterval.current = null;
+      console.log('✅ [DEBUG] Interval arrêté avec succès');
+    } else {
+      console.log('⚠️ [DEBUG] Aucun interval à nettoyer');
     }
   };
 
