@@ -1258,9 +1258,37 @@ export default function App() {
       console.log('⏰ [QUESTIONS AUTO] currentQuestion présente:', !!currentQuestion);
       console.log('⏰ [QUESTIONS AUTO] matchState.active:', matchState?.active);
       
+      // Vérifier si une question est en cours (React state)
       if (currentQuestion) {
-        console.log('⏸️ [QUESTIONS AUTO] Question en cours, on attend...');
+        console.log('⏸️ [QUESTIONS AUTO] Question en cours (React state), on attend...');
         return;
+      }
+
+      // 🔥 NOUVEAU : Vérifier si une question prédictive est EN ATTENTE DE VALIDATION dans Firebase
+      try {
+        const pendingQuestionSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
+        
+        if (pendingQuestionSnap.exists()) {
+          const pendingQ = pendingQuestionSnap.val();
+          
+          // Si c'est une question prédictive avec un temps de validation dans le futur
+          if (pendingQ.type === 'predictive' && pendingQ.validationTime) {
+            const now = Date.now();
+            
+            if (pendingQ.validationTime > now) {
+              const remainingMs = pendingQ.validationTime - now;
+              const remainingMin = Math.ceil(remainingMs / 60000);
+              console.log(`⏸️ [QUESTIONS AUTO] Question PRÉDICTIVE en attente de validation`);
+              console.log(`⏸️ [QUESTIONS AUTO] Validation dans ${remainingMin} minute(s)`);
+              console.log(`⏸️ [QUESTIONS AUTO] On attend la fin de la validation...`);
+              return;
+            } else {
+              console.log('⏰ [QUESTIONS AUTO] Question prédictive expirée, elle va être validée');
+            }
+          }
+        }
+      } catch (checkError) {
+        console.error('❌ [QUESTIONS AUTO] Erreur vérification question en attente:', checkError);
       }
       
       if (questionCount === 0) {
@@ -1284,11 +1312,33 @@ export default function App() {
       // Pendant HT/BT, créer une question si nextQuestionTime est null ou si le temps est écoulé
       if (isHalfTime && (!nextTime || now >= nextTime)) {
         console.log('✅ [QUESTIONS AUTO] MI-TEMPS - Création question CULTURE maintenant !');
+        
+        // Vérifier si une prédiction est en attente AVANT de créer une nouvelle question
+        const pendingSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
+        if (pendingSnap.exists()) {
+          const pendingQ = pendingSnap.val();
+          if (pendingQ.type === 'predictive' && pendingQ.validationTime && pendingQ.validationTime > Date.now()) {
+            console.log('⏸️ [QUESTIONS AUTO] Prédiction en attente, on attend...');
+            return;
+          }
+        }
+        
         const currentBarId = barId;
         const currentMatchIdValue = currentMatchId || matchState?.currentMatchId;
         await createRandomQuestion(currentBarId, currentMatchIdValue);
       } else if (now >= nextTime && nextTime > 0) {
         console.log('✅ [QUESTIONS AUTO] TEMPS ÉCOULÉ - Création de question maintenant !');
+        
+        // Vérifier si une prédiction est en attente AVANT de créer une nouvelle question
+        const pendingSnap = await get(ref(db, `bars/${barId}/currentQuestion`));
+        if (pendingSnap.exists()) {
+          const pendingQ = pendingSnap.val();
+          if (pendingQ.type === 'predictive' && pendingQ.validationTime && pendingQ.validationTime > Date.now()) {
+            console.log('⏸️ [QUESTIONS AUTO] Prédiction en attente, on attend...');
+            return;
+          }
+        }
+        
         // Utiliser les valeurs depuis matchState si disponibles
         const currentBarId = barId;
         const currentMatchIdValue = currentMatchId || matchState?.currentMatchId;
